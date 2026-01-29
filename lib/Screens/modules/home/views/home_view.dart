@@ -3,6 +3,8 @@ import 'package:get/get.dart';
 import '../controllers/home_controller.dart';
 import '../../../widgets/custom_bottom_nav_bar.dart';
 import '../../dashboard/views/dashboard_view.dart';
+import '../../reports/views/reports_view.dart';
+import '../../settings/views/settings_view.dart';
 
 import '../../../routes/app_routes.dart';
 
@@ -14,7 +16,7 @@ class HomeView extends GetView<HomeController> {
     // Screen width usually ~393 on modern devices, designing for that scale.
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      backgroundColor: const Color(0xFFF5F5F5), // Light grey background
+      backgroundColor: Colors.white, // Pure white background to match design
       body: Stack(
         children: [
           // Main Content
@@ -27,6 +29,10 @@ class HomeView extends GetView<HomeController> {
               case 2:
                 // return const LocationView();
                 return const Center(child: Text("Location Map is Disabled"));
+              case 3:
+                return const ReportsView();
+              case 4:
+                return const SettingsView();
               default:
                 return _buildPlaceholder("Coming Soon");
             }

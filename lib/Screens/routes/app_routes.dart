@@ -13,4 +13,22 @@ abstract class Routes {
   static const ADD_REMINDER = '/add-reminder';
   static const ALERTS = '/alerts';
   static const STATISTICS = '/statistics';
+  static const REPORTS = '/reports';
+  static const IGNITION_REPORTS = '/ignition-reports';
+  static const STOPPAGE_REPORTS = '/stoppage-reports';
+  static const TRIP_REPORTS = '/trip-reports';
+  static const DAILY_REPORTS = '/daily-reports';
+  static const SUMMARY_REPORTS = '/summary-reports';
+  static const OVER_SPEED_REPORTS = '/over-speed-reports';
+  static const GEOFENCE_REPORTS = '/geofence-reports';
+  static const EDIT_PROFILE = '/edit-profile';
+  static const RAISE_TICKET = '/raise-ticket';
+  static const SUPPORT_TICKET = '/support-ticket';
+  static const CHANGE_PASSWORD = '/change-password';
+  static const CONFIGURE_ALERTS = '/configure-alerts';
+  static const EXPENSES = '/expenses';
+  static const ADD_EXPENSE = '/add-expense';
+  static const GENERAL_SETTINGS = '/general-settings';
+  static const DELETE_ACCOUNT = '/delete-account';
+  static const DELETE_SUCCESS = '/delete-success';
 }

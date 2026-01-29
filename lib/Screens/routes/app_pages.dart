@@ -28,6 +28,25 @@ import '../modules/alerts/bindings/alerts_binding.dart';
 import '../modules/alerts/views/alerts_view.dart';
 import '../modules/statistics/bindings/statistics_binding.dart';
 import '../modules/statistics/views/statistics_view.dart';
+import '../modules/reports/bindings/reports_binding.dart';
+import '../modules/reports/views/reports_view.dart';
+import '../modules/reports/views/ignition_reports_view.dart';
+import '../modules/reports/views/stoppage_reports_view.dart';
+import '../modules/reports/views/trip_reports_view.dart';
+import '../modules/reports/views/daily_reports_view.dart';
+import '../modules/reports/views/summary_reports_view.dart';
+import '../modules/reports/views/over_speed_reports_view.dart';
+import '../modules/reports/views/geofence_reports_view.dart';
+import '../modules/settings/views/edit_profile_view.dart';
+import '../modules/settings/views/raise_ticket_view.dart';
+import '../modules/settings/views/support_ticket_view.dart';
+import '../modules/settings/views/change_password_view.dart';
+import '../modules/settings/views/configure_alerts_view.dart';
+import '../modules/settings/views/expenses_view.dart';
+import '../modules/settings/views/add_expense_view.dart';
+import '../modules/settings/views/general_settings_view.dart';
+import '../modules/settings/views/delete_account_view.dart';
+import '../modules/settings/views/delete_success_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -105,5 +124,64 @@ class AppPages {
       page: () => const StatisticsView(),
       binding: StatisticsBinding(),
     ),
+    GetPage(
+      name: Routes.REPORTS,
+      page: () => const ReportsView(),
+      binding: ReportsBinding(),
+    ),
+    GetPage(
+      name: Routes.IGNITION_REPORTS,
+      page: () => const IgnitionReportsView(),
+      binding: ReportsBinding(),
+    ),
+    GetPage(
+      name: Routes.STOPPAGE_REPORTS,
+      page: () => const StoppageReportsView(),
+      binding: ReportsBinding(),
+    ),
+    GetPage(
+      name: Routes.TRIP_REPORTS,
+      page: () => const TripReportsView(),
+      binding: ReportsBinding(),
+    ),
+    GetPage(
+      name: Routes.DAILY_REPORTS,
+      page: () => const DailyReportsView(),
+      binding: ReportsBinding(),
+    ),
+    GetPage(
+      name: Routes.SUMMARY_REPORTS,
+      page: () => const SummaryReportsView(),
+      binding: ReportsBinding(),
+    ),
+    GetPage(
+      name: Routes.OVER_SPEED_REPORTS,
+      page: () => const OverSpeedReportsView(),
+      binding: ReportsBinding(),
+    ),
+    GetPage(
+      name: Routes.GEOFENCE_REPORTS,
+      page: () => const GeofenceReportsView(),
+      binding: ReportsBinding(),
+    ),
+    GetPage(name: Routes.EDIT_PROFILE, page: () => EditProfileView()),
+    GetPage(name: Routes.RAISE_TICKET, page: () => const RaiseTicketView()),
+    GetPage(name: Routes.SUPPORT_TICKET, page: () => const SupportTicketView()),
+    GetPage(
+      name: Routes.CHANGE_PASSWORD,
+      page: () => const ChangePasswordView(),
+    ),
+    GetPage(
+      name: Routes.CONFIGURE_ALERTS,
+      page: () => const ConfigureAlertsView(),
+    ),
+    GetPage(name: Routes.EXPENSES, page: () => const ExpensesView()),
+    GetPage(name: Routes.ADD_EXPENSE, page: () => const AddExpenseView()),
+    GetPage(
+      name: Routes.GENERAL_SETTINGS,
+      page: () => const GeneralSettingsView(),
+    ),
+    GetPage(name: Routes.DELETE_ACCOUNT, page: () => const DeleteAccountView()),
+    GetPage(name: Routes.DELETE_SUCCESS, page: () => const DeleteSuccessView()),
   ];
 }

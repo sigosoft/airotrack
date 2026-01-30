@@ -31,4 +31,7 @@ abstract class Routes {
   static const GENERAL_SETTINGS = '/general-settings';
   static const DELETE_ACCOUNT = '/delete-account';
   static const DELETE_SUCCESS = '/delete-success';
+  static const TRACK = '/track';
+  static const ADD_GEOFENCE = '/add-geofence';
+  static const ADD_LOCATION_PICKER = '/add-location-picker';
 }

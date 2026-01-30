@@ -1,6 +1,5 @@
 import 'package:airotrack/Screens/widgets/auth_logo.dart';
 import 'package:airotrack/Screens/widgets/auth_text_field.dart';
-import 'package:airotrack/Utils/app_assets.dart';
 import 'package:airotrack/Utils/app_colors.dart';
 import 'package:airotrack/Utils/app_styles.dart';
 import 'package:flutter/material.dart';
@@ -111,7 +110,11 @@ class LoginView extends GetView<LoginController> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: SizedBox(
-                      width: AppStyles.buttonWidth,
+                      width:
+                          MediaQuery.of(context).size.width <
+                              AppStyles.buttonWidth + 32
+                          ? MediaQuery.of(context).size.width - 32
+                          : AppStyles.buttonWidth,
                       height: AppStyles.buttonHeight,
                       child: ElevatedButton(
                         onPressed: controller.signIn,

@@ -1,4 +1,6 @@
+import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
+
 import 'package:get/get.dart';
 import '../controllers/alerts_controller.dart';
 import '../../../routes/app_routes.dart';
@@ -111,9 +113,17 @@ class AlertsView extends GetView<AlertsController> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: 8,
               itemBuilder: (context, index) {
-                return _buildAlertTile(index);
+                return _buildAlertTile(context, index);
               },
             ),
+          ),
+          // Pagination Widget
+          PaginationWidget(
+            currentPage: 1,
+            totalPages: 5,
+            onPageChanged: (page) {
+              // Handle page change
+            },
           ),
         ],
       ),
@@ -146,10 +156,11 @@ class AlertsView extends GetView<AlertsController> {
     );
   }
 
-  Widget _buildAlertTile(int index) {
+  Widget _buildAlertTile(BuildContext context, int index) {
+    double screenWidth = MediaQuery.of(context).size.width;
     bool isIgnitionOn = index % 2 == 0;
     return Container(
-      width: 357,
+      width: screenWidth - 32,
       height: 64, // From Reminder Page dimensions
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

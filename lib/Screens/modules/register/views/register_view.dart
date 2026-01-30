@@ -1,6 +1,5 @@
 import 'package:airotrack/Screens/widgets/auth_logo.dart';
 import 'package:airotrack/Screens/widgets/auth_text_field.dart';
-import 'package:airotrack/Utils/app_assets.dart';
 import 'package:airotrack/Utils/app_colors.dart';
 import 'package:airotrack/Utils/app_styles.dart';
 import 'package:country_picker/country_picker.dart';
@@ -74,7 +73,11 @@ class RegisterView extends GetView<RegisterController> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Container(
-                                width: AppStyles.inputWidth,
+                                width:
+                                    MediaQuery.of(context).size.width <
+                                        AppStyles.inputWidth + 32
+                                    ? MediaQuery.of(context).size.width - 32
+                                    : AppStyles.inputWidth,
                                 height: AppStyles.inputHeight,
                                 decoration: BoxDecoration(
                                   color: Colors.white,
@@ -239,7 +242,11 @@ class RegisterView extends GetView<RegisterController> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: SizedBox(
-                          width: AppStyles.buttonWidth,
+                          width:
+                              MediaQuery.of(context).size.width <
+                                  AppStyles.buttonWidth + 32
+                              ? MediaQuery.of(context).size.width - 32
+                              : AppStyles.buttonWidth,
                           height: AppStyles.buttonHeight,
                           child: ElevatedButton(
                             onPressed: controller.signUp,

@@ -1,4 +1,6 @@
+import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
+
 import 'package:get/get.dart';
 
 class SummaryReportsView extends StatelessWidget {
@@ -101,9 +103,17 @@ class SummaryReportsView extends StatelessWidget {
               itemCount: 2,
               separatorBuilder: (context, index) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
-                return _buildSummaryTile();
+                return _buildSummaryTile(context);
               },
             ),
+          ),
+          // Pagination Widget
+          PaginationWidget(
+            currentPage: 1,
+            totalPages: 5,
+            onPageChanged: (page) {
+              // Handle page change
+            },
           ),
         ],
       ),
@@ -131,9 +141,10 @@ class SummaryReportsView extends StatelessWidget {
     );
   }
 
-  Widget _buildSummaryTile() {
+  Widget _buildSummaryTile(BuildContext context) {
+    double screenWidth = MediaQuery.of(context).size.width;
     return Container(
-      width: 357,
+      width: screenWidth - 32.62, // Responsive width
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,

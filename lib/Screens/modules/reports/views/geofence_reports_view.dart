@@ -1,4 +1,6 @@
+import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
+
 import 'package:get/get.dart';
 
 class GeofenceReportsView extends StatelessWidget {
@@ -101,9 +103,17 @@ class GeofenceReportsView extends StatelessWidget {
               itemCount: 6,
               separatorBuilder: (context, index) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
-                return _buildGeofenceTile(index);
+                return _buildGeofenceTile(context, index);
               },
             ),
+          ),
+          // Pagination Widget
+          PaginationWidget(
+            currentPage: 1,
+            totalPages: 5,
+            onPageChanged: (page) {
+              // Handle page change
+            },
           ),
         ],
       ),
@@ -131,10 +141,11 @@ class GeofenceReportsView extends StatelessWidget {
     );
   }
 
-  Widget _buildGeofenceTile(int index) {
+  Widget _buildGeofenceTile(BuildContext context, int index) {
+    double screenWidth = MediaQuery.of(context).size.width;
     final bool isEnter = index % 2 == 0;
     return Container(
-      width: 357,
+      width: screenWidth - 32.62,
       height: 95,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(

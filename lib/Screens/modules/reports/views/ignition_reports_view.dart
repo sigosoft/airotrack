@@ -1,4 +1,6 @@
+import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
+
 import 'package:get/get.dart';
 
 class IgnitionReportsView extends StatelessWidget {
@@ -102,9 +104,17 @@ class IgnitionReportsView extends StatelessWidget {
               separatorBuilder: (context, index) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final isOn = index % 2 != 0;
-                return _buildIgnitionTile(isOn);
+                return _buildIgnitionTile(context, isOn);
               },
             ),
+          ),
+          // Pagination Widget
+          PaginationWidget(
+            currentPage: 1,
+            totalPages: 5,
+            onPageChanged: (page) {
+              // Handle page change
+            },
           ),
         ],
       ),
@@ -132,9 +142,10 @@ class IgnitionReportsView extends StatelessWidget {
     );
   }
 
-  Widget _buildIgnitionTile(bool isOn) {
+  Widget _buildIgnitionTile(BuildContext context, bool isOn) {
+    double screenWidth = MediaQuery.of(context).size.width;
     return Container(
-      width: 357,
+      width: screenWidth - 32.62,
       height: 90,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(

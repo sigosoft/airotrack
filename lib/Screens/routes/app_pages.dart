@@ -47,6 +47,10 @@ import '../modules/settings/views/add_expense_view.dart';
 import '../modules/settings/views/general_settings_view.dart';
 import '../modules/settings/views/delete_account_view.dart';
 import '../modules/settings/views/delete_success_view.dart';
+import '../modules/track/bindings/track_binding.dart';
+import '../modules/track/views/track_view.dart';
+import '../modules/track/views/add_geofence_view.dart';
+import '../modules/track/views/add_location_picker_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -183,5 +187,20 @@ class AppPages {
     ),
     GetPage(name: Routes.DELETE_ACCOUNT, page: () => const DeleteAccountView()),
     GetPage(name: Routes.DELETE_SUCCESS, page: () => const DeleteSuccessView()),
+    GetPage(
+      name: Routes.TRACK,
+      page: () => const TrackView(),
+      binding: TrackBinding(),
+    ),
+    GetPage(
+      name: Routes.ADD_GEOFENCE,
+      page: () => const AddGeofenceView(),
+      binding: TrackBinding(),
+    ),
+    GetPage(
+      name: Routes.ADD_LOCATION_PICKER,
+      page: () => const AddLocationPickerView(),
+      binding: TrackBinding(),
+    ),
   ];
 }

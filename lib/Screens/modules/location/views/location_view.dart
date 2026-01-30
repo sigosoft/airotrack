@@ -7,51 +7,43 @@ class LocationView extends GetView<LocationController> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
+    return Container(
+      color: const Color(0xFFE0E0E0), // Neutral background
+      child: Stack(
         children: [
-          // 1. Real Google Map Background
-          // 1. Google Map Background (Hidden as requested)
-          Container(
-            color: Colors.grey[200],
-            width: double.infinity,
-            height: double.infinity,
-          ),
+          // 1. Placeholder Background Map (Visual Mockup)
+          // (User requested to avoid real map, so we leave it as solid color/container)
 
-          // 2. Top Left: Map Style Button
+          // 2. Top Left: Map Format Button
           Positioned(
-            top: 50,
+            top: 45,
             left: 15,
             child: _buildFloatingButton(
-              const AssetImage('lib/Asset/Icons/map.png'),
+              'lib/Asset/Icons/map.png',
               onTap: () {},
-              isLarge: true,
             ),
           ),
 
-          // 3. Top Right: Controls Group
+          // 3. Top Right: Secondary Controls
           Positioned(
-            top: 50,
+            top: 45,
             right: 15,
             child: Column(
               children: [
                 _buildFloatingButton(
-                  const AssetImage('lib/Asset/Icons/Filters.png'),
+                  'lib/Asset/Icons/Filters.png',
                   onTap: () {},
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                _buildFloatingButton('lib/Asset/Icons/Zoom.png', onTap: () {}),
+                const SizedBox(height: 10),
                 _buildFloatingButton(
-                  const AssetImage('lib/Asset/Icons/Zoom.png'),
-                  onTap: controller.centerOnVehicle,
+                  'lib/Asset/Icons/Traffic.png',
+                  onTap: () {},
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _buildFloatingButton(
-                  const AssetImage('lib/Asset/Icons/Traffic.png'),
-                  onTap: controller.toggleTraffic,
-                ),
-                const SizedBox(height: 12),
-                _buildFloatingButton(
-                  const AssetImage('lib/Asset/Icons/Refresh.png'),
+                  'lib/Asset/Icons/Refresh.png',
                   onTap: () {},
                 ),
               ],
@@ -70,13 +62,12 @@ class LocationView extends GetView<LocationController> {
             child: _buildSideArrow(Icons.chevron_right),
           ),
 
-          // 5. Vehicle Marker (Centered Overlay)
-          // In a real implementation with many vehicles, we would use Markers[] in GoogleMap.
-          // For the requested UI specific look, we overlay the custom card at the center.
-          /* Center(
+          // 5. Vehicle Indicator (Centered)
+          Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Vehicle Label
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -84,12 +75,12 @@ class LocationView extends GetView<LocationController> {
                   ),
                   decoration: BoxDecoration(
                     color: Colors.black,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(15),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.4),
-                        blurRadius: 6,
-                        offset: const Offset(0, 3),
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
@@ -102,36 +93,37 @@ class LocationView extends GetView<LocationController> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Image.network(
-                  'https://png.pngtree.com/png-vector/20230210/ourmid/pngtree-green-car-top-view-png-image_6593570.png',
-                  width: 48,
-                  height: 48,
-                  fit: BoxFit.contain,
+                const SizedBox(height: 8),
+                // Green Car Top View
+                Image.asset(
+                  'lib/Asset/Icons/Car.png',
+                  width: 55,
+                  height: 55,
+                  color: const Color(0xFF00C853), // Green
                 ),
               ],
             ),
-          ), */
+          ),
 
-          // 6. Bottom Right: Navigation Controls
+          // 6. Bottom Right: Navigation Group
           Positioned(
             bottom: 130,
             right: 15,
             child: Column(
               children: [
                 _buildFloatingButton(
-                  const AssetImage('lib/Asset/Icons/Locations.png'),
-                  onTap: controller.centerOnVehicle,
+                  'lib/Asset/Icons/Locations.png',
+                  onTap: () {},
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _buildFloatingButton(
-                  const AssetImage('lib/Asset/Icons/zoomin.png'),
-                  onTap: controller.zoomIn,
+                  'lib/Asset/Icons/zoomin.png',
+                  onTap: () {},
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _buildFloatingButton(
-                  const AssetImage('lib/Asset/Icons/zoomout.png'),
-                  onTap: controller.zoomOut,
+                  'lib/Asset/Icons/zoomout.png',
+                  onTap: () {},
                 ),
               ],
             ),
@@ -141,36 +133,32 @@ class LocationView extends GetView<LocationController> {
     );
   }
 
-  Widget _buildFloatingButton(
-    AssetImage image, {
-    required VoidCallback onTap,
-    bool isLarge = false,
-  }) {
+  Widget _buildFloatingButton(String iconPath, {required VoidCallback onTap}) {
     return Container(
-      width: isLarge ? 42.0 : 35.12,
-      height: isLarge ? 42.0 : 35.12,
+      width: 35,
+      height: 35,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.12),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           onTap: onTap,
           child: Center(
-            child: Image(
-              image: image,
-              color: Colors.black87,
-              width: isLarge ? 22 : 18,
-              height: isLarge ? 22 : 18,
+            child: Image.asset(
+              iconPath,
+              width: 20,
+              height: 20,
+              color: Colors.black,
             ),
           ),
         ),
@@ -183,10 +171,12 @@ class LocationView extends GetView<LocationController> {
       width: 40,
       height: 40,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.2),
+        color: Colors.black.withOpacity(0.25),
         shape: BoxShape.circle,
       ),
-      child: Center(child: Icon(icon, color: Colors.black, size: 30)),
+      child: Center(
+        child: Icon(icon, color: Colors.black.withOpacity(0.7), size: 32),
+      ),
     );
   }
 }

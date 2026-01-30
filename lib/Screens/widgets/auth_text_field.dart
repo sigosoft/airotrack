@@ -25,7 +25,9 @@ class AuthTextField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: AppStyles.inputWidth,
+          width: MediaQuery.of(context).size.width < AppStyles.inputWidth + 32
+              ? MediaQuery.of(context).size.width - 32
+              : AppStyles.inputWidth,
           height: AppStyles.inputHeight,
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(

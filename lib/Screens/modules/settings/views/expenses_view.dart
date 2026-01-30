@@ -1,4 +1,6 @@
+import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
+
 import 'package:get/get.dart';
 import '../../../routes/app_routes.dart';
 
@@ -99,9 +101,18 @@ class ExpensesView extends StatelessWidget {
                 Expanded(
                   child: ListView.builder(
                     itemCount: 4,
-                    itemBuilder: (context, index) => _buildExpenseTile(),
+                    itemBuilder: (context, index) => _buildExpenseTile(context),
                   ),
                 ),
+                // Pagination Widget
+                PaginationWidget(
+                  currentPage: 1,
+                  totalPages: 5,
+                  onPageChanged: (page) {
+                    // Handle page change
+                  },
+                ),
+                const SizedBox(height: 80), // Space for floating button
               ],
             ),
           ),
@@ -145,12 +156,12 @@ class ExpensesView extends StatelessWidget {
     );
   }
 
-  Widget _buildExpenseTile() {
+  Widget _buildExpenseTile(BuildContext context) {
+    double screenWidth = MediaQuery.of(context).size.width;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
-        width: 357.96,
-        height: 110, // Adjusted for content
+        width: screenWidth - 32,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,

@@ -1,4 +1,6 @@
+import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:airotrack/Screens/routes/app_routes.dart';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/notification_controller.dart';
@@ -135,9 +137,17 @@ class NotificationView extends GetView<NotificationController> {
               itemBuilder: (context, index) {
                 // Mock data types cycling
                 final type = index % 3; // 0: On, 1: Off, 2: Speed
-                return _buildNotificationCard(type);
+                return _buildNotificationCard(context, type);
               },
             ),
+          ),
+          // Pagination Widget
+          PaginationWidget(
+            currentPage: 1,
+            totalPages: 5,
+            onPageChanged: (page) {
+              // Handle page change
+            },
           ),
         ],
       ),
@@ -190,7 +200,8 @@ class NotificationView extends GetView<NotificationController> {
     );
   }
 
-  Widget _buildNotificationCard(int type) {
+  Widget _buildNotificationCard(BuildContext context, int type) {
+    double screenWidth = MediaQuery.of(context).size.width;
     Widget iconWidget;
     String statusText;
 
@@ -221,7 +232,7 @@ class NotificationView extends GetView<NotificationController> {
     }
 
     return Container(
-      width: 357,
+      width: screenWidth - 34,
       height: 68,
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(

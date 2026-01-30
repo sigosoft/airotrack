@@ -5,6 +5,7 @@ import '../../../widgets/custom_bottom_nav_bar.dart';
 import '../../dashboard/views/dashboard_view.dart';
 import '../../reports/views/reports_view.dart';
 import '../../settings/views/settings_view.dart';
+import '../../location/views/location_view.dart';
 
 import '../../../routes/app_routes.dart';
 
@@ -27,8 +28,7 @@ class HomeView extends GetView<HomeController> {
               case 1:
                 return _buildHome();
               case 2:
-                // return const LocationView();
-                return const Center(child: Text("Location Map is Disabled"));
+                return const LocationView();
               case 3:
                 return const ReportsView();
               case 4:
@@ -249,180 +249,183 @@ class HomeView extends GetView<HomeController> {
         ? const Color(0xFF00C853)
         : const Color(0xFFFF3D00);
 
-    return Container(
-      width: 358,
-      height: 165, // Fixed height to prevent layout errors
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          // Lock Icon Top Left
-          Positioned(
-            top: 0,
-            left: 0,
-            child: Icon(
-              vehicle.isLocked ? Icons.lock : Icons.lock_open,
-              color: const Color(0xFF00C853),
-              size: 18,
+    return GestureDetector(
+      onTap: () => Get.toNamed(Routes.TRACK),
+      child: Container(
+        width: 358,
+        height: 165, // Fixed height to prevent layout errors
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1A000000),
+              blurRadius: 10,
+              offset: Offset(0, 4),
             ),
-          ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Lock Icon Top Left
+            Positioned(
+              top: 0,
+              left: 0,
+              child: Icon(
+                vehicle.isLocked ? Icons.lock : Icons.lock_open,
+                color: const Color(0xFF00C853),
+                size: 18,
+              ),
+            ),
 
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Top Row: Car Image & Details
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Left Col: Image + Speed
-                  Expanded(
-                    flex: 4,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(height: 5),
-                        SizedBox(
-                          height: 50,
-                          child: Image.network(
-                            vehicle.imageUrl,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => Image.asset(
-                              'lib/Asset/Icons/Car.png',
-                              width: 50,
-                              height: 50,
-                              color: statusColor,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          vehicle.speed,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w400,
-                            fontFamily: 'Roboto Mono',
-                          ),
-                        ),
-                        const Text(
-                          "Kmph",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Right Col: Timeline Details
-                  Expanded(
-                    flex: 6,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Plate
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.directions_car_filled,
-                              size: 16,
-                              color: statusColor,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              vehicle.plateNumber,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Top Row: Car Image & Details
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Left Col: Image + Speed
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(height: 5),
+                          SizedBox(
+                            height: 50,
+                            child: Image.network(
+                              vehicle.imageUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => Image.asset(
+                                'lib/Asset/Icons/Car.png',
+                                width: 50,
+                                height: 50,
+                                color: statusColor,
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 5),
-
-                        // Timeline Items
-                        _buildTimelineItem(
-                          color: statusColor,
-                          icon: null,
-                          text:
-                              "${vehicle.status.toUpperCase()} since ${vehicle.statusDuration}",
-                          isFirst: true,
-                        ),
-                        _buildTimelineItem(
-                          color: Colors.transparent,
-                          icon: Icons.access_time,
-                          iconColor: statusColor,
-                          text: vehicle.lastUpdated,
-                        ),
-                        _buildTimelineItem(
-                          color: Colors.transparent,
-                          icon: Icons.location_on_outlined,
-                          iconColor: statusColor,
-                          text: vehicle.address,
-                          isLast: true,
-                        ),
-                      ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            vehicle.speed,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w400,
+                              fontFamily: 'Roboto Mono',
+                            ),
+                          ),
+                          const Text(
+                            "Kmph",
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
 
-              const SizedBox(height: 8),
+                    // Right Col: Timeline Details
+                    Expanded(
+                      flex: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Plate
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.directions_car_filled,
+                                size: 16,
+                                color: statusColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                vehicle.plateNumber,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
 
-              // Bottom Buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildSquareBtn(
-                    const AssetImage("lib/Asset/Icons/Mask.png"),
-                    isRunning ? Colors.blue : Colors.black,
-                    width: 16,
-                    height: 16,
-                  ),
-                  _buildSquareBtn(
-                    const AssetImage("lib/Asset/Icons/satellite.png"),
-                    Colors.green,
-                    width: 16,
-                    height: 16,
-                  ),
-                  _buildSquareBtn(
-                    const AssetImage("lib/Asset/Icons/power.png"),
-                    isRunning ? Colors.green : Colors.red,
-                    width: 16,
-                    height: 16,
-                  ),
-                  _buildSquareBtn(
-                    const AssetImage("lib/Asset/Icons/key.png"),
-                    isRunning ? Colors.green : Colors.red,
-                    width: 16,
-                    height: 16,
-                  ),
+                          // Timeline Items
+                          _buildTimelineItem(
+                            color: statusColor,
+                            icon: null,
+                            text:
+                                "${vehicle.status.toUpperCase()} since ${vehicle.statusDuration}",
+                            isFirst: true,
+                          ),
+                          _buildTimelineItem(
+                            color: Colors.transparent,
+                            icon: Icons.access_time,
+                            iconColor: statusColor,
+                            text: vehicle.lastUpdated,
+                          ),
+                          _buildTimelineItem(
+                            color: Colors.transparent,
+                            icon: Icons.location_on_outlined,
+                            iconColor: statusColor,
+                            text: vehicle.address,
+                            isLast: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
 
-                  const SizedBox(width: 10),
+                const SizedBox(height: 8),
 
-                  _buildInfoPill(Icons.speed, "${vehicle.distance} Km"),
-                  const SizedBox(width: 6),
-                  _buildInfoPill(
-                    Icons.calendar_today,
-                    "${vehicle.validityDays} Days",
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
+                // Bottom Buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildSquareBtn(
+                      const AssetImage("lib/Asset/Icons/Mask.png"),
+                      isRunning ? Colors.blue : Colors.black,
+                      width: 16,
+                      height: 16,
+                    ),
+                    _buildSquareBtn(
+                      const AssetImage("lib/Asset/Icons/satellite.png"),
+                      Colors.green,
+                      width: 16,
+                      height: 16,
+                    ),
+                    _buildSquareBtn(
+                      const AssetImage("lib/Asset/Icons/power.png"),
+                      isRunning ? Colors.green : Colors.red,
+                      width: 16,
+                      height: 16,
+                    ),
+                    _buildSquareBtn(
+                      const AssetImage("lib/Asset/Icons/key.png"),
+                      isRunning ? Colors.green : Colors.red,
+                      width: 16,
+                      height: 16,
+                    ),
+
+                    const SizedBox(width: 10),
+
+                    _buildInfoPill(Icons.speed, "${vehicle.distance} Km"),
+                    const SizedBox(width: 6),
+                    _buildInfoPill(
+                      Icons.calendar_today,
+                      "${vehicle.validityDays} Days",
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

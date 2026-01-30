@@ -1,4 +1,6 @@
+import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:airotrack/Screens/routes/app_routes.dart';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/reminders_controller.dart';
@@ -74,10 +76,19 @@ class RemindersView extends GetView<RemindersController> {
                     itemCount: 5,
                     padding: EdgeInsets.zero,
                     itemBuilder: (context, index) {
-                      return _buildReminderTile();
+                      return _buildReminderTile(context);
                     },
                   ),
                 ),
+                // Pagination Widget
+                PaginationWidget(
+                  currentPage: 1,
+                  totalPages: 5,
+                  onPageChanged: (page) {
+                    // Handle page change
+                  },
+                ),
+                const SizedBox(height: 80), // Space for FAB
               ],
             ),
           ),
@@ -115,9 +126,10 @@ class RemindersView extends GetView<RemindersController> {
     );
   }
 
-  Widget _buildReminderTile() {
+  Widget _buildReminderTile(BuildContext context) {
+    double screenWidth = MediaQuery.of(context).size.width;
     return Container(
-      width: 357,
+      width: screenWidth - 32,
       height: 64,
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 12),

@@ -294,6 +294,10 @@ class StatisticsView extends GetView<StatisticsController> {
       onTap: () {
         if (label == 'Alerts') {
           Get.toNamed(Routes.ALERTS);
+        } else if (label == 'History') {
+          Get.toNamed(Routes.HISTORY);
+        } else if (label == 'Track') {
+          Get.toNamed(Routes.TRACK);
         }
       },
       child: Column(

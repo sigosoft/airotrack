@@ -1,18 +1,18 @@
-import 'package:airotrack/Screens/modules/location/controllers/location_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../../../../widgets/map_widget.dart';
+import '../controllers/location_controller.dart';
 
 class LocationView extends GetView<LocationController> {
   const LocationView({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFFE0E0E0), // Neutral background
-      child: Stack(
+    return Scaffold(
+      body: Stack(
         children: [
-          // 1. Placeholder Background Map (Visual Mockup)
-          // (User requested to avoid real map, so we leave it as solid color/container)
+          // 1. Background Map
+          const MapWidget(),
 
           // 2. Top Left: Map Format Button
           Positioned(
@@ -96,10 +96,10 @@ class LocationView extends GetView<LocationController> {
                 const SizedBox(height: 8),
                 // Green Car Top View
                 Image.asset(
-                  'lib/Asset/Icons/Car.png',
+                  'lib/Asset/Images/Green right Car.png',
                   width: 55,
                   height: 55,
-                  color: const Color(0xFF00C853), // Green
+                  // color: const Color(0xFF00C853), // Green
                 ),
               ],
             ),

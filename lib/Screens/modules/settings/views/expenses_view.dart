@@ -1,10 +1,9 @@
-import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
-
 import 'package:get/get.dart';
 import '../../../routes/app_routes.dart';
+import '../controllers/settings_controller.dart';
 
-class ExpensesView extends StatelessWidget {
+class ExpensesView extends GetView<SettingsController> {
   const ExpensesView({Key? key}) : super(key: key);
 
   @override
@@ -99,18 +98,34 @@ class ExpensesView extends StatelessWidget {
                 const SizedBox(height: 25),
                 // Expense List
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: 4,
-                    itemBuilder: (context, index) => _buildExpenseTile(context),
+                  child: Obx(
+                    () => ListView.builder(
+                      controller: controller.expensesScrollController,
+                      itemCount:
+                          controller.expenses.length +
+                          (controller.isLoadingExpenses.value &&
+                                  controller.hasMoreExpenses.value
+                              ? 1
+                              : 0),
+                      itemBuilder: (context, index) {
+                        if (index < controller.expenses.length) {
+                          return _buildExpenseTile(context);
+                        } else {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF009FE3),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
                   ),
-                ),
-                // Pagination Widget
-                PaginationWidget(
-                  currentPage: 1,
-                  totalPages: 5,
-                  onPageChanged: (page) {
-                    // Handle page change
-                  },
                 ),
                 const SizedBox(height: 80), // Space for floating button
               ],

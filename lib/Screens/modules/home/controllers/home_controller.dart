@@ -28,8 +28,7 @@ class Vehicle {
     this.isAcOn = false,
     this.isGpsOn = true,
     this.isLocked = true,
-    this.imageUrl =
-        'https://png.pngtree.com/png-vector/20240705/ourmid/pngtree-red-luxury-sedan-car-isolated-on-transparent-background-png-image_13002627.png',
+    this.imageUrl = 'lib/Asset/Icons/Car.png',
   });
 }
 
@@ -66,8 +65,7 @@ class HomeController extends GetxController {
           validityDays: 596,
           isIgnitionOn: true,
           isAcOn: true,
-          imageUrl:
-              'https://png.pngtree.com/png-vector/20230906/ourmid/pngtree-green-generic-suv-car-side-view-png-image_9961294.png',
+          imageUrl: 'lib/Asset/Icons/Car.png',
         ),
         Vehicle(
           plateNumber: "KL 07 A 0518",
@@ -80,8 +78,7 @@ class HomeController extends GetxController {
           validityDays: 596,
           isIgnitionOn: false,
           isAcOn: false,
-          imageUrl:
-              'https://png.pngtree.com/png-vector/20240705/ourmid/pngtree-red-luxury-sedan-car-isolated-on-transparent-background-png-image_13002627.png',
+          imageUrl: 'lib/Asset/Icons/Car.png',
         ),
         Vehicle(
           plateNumber: "KL 07 A 0518",
@@ -94,8 +91,7 @@ class HomeController extends GetxController {
           validityDays: 596,
           isIgnitionOn: true,
           isAcOn: true,
-          imageUrl:
-              'https://png.pngtree.com/png-vector/20230906/ourmid/pngtree-green-generic-suv-car-side-view-png-image_9961294.png',
+          imageUrl: 'lib/Asset/Icons/Car.png',
         ),
         Vehicle(
           plateNumber: "KL 07 A 0518",

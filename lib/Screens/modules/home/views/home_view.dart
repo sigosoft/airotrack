@@ -169,7 +169,7 @@ class HomeView extends GetView<HomeController> {
               separatorBuilder: (_, __) => const SizedBox(height: 11),
               itemBuilder: (context, index) {
                 final vehicle = controller.vehicles[index];
-                return _buildVehicleCard(vehicle);
+                return _buildVehicleCard(context, vehicle);
               },
             );
           }),
@@ -243,14 +243,14 @@ class HomeView extends GetView<HomeController> {
     );
   }
 
-  Widget _buildVehicleCard(Vehicle vehicle) {
+  Widget _buildVehicleCard(BuildContext context, Vehicle vehicle) {
     final isRunning = vehicle.status == 'Running';
     final statusColor = isRunning
         ? const Color(0xFF00C853)
         : const Color(0xFFFF3D00);
 
     return GestureDetector(
-      onTap: () => Get.toNamed(Routes.TRACK),
+      onTap: () => _showVehicleDialog(context, vehicle),
       child: Container(
         width: 358,
         height: 165, // Fixed height to prevent layout errors
@@ -272,11 +272,14 @@ class HomeView extends GetView<HomeController> {
             Positioned(
               top: 0,
               left: 0,
-              child: Icon(
-                vehicle.isLocked ? Icons.lock : Icons.lock_open,
-                color: const Color(0xFF00C853),
-                size: 18,
-              ),
+              child: vehicle.isLocked
+                  ? Image.asset(
+                      'lib/Asset/Icons/Lock.png',
+                      width: 18,
+                      height: 18,
+                      color: const Color(0xFF00C853),
+                    )
+                  : const SizedBox.shrink(),
             ),
 
             Column(
@@ -296,15 +299,11 @@ class HomeView extends GetView<HomeController> {
                           const SizedBox(height: 5),
                           SizedBox(
                             height: 50,
-                            child: Image.network(
-                              vehicle.imageUrl,
+                            child: Image.asset(
+                              isRunning
+                                  ? 'lib/Asset/Images/Green right Car.png'
+                                  : 'lib/Asset/Images/Red right Car.png',
                               fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => Image.asset(
-                                'lib/Asset/Icons/Car.png',
-                                width: 50,
-                                height: 50,
-                                color: statusColor,
-                              ),
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -528,6 +527,136 @@ class HomeView extends GetView<HomeController> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showVehicleDialog(BuildContext context, Vehicle vehicle) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            width: 357,
+            height: 250,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDialogRow("Name:", vehicle.plateNumber),
+                const SizedBox(height: 8),
+                _buildDialogRow(
+                  "Status:",
+                  "${vehicle.status}  Since ${vehicle.statusDuration}",
+                ),
+                const SizedBox(height: 8),
+                _buildDialogRow("Device Time:", vehicle.lastUpdated),
+                const SizedBox(height: 8),
+                _buildDialogRow("Location:", vehicle.address),
+                const SizedBox(height: 8),
+                _buildDialogRow("Engine:", vehicle.isIgnitionOn ? "On" : "Off"),
+                const SizedBox(height: 8),
+                _buildDialogRow("Voltage:", "13.78 V"),
+                const Spacer(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Cancel Button
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 125,
+                        height: 35,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(7),
+                          border: Border.all(color: Colors.grey.shade200),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Text(
+                            "Cancel",
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Track Button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        Get.toNamed(Routes.TRACK);
+                      },
+                      child: Container(
+                        width: 125,
+                        height: 35,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF009FE3),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            "Track",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDialogRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+              color: Colors.black,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade800,
+              fontWeight: FontWeight.w400,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

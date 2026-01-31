@@ -1,9 +1,8 @@
-import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
-
 import 'package:get/get.dart';
+import '../controllers/reports_controller.dart';
 
-class DailyReportsView extends StatelessWidget {
+class DailyReportsView extends GetView<ReportsController> {
   const DailyReportsView({Key? key}) : super(key: key);
 
   @override
@@ -95,25 +94,39 @@ class DailyReportsView extends StatelessWidget {
           ),
           // List of Tiles
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.31,
-                vertical: 10,
+            child: Obx(
+              () => ListView.separated(
+                controller: controller.scrollController,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.31,
+                  vertical: 10,
+                ),
+                itemCount:
+                    controller.items.length +
+                    (controller.isLoading.value && controller.hasMore.value
+                        ? 1
+                        : 0),
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  if (index < controller.items.length) {
+                    return _buildDailyTile(context);
+                  } else {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFF009FE3),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                },
               ),
-              itemCount: 2,
-              separatorBuilder: (context, index) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                return _buildDailyTile(context);
-              },
             ),
-          ),
-          // Pagination Widget
-          PaginationWidget(
-            currentPage: 1,
-            totalPages: 5,
-            onPageChanged: (page) {
-              // Handle page change
-            },
           ),
         ],
       ),

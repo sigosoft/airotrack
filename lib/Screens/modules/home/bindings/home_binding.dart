@@ -3,6 +3,7 @@ import '../controllers/home_controller.dart';
 import '../../dashboard/controllers/dashboard_controller.dart';
 import '../../reports/controllers/reports_controller.dart';
 import '../../location/controllers/location_controller.dart';
+import '../../settings/controllers/settings_controller.dart';
 
 class HomeBinding extends Bindings {
   @override
@@ -11,5 +12,6 @@ class HomeBinding extends Bindings {
     Get.put(DashboardController());
     Get.put(ReportsController());
     Get.put(LocationController());
+    Get.put(SettingsController());
   }
 }

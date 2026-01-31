@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/track_controller.dart';
+import '../../../../widgets/map_widget.dart';
 import '../../../routes/app_routes.dart';
 
 class AddGeofenceView extends GetView<TrackController> {
@@ -12,39 +13,37 @@ class AddGeofenceView extends GetView<TrackController> {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // 1. Placeholder Map Background (Transparent/Light)
-          Container(
-            color: const Color(0xFFF9FAFB),
-            child: Stack(
-              children: [
-                // Top Left: Back Button
-                Positioned(
-                  top: 50,
-                  left: 16,
-                  child: GestureDetector(
-                    onTap: () => Get.back(),
-                    child: const Icon(
-                      Icons.arrow_back_ios_new,
-                      size: 24,
-                      color: Colors.black,
-                    ),
+          // 1. Map Background
+          const MapWidget(),
+          Stack(
+            children: [
+              // Top Left: Back Button
+              Positioned(
+                top: 50,
+                left: 16,
+                child: GestureDetector(
+                  onTap: () => Get.back(),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new,
+                    size: 24,
+                    color: Colors.black,
                   ),
                 ),
+              ),
 
-                // zoom controls
-                Positioned(
-                  top: 335.38,
-                  left: 347.38,
-                  child: Column(
-                    children: [
-                      _buildZoomBtn(Icons.add),
-                      const SizedBox(height: 7),
-                      _buildZoomBtn(Icons.remove),
-                    ],
-                  ),
+              // zoom controls
+              Positioned(
+                top: 335.38,
+                left: 347.38,
+                child: Column(
+                  children: [
+                    _buildZoomBtn(Icons.add),
+                    const SizedBox(height: 7),
+                    _buildZoomBtn(Icons.remove),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
 
           // 2. Form Content

@@ -34,4 +34,5 @@ abstract class Routes {
   static const TRACK = '/track';
   static const ADD_GEOFENCE = '/add-geofence';
   static const ADD_LOCATION_PICKER = '/add-location-picker';
+  static const HISTORY = '/history';
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'dart:math' as math;
+import '../../../../widgets/map_widget.dart';
 import '../controllers/track_controller.dart';
 import '../../../routes/app_routes.dart';
+import 'lock_command_view.dart';
 
 class TrackView extends GetView<TrackController> {
   const TrackView({Key? key}) : super(key: key);
@@ -13,149 +15,135 @@ class TrackView extends GetView<TrackController> {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // 1. Placeholder Map Background
+          // 1. Map Background
+          const MapWidget(),
           GestureDetector(
             onTap: () => controller.showBottomSheet.value = false,
-            child: Container(
-              color: const Color(0xFFF0F2F5),
-              child: Stack(
-                children: [
-                  // Top Left: Back Button
-                  Positioned(
-                    top: 45,
-                    left: 15,
-                    child: GestureDetector(
-                      onTap: () => Get.back(),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black12,
-                              blurRadius: 4,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back_ios_new,
-                          size: 18,
-                          color: Colors.black87,
+            child: Stack(
+              children: [
+                // Top Left: Back Button
+                Positioned(
+                  top: 45,
+                  left: 15,
+                  child: GestureDetector(
+                    onTap: () => Get.back(),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new,
+                      size: 22,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+
+                // Left Control Group
+                Positioned(
+                  top: 180,
+                  left: 15,
+                  child: Column(
+                    children: [
+                      _buildMapControl('lib/Asset/Icons/routes detail.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl(
+                        'lib/Asset/Icons/Focus.png',
+                        // null,
+                        // iconData: Icons.my_location,
+                        // color: Colors.black87,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildMapControl(
+                        'lib/Asset/Icons/Customer service.png',
+                        // null,
+                        // iconData: Icons.person_pin_circle_outlined,
+                        // color: Colors.black87,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/zoomin.png'),
+                    ],
+                  ),
+                ),
+
+                // Top Right: Control Group
+                Positioned(
+                  top: 45,
+                  right: 15,
+                  child: Column(
+                    children: [
+                      _buildMapControl('lib/Asset/Icons/map.png'),
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: () => Get.to(() => const LockCommandView()),
+                        child: _buildMapControl(
+                          'lib/Asset/Icons/Lock.png',
+                          // null,
+                          // iconData: Icons.lock_outline,
+                          // color: const Color(0xFF00C853),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      _buildMapControl(null, text: 'P', textColor: Colors.red),
+                      const SizedBox(height: 10),
+                      _buildMapControl(
+                        'lib/Asset/Icons/Video.png',
+                        // null,
+                        // iconData: Icons.videocam_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/profile.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/Locations.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/zoomin.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/zoomout.png'),
+                      // _buildAddRemoveControl(),
+                    ],
                   ),
+                ),
 
-                  // Left Control Group
-                  Positioned(
-                    top: 180,
-                    left: 15,
+                // Map Markers Placeholder
+                Center(
+                  child: GestureDetector(
+                    onTap: () => controller.toggleBottomSheet(),
+                    behavior: HitTestBehavior.opaque,
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildMapControl('lib/Asset/Icons/Route.png'),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          null,
-                          iconData: Icons.my_location,
-                          color: Colors.black87,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          null,
-                          iconData: Icons.person_pin_circle_outlined,
-                          color: Colors.black87,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          null,
-                          iconData: Icons.add,
-                          color: Colors.black87,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Top Right: Control Group
-                  Positioned(
-                    top: 45,
-                    right: 15,
-                    child: Column(
-                      children: [
-                        _buildMapControl('lib/Asset/Icons/Map type.png'),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          null,
-                          iconData: Icons.lock_outline,
-                          color: const Color(0xFF00C853),
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          null,
-                          text: 'P',
-                          textColor: Colors.red,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          null,
-                          iconData: Icons.videocam_outlined,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl(null, iconData: Icons.person_outline),
-                        const SizedBox(height: 10),
-                        _buildMapControl('lib/Asset/Icons/Zoom.png'),
-                        const SizedBox(height: 10),
-                        _buildAddRemoveControl(),
-                      ],
-                    ),
-                  ),
-
-                  // Map Markers Placeholder
-                  Center(
-                    child: GestureDetector(
-                      onTap: () => controller.toggleBottomSheet(),
-                      behavior: HitTestBehavior.opaque,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            // decoration: BoxDecoration(
-                            //   color: const Color(0xFF009FE3),
-                            //   borderRadius: BorderRadius.circular(20),
-                            //   boxShadow: const [
-                            //     BoxShadow(color: Colors.black12, blurRadius: 4),
-                            //   ],
-                            // ),
-                            // child: const Text(
-                            //   "1",
-                            //   style: TextStyle(
-                            //     color: Colors.white,
-                            //     fontWeight: FontWeight.bold,
-                            //   ),
-                            // ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
                           ),
-                          const SizedBox(height: 5),
-                          // Transform.rotate(
-                          // angle: -math.pi / 4,
-                          // child:
-                          Image.asset(
-                            'lib/Asset/Icons/Car.png',
-                            width: 60,
-                            height: 60,
-                            color: const Color(0xFF00C853),
-                          ),
+                          // decoration: BoxDecoration(
+                          //   color: const Color(0xFF009FE3),
+                          //   borderRadius: BorderRadius.circular(20),
+                          //   boxShadow: const [
+                          //     BoxShadow(color: Colors.black12, blurRadius: 4),
+                          //   ],
                           // ),
-                        ],
-                      ),
+                          // child: const Text(
+                          //   "1",
+                          //   style: TextStyle(
+                          //     color: Colors.white,
+                          //     fontWeight: FontWeight.bold,
+                          //   ),
+                          // ),
+                        ),
+                        const SizedBox(height: 5),
+                        // Transform.rotate(
+                        // angle: -math.pi / 4,
+                        // child:
+                        Image.asset(
+                          'lib/Asset/Images/Green Car.png',
+                          width: 60,
+                          height: 60,
+                          // color: const Color(0xFF00C853),
+                        ),
+                        // ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
 
@@ -181,8 +169,8 @@ class TrackView extends GetView<TrackController> {
     Color? textColor,
   }) {
     return Container(
-      width: 40,
-      height: 40,
+      width: 35,
+      height: 35,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
@@ -192,7 +180,7 @@ class TrackView extends GetView<TrackController> {
       ),
       child: Center(
         child: imagePath != null
-            ? Image.asset(imagePath, width: 24, height: 24)
+            ? Image.asset(imagePath, width: 20, height: 20)
             : text != null
             ? Text(
                 text,
@@ -207,37 +195,37 @@ class TrackView extends GetView<TrackController> {
     );
   }
 
-  Widget _buildAddRemoveControl() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
-        ],
-      ),
-      child: Column(
-        children: [
-          _buildControlPart(Icons.add),
-          Container(width: 25, height: 1, color: Colors.grey[200]),
-          _buildControlPart(Icons.remove),
-        ],
-      ),
-    );
-  }
+  // Widget _buildAddRemoveControl() {
+  //   return Container(
+  //     decoration: BoxDecoration(
+  //       color: Colors.white,
+  //       borderRadius: BorderRadius.circular(10),
+  //       boxShadow: const [
+  //         BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
+  //       ],
+  //     ),
+  //     child: Column(
+  //       children: [
+  //         _buildControlPart(Icons.add),
+  //         Container(width: 25, height: 1, color: Colors.grey[200]),
+  //         _buildControlPart(Icons.remove),
+  //       ],
+  //     ),
+  //   );
+  // }
 
-  Widget _buildControlPart(IconData icon) {
-    return SizedBox(
-      width: 40,
-      height: 40,
-      child: Icon(icon, color: Colors.black, size: 24),
-    );
-  }
+  // Widget _buildControlPart(IconData icon) {
+  //   return SizedBox(
+  //     width: 40,
+  //     height: 40,
+  //     child: Icon(icon, color: Colors.black, size: 24),
+  //   );
+  // }
 
   Widget _buildSpeedometerIndicator() {
     return Container(
       width: 140,
-      height: 140,
+      height: 130,
       decoration: const BoxDecoration(
         color: Colors.white,
         shape: BoxShape.circle,
@@ -248,7 +236,7 @@ class TrackView extends GetView<TrackController> {
         children: [
           CustomPaint(size: const Size(120, 120), painter: GaugePainter()),
           Positioned(
-            bottom: 25,
+            bottom: 20,
             child: Column(
               children: const [
                 Text(
@@ -388,13 +376,10 @@ class TrackView extends GetView<TrackController> {
                         width: 175,
                         height: 110,
                         alignment: Alignment.centerRight,
-                        child: Image.network(
-                          'https://png.pngtree.com/png-vector/20230210/ourmid/pngtree-green-car-top-view-png-image_6593570.png',
+                        child: Image.asset(
+                          'lib/Asset/Images/Green Car.png',
                           fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => Image.asset(
-                            'lib/Asset/Icons/Car.png',
-                            color: Colors.green,
-                          ),
+                          // color: Colors.green,
                         ),
                       ),
                     ],
@@ -1409,39 +1394,59 @@ class TrackView extends GetView<TrackController> {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _buildBottomNavItem("Track", 'lib/Asset/Icons/Location.png', true),
-          _buildBottomNavItem("History", 'lib/Asset/Icons/history.png', false),
-          _buildBottomNavItem("Alerts", 'lib/Asset/Icons/Bells.png', false),
+          _buildBottomNavItem(
+            "History",
+            'lib/Asset/Icons/history.png',
+            false,
+            onTap: () => Get.toNamed(Routes.HISTORY),
+          ),
+          _buildBottomNavItem(
+            "Alerts",
+            'lib/Asset/Icons/Bells.png',
+            false,
+            onTap: () => Get.toNamed(Routes.ALERTS),
+          ),
           _buildBottomNavItem(
             "Statistics",
             'lib/Asset/Icons/statistics.png',
             false,
+            onTap: () => Get.toNamed(Routes.STATISTICS),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBottomNavItem(String label, String iconPath, bool isSelected) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Image.asset(
-          iconPath,
-          width: 25,
-          height: 25,
-          color: isSelected ? const Color(0xFF009FE3) : Colors.black87,
-        ),
-        const SizedBox(height: 7),
-        Text(
-          label,
-          style: TextStyle(
+  Widget _buildBottomNavItem(
+    String label,
+    String iconPath,
+    bool isSelected, {
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Image.asset(
+            iconPath,
+            width: 25,
+            height: 25,
             color: isSelected ? const Color(0xFF009FE3) : Colors.black87,
-            fontSize: 13,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
-        ),
-      ],
+          const SizedBox(height: 7),
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? const Color(0xFF009FE3) : Colors.black87,
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

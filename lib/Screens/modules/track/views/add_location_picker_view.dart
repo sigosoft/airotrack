@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/track_controller.dart';
+import '../../../../widgets/map_widget.dart';
 
 class AddLocationPickerView extends GetView<TrackController> {
   const AddLocationPickerView({Key? key}) : super(key: key);
@@ -11,88 +12,85 @@ class AddLocationPickerView extends GetView<TrackController> {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // 1. Placeholder Map Background (Full Screen)
-          Container(
-            color: const Color(0xFFE9E9E9),
-            // Simulated map content for context
-            child: Stack(
-              children: [
-                // Top Left: Back Button
-                Positioned(
-                  top: 50,
-                  left: 16,
-                  child: GestureDetector(
-                    onTap: () => Get.back(),
-                    child: const Icon(
-                      Icons.arrow_back_ios_new,
-                      size: 24,
-                      color: Colors.black,
-                    ),
+          // 1. Map Background
+          const MapWidget(),
+          Stack(
+            children: [
+              // Top Left: Back Button
+              Positioned(
+                top: 50,
+                left: 16,
+                child: GestureDetector(
+                  onTap: () => Get.back(),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new,
+                    size: 24,
+                    color: Colors.black,
                   ),
                 ),
-                // Search Bar
-                Positioned(
-                  top: 90,
-                  left: 16,
-                  right: 16,
-                  child: Container(
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(15),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 4,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 20),
-                        const Expanded(
-                          child: TextField(
-                            decoration: InputDecoration(
-                              hintText: "Search Location",
-                              hintStyle: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey,
-                              ),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(right: 20),
-                          child: Icon(
-                            Icons.search,
-                            color: Colors.grey.shade400,
-                            size: 24,
-                          ),
-                        ),
-                      ],
-                    ),
+              ),
+              // Search Bar
+              Positioned(
+                top: 90,
+                left: 16,
+                right: 16,
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ),
-                // Center Pin (Simulated)
-                const Center(
-                  child: Icon(Icons.location_on, color: Colors.red, size: 40),
-                ),
-                // Zoom Controls (Visual only based on previous screens)
-                Positioned(
-                  top: 400, // Adjusted
-                  right: 16,
-                  child: Column(
+                  child: Row(
                     children: [
-                      _buildZoomBtn(Icons.add),
-                      const SizedBox(height: 7),
-                      _buildZoomBtn(Icons.remove),
+                      const SizedBox(width: 20),
+                      const Expanded(
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText: "Search Location",
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 20),
+                        child: Icon(
+                          Icons.search,
+                          color: Colors.grey.shade400,
+                          size: 24,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              // Center Pin (Simulated)
+              const Center(
+                child: Icon(Icons.location_on, color: Colors.red, size: 40),
+              ),
+              // Zoom Controls (Visual only based on previous screens)
+              Positioned(
+                top: 400, // Adjusted
+                right: 16,
+                child: Column(
+                  children: [
+                    _buildZoomBtn(Icons.add),
+                    const SizedBox(height: 7),
+                    _buildZoomBtn(Icons.remove),
+                  ],
+                ),
+              ),
+            ],
           ),
 
           // 2. Bottom Sheet Container

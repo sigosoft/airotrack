@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../controllers/settings_controller.dart';
 import '../../../routes/app_routes.dart';
 
-class SettingsView extends StatelessWidget {
+class SettingsView extends GetView<SettingsController> {
   const SettingsView({Key? key}) : super(key: key);
 
   @override
@@ -165,7 +166,7 @@ class SettingsView extends StatelessWidget {
                 width: 284,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: () {},
+                  onPressed: () => controller.signOut(),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009FE3),
                     shape: RoundedRectangleBorder(

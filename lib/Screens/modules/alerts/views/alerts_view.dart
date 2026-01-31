@@ -1,4 +1,3 @@
-import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
 
 import 'package:get/get.dart';
@@ -109,21 +108,34 @@ class AlertsView extends GetView<AlertsController> {
 
           // List of Alerts
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: 8,
-              itemBuilder: (context, index) {
-                return _buildAlertTile(context, index);
-              },
+            child: Obx(
+              () => ListView.builder(
+                controller: controller.scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount:
+                    controller.alerts.length +
+                    (controller.isLoading.value && controller.hasMore.value
+                        ? 1
+                        : 0),
+                itemBuilder: (context, index) {
+                  if (index < controller.alerts.length) {
+                    return _buildAlertTile(context, index);
+                  } else {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFF009FE3),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
             ),
-          ),
-          // Pagination Widget
-          PaginationWidget(
-            currentPage: 1,
-            totalPages: 5,
-            onPageChanged: (page) {
-              // Handle page change
-            },
           ),
         ],
       ),
@@ -238,8 +250,11 @@ class AlertsView extends GetView<AlertsController> {
       onTap: () {
         if (label == 'Statistics') {
           Get.toNamed(Routes.STATISTICS);
+        } else if (label == 'History') {
+          Get.toNamed(Routes.HISTORY);
+        } else if (label == 'Track') {
+          Get.toNamed(Routes.TRACK);
         }
-        // Add other nav logic here if needed
       },
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

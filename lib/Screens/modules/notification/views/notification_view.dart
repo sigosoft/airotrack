@@ -1,4 +1,3 @@
-import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:airotrack/Screens/routes/app_routes.dart';
 
 import 'package:flutter/material.dart';
@@ -127,27 +126,35 @@ class NotificationView extends GetView<NotificationController> {
           const SizedBox(height: 16), // Height to push list down
           // List
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.only(
-                left: 17,
-                right: 17,
-                top: 0,
-              ), // Left 17px as requested
-              itemCount: 10,
-              itemBuilder: (context, index) {
-                // Mock data types cycling
-                final type = index % 3; // 0: On, 1: Off, 2: Speed
-                return _buildNotificationCard(context, type);
-              },
+            child: Obx(
+              () => ListView.builder(
+                controller: controller.scrollController,
+                padding: const EdgeInsets.only(left: 17, right: 17, top: 0),
+                itemCount:
+                    controller.notifications.length +
+                    (controller.isLoading.value && controller.hasMore.value
+                        ? 1
+                        : 0),
+                itemBuilder: (context, index) {
+                  if (index < controller.notifications.length) {
+                    final type = index % 3; // 0: On, 1: Off, 2: Speed
+                    return _buildNotificationCard(context, type);
+                  } else {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFF009FE3),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
             ),
-          ),
-          // Pagination Widget
-          PaginationWidget(
-            currentPage: 1,
-            totalPages: 5,
-            onPageChanged: (page) {
-              // Handle page change
-            },
           ),
         ],
       ),

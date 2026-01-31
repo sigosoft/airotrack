@@ -37,6 +37,7 @@ import '../modules/reports/views/daily_reports_view.dart';
 import '../modules/reports/views/summary_reports_view.dart';
 import '../modules/reports/views/over_speed_reports_view.dart';
 import '../modules/reports/views/geofence_reports_view.dart';
+import '../modules/settings/bindings/settings_binding.dart';
 import '../modules/settings/views/edit_profile_view.dart';
 import '../modules/settings/views/raise_ticket_view.dart';
 import '../modules/settings/views/support_ticket_view.dart';
@@ -51,6 +52,8 @@ import '../modules/track/bindings/track_binding.dart';
 import '../modules/track/views/track_view.dart';
 import '../modules/track/views/add_geofence_view.dart';
 import '../modules/track/views/add_location_picker_view.dart';
+import '../modules/history/bindings/history_binding.dart';
+import '../modules/history/views/history_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -170,7 +173,11 @@ class AppPages {
     ),
     GetPage(name: Routes.EDIT_PROFILE, page: () => EditProfileView()),
     GetPage(name: Routes.RAISE_TICKET, page: () => const RaiseTicketView()),
-    GetPage(name: Routes.SUPPORT_TICKET, page: () => const SupportTicketView()),
+    GetPage(
+      name: Routes.SUPPORT_TICKET,
+      page: () => const SupportTicketView(),
+      binding: SettingsBinding(),
+    ),
     GetPage(
       name: Routes.CHANGE_PASSWORD,
       page: () => const ChangePasswordView(),
@@ -179,7 +186,11 @@ class AppPages {
       name: Routes.CONFIGURE_ALERTS,
       page: () => const ConfigureAlertsView(),
     ),
-    GetPage(name: Routes.EXPENSES, page: () => const ExpensesView()),
+    GetPage(
+      name: Routes.EXPENSES,
+      page: () => const ExpensesView(),
+      binding: SettingsBinding(),
+    ),
     GetPage(name: Routes.ADD_EXPENSE, page: () => const AddExpenseView()),
     GetPage(
       name: Routes.GENERAL_SETTINGS,
@@ -201,6 +212,11 @@ class AppPages {
       name: Routes.ADD_LOCATION_PICKER,
       page: () => const AddLocationPickerView(),
       binding: TrackBinding(),
+    ),
+    GetPage(
+      name: Routes.HISTORY,
+      page: () => const HistoryView(),
+      binding: HistoryBinding(),
     ),
   ];
 }

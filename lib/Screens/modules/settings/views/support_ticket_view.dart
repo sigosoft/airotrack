@@ -1,9 +1,8 @@
-import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:flutter/material.dart';
-
 import 'package:get/get.dart';
+import '../controllers/settings_controller.dart';
 
-class SupportTicketView extends StatelessWidget {
+class SupportTicketView extends GetView<SettingsController> {
   const SupportTicketView({Key? key}) : super(key: key);
 
   @override
@@ -82,23 +81,37 @@ class SupportTicketView extends StatelessWidget {
                 const SizedBox(height: 25),
                 // Ticket Tiles List
                 Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.only(top: 0),
-                    itemCount: 4,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      return _buildTicketTile(context);
-                    },
+                  child: Obx(
+                    () => ListView.separated(
+                      padding: const EdgeInsets.only(top: 0),
+                      controller: controller.supportTicketsScrollController,
+                      itemCount:
+                          controller.supportTickets.length +
+                          (controller.isLoadingSupportTickets.value &&
+                                  controller.hasMoreSupportTickets.value
+                              ? 1
+                              : 0),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        if (index < controller.supportTickets.length) {
+                          return _buildTicketTile(context);
+                        } else {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF009FE3),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
                   ),
-                ),
-                // Pagination Widget
-                PaginationWidget(
-                  currentPage: 1,
-                  totalPages: 5,
-                  onPageChanged: (page) {
-                    // Handle page change
-                  },
                 ),
                 const SizedBox(height: 100), // Space for floating buttons
               ],

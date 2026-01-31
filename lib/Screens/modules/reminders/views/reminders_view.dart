@@ -1,4 +1,3 @@
-import 'package:airotrack/Screens/widgets/pagination_widget.dart';
 import 'package:airotrack/Screens/routes/app_routes.dart';
 
 import 'package:flutter/material.dart';
@@ -72,23 +71,36 @@ class RemindersView extends GetView<RemindersController> {
 
                 // List of Reminders
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: 5,
-                    padding: EdgeInsets.zero,
-                    itemBuilder: (context, index) {
-                      return _buildReminderTile(context);
-                    },
+                  child: Obx(
+                    () => ListView.builder(
+                      controller: controller.scrollController,
+                      itemCount:
+                          controller.reminders.length +
+                          (controller.isLoading.value &&
+                                  controller.hasMore.value
+                              ? 1
+                              : 0),
+                      padding: EdgeInsets.zero,
+                      itemBuilder: (context, index) {
+                        if (index < controller.reminders.length) {
+                          return _buildReminderTile(context);
+                        } else {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF009FE3),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
                   ),
                 ),
-                // Pagination Widget
-                PaginationWidget(
-                  currentPage: 1,
-                  totalPages: 5,
-                  onPageChanged: (page) {
-                    // Handle page change
-                  },
-                ),
-                const SizedBox(height: 80), // Space for FAB
               ],
             ),
           ),

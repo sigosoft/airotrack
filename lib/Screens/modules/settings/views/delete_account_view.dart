@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../routes/app_routes.dart';
+import '../controllers/delete_account_controller.dart';
 
-class DeleteAccountView extends StatelessWidget {
+class DeleteAccountView extends GetView<DeleteAccountController> {
   const DeleteAccountView({Key? key}) : super(key: key);
 
   @override
@@ -13,7 +14,7 @@ class DeleteAccountView extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 20),
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.blue, size: 20),
           onPressed: () => Get.back(),
         ),
         title: const Text(
@@ -45,9 +46,21 @@ class DeleteAccountView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20), // Top 184 approx
-            _buildTextField('Enter your Phone number'),
+            _buildTextField(
+              'Enter your Phone number',
+              controller.phoneController,
+              false,
+              null,
+              controller.phoneError,
+            ),
             const SizedBox(height: 15),
-            _buildTextField('Enter your password'),
+            _buildTextField(
+              'Enter your password',
+              controller.passwordController,
+              true,
+              controller.toggleObscure,
+              controller.passwordError,
+            ),
             const SizedBox(height: 40),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -77,7 +90,11 @@ class DeleteAccountView extends StatelessWidget {
                   width: 165,
                   height: 45,
                   child: ElevatedButton(
-                    onPressed: () => _showDeleteDialog(context),
+                    onPressed: () {
+                      if (controller.validate()) {
+                        _showDeleteDialog(context);
+                      }
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFFF5E5E),
                       shape: RoundedRectangleBorder(
@@ -103,23 +120,84 @@ class DeleteAccountView extends StatelessWidget {
     );
   }
 
-  Widget _buildTextField(String hint) {
-    return Container(
-      width: 358,
-      height: 50,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: TextField(
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
-          border: InputBorder.none,
+  Widget _buildTextField(
+    String hint,
+    TextEditingController fieldController,
+    bool isPassword,
+    VoidCallback? onToggle,
+    RxString errorText,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 358,
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: isPassword
+                    ? Obx(
+                        () => TextField(
+                          controller: fieldController,
+                          obscureText: controller.obscurePassword.value,
+                          decoration: InputDecoration(
+                            hintText: hint,
+                            hintStyle: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 13,
+                            ),
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      )
+                    : TextField(
+                        controller: fieldController,
+                        decoration: InputDecoration(
+                          hintText: hint,
+                          hintStyle: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 13,
+                          ),
+                          border: InputBorder.none,
+                        ),
+                        keyboardType: TextInputType.phone,
+                      ),
+              ),
+              if (isPassword)
+                GestureDetector(
+                  onTap: onToggle,
+                  child: Obx(
+                    () => Icon(
+                      controller.obscurePassword.value
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: Colors.grey.shade400,
+                      size: 20,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
+        Obx(
+          () => errorText.value.isNotEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 4),
+                  child: Text(
+                    errorText.value,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 

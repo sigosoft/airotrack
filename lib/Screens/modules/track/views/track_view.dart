@@ -26,7 +26,7 @@ class TrackView extends GetView<TrackController> {
                   top: 45,
                   left: 15,
                   child: GestureDetector(
-                    onTap: () => Get.back(),
+                    onTap: () => Get.toNamed(Routes.HOME),
                     child: const Icon(
                       Icons.arrow_back_ios_new,
                       size: 22,
@@ -1393,7 +1393,12 @@ class TrackView extends GetView<TrackController> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildBottomNavItem("Track", 'lib/Asset/Icons/Location.png', true),
+          _buildBottomNavItem(
+            "Track",
+            'lib/Asset/Icons/Location.png',
+            true,
+            onTap: () => Get.toNamed(Routes.HOME),
+          ),
           _buildBottomNavItem(
             "History",
             'lib/Asset/Icons/history.png',

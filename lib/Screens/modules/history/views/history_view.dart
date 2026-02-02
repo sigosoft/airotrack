@@ -55,7 +55,7 @@ class HistoryView extends GetView<HistoryController> {
         elevation: 1,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 22),
-          onPressed: () => Get.back(),
+          onPressed: () => Get.toNamed(Routes.TRACK),
         ),
         title: Obx(
           () => Text(

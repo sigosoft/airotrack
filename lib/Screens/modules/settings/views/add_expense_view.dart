@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../../routes/app_routes.dart';
+import '../controllers/add_expense_controller.dart';
 
-class AddExpenseView extends StatelessWidget {
+class AddExpenseView extends GetView<AddExpenseController> {
   const AddExpenseView({Key? key}) : super(key: key);
 
   @override
@@ -35,7 +35,25 @@ class AddExpenseView extends StatelessWidget {
               const SizedBox(height: 10),
               _buildLabel('Select Vehicle'),
               const SizedBox(height: 9),
-              _buildDropdownField('Select Vehicle'),
+              _buildDropdownField(
+                'Select Vehicle',
+                controller.selectedVehicle,
+                () => controller.selectedVehicle.value = 'KL 07 D 0518',
+              ),
+              Obx(
+                () => controller.vehicleError.value.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          controller.vehicleError.value,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
 
               const SizedBox(height: 15),
               _buildLabel('Date'),
@@ -45,22 +63,86 @@ class AddExpenseView extends StatelessWidget {
               const SizedBox(height: 15),
               _buildLabel('Expense Type'),
               const SizedBox(height: 9),
-              _buildDropdownField('Select Expense Type'),
+              _buildDropdownField(
+                'Select Expense Type',
+                controller.selectedExpenseType,
+                () => controller.selectedExpenseType.value = 'Fuel',
+              ),
+              Obx(
+                () => controller.typeError.value.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          controller.typeError.value,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
 
               const SizedBox(height: 15),
               _buildLabel('Quantity'),
               const SizedBox(height: 9),
-              _buildTextField('Enter Quantity'),
+              _buildTextField('Enter Quantity', controller.quantityController),
+              Obx(
+                () => controller.quantityError.value.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          controller.quantityError.value,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
 
               const SizedBox(height: 15),
               _buildLabel('Amount'),
               const SizedBox(height: 9),
-              _buildTextField('Enter Amount'),
+              _buildTextField('Enter Amount', controller.amountController),
+              Obx(
+                () => controller.amountError.value.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          controller.amountError.value,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
 
               const SizedBox(height: 15),
               _buildLabel('Payment Method'),
               const SizedBox(height: 9),
-              _buildDropdownField('Select Payment Method'),
+              _buildDropdownField(
+                'Select Payment Method',
+                controller.selectedPaymentMethod,
+                () => controller.selectedPaymentMethod.value = 'Cash',
+              ),
+              Obx(
+                () => controller.methodError.value.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          controller.methodError.value,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
 
               const SizedBox(height: 15),
               _buildLabel('Expense Description'),
@@ -74,9 +156,10 @@ class AddExpenseView extends StatelessWidget {
                   borderRadius: BorderRadius.circular(7),
                   border: Border.all(color: Colors.grey.shade300),
                 ),
-                child: const TextField(
+                child: TextField(
+                  controller: controller.descriptionController,
                   maxLines: 4,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'Enter Description',
                     hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
                     border: InputBorder.none,
@@ -119,11 +202,7 @@ class AddExpenseView extends StatelessWidget {
                 width: 360,
                 height: 45,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Get.offAllNamed(
-                      Routes.HOME,
-                    ); // Navigating to home/settings as requested
-                  },
+                  onPressed: controller.submitExpense,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009FE3),
                     shape: RoundedRectangleBorder(
@@ -160,27 +239,44 @@ class AddExpenseView extends StatelessWidget {
     );
   }
 
-  Widget _buildDropdownField(String hint) {
-    return Container(
-      width: 358,
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(hint, style: const TextStyle(color: Colors.grey, fontSize: 13)),
-          Image.asset(
-            'lib/Asset/Icons/Down arrow.png',
-            width: 15,
-            height: 10,
-            color: Colors.blue.shade700,
-          ),
-        ],
+  Widget _buildDropdownField(
+    String hint,
+    RxString selectedValue,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 358,
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Obx(
+              () => Text(
+                selectedValue.value.isEmpty ? hint : selectedValue.value,
+                style: TextStyle(
+                  color: selectedValue.value.isEmpty
+                      ? Colors.grey
+                      : Colors.black,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            Image.asset(
+              'lib/Asset/Icons/Down arrow.png',
+              width: 15,
+              height: 10,
+              color: Colors.blue.shade700,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -205,7 +301,7 @@ class AddExpenseView extends StatelessWidget {
     );
   }
 
-  Widget _buildTextField(String hint) {
+  Widget _buildTextField(String hint, TextEditingController fieldController) {
     return Container(
       width: 358,
       height: 40,
@@ -216,6 +312,7 @@ class AddExpenseView extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade300),
       ),
       child: TextField(
+        controller: fieldController,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
@@ -223,6 +320,7 @@ class AddExpenseView extends StatelessWidget {
           contentPadding: const EdgeInsets.only(bottom: 12),
         ),
         style: const TextStyle(fontSize: 14),
+        keyboardType: TextInputType.number,
       ),
     );
   }

@@ -38,6 +38,12 @@ import '../modules/reports/views/summary_reports_view.dart';
 import '../modules/reports/views/over_speed_reports_view.dart';
 import '../modules/reports/views/geofence_reports_view.dart';
 import '../modules/settings/bindings/settings_binding.dart';
+import '../modules/settings/bindings/edit_profile_binding.dart';
+import '../modules/settings/bindings/raise_ticket_binding.dart';
+import '../modules/settings/bindings/add_expense_binding.dart';
+import '../modules/settings/bindings/change_password_binding.dart';
+import '../modules/settings/bindings/delete_account_binding.dart';
+import '../modules/settings/bindings/general_settings_binding.dart';
 import '../modules/settings/views/edit_profile_view.dart';
 import '../modules/settings/views/raise_ticket_view.dart';
 import '../modules/settings/views/support_ticket_view.dart';
@@ -171,8 +177,16 @@ class AppPages {
       page: () => const GeofenceReportsView(),
       binding: ReportsBinding(),
     ),
-    GetPage(name: Routes.EDIT_PROFILE, page: () => EditProfileView()),
-    GetPage(name: Routes.RAISE_TICKET, page: () => const RaiseTicketView()),
+    GetPage(
+      name: Routes.EDIT_PROFILE,
+      page: () => const EditProfileView(),
+      binding: EditProfileBinding(),
+    ),
+    GetPage(
+      name: Routes.RAISE_TICKET,
+      page: () => const RaiseTicketView(),
+      binding: RaiseTicketBinding(),
+    ),
     GetPage(
       name: Routes.SUPPORT_TICKET,
       page: () => const SupportTicketView(),
@@ -181,6 +195,7 @@ class AppPages {
     GetPage(
       name: Routes.CHANGE_PASSWORD,
       page: () => const ChangePasswordView(),
+      binding: ChangePasswordBinding(),
     ),
     GetPage(
       name: Routes.CONFIGURE_ALERTS,
@@ -191,12 +206,21 @@ class AppPages {
       page: () => const ExpensesView(),
       binding: SettingsBinding(),
     ),
-    GetPage(name: Routes.ADD_EXPENSE, page: () => const AddExpenseView()),
+    GetPage(
+      name: Routes.ADD_EXPENSE,
+      page: () => const AddExpenseView(),
+      binding: AddExpenseBinding(),
+    ),
     GetPage(
       name: Routes.GENERAL_SETTINGS,
       page: () => const GeneralSettingsView(),
+      binding: GeneralSettingsBinding(),
     ),
-    GetPage(name: Routes.DELETE_ACCOUNT, page: () => const DeleteAccountView()),
+    GetPage(
+      name: Routes.DELETE_ACCOUNT,
+      page: () => const DeleteAccountView(),
+      binding: DeleteAccountBinding(),
+    ),
     GetPage(name: Routes.DELETE_SUCCESS, page: () => const DeleteSuccessView()),
     GetPage(
       name: Routes.TRACK,

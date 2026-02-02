@@ -87,8 +87,9 @@ class AddGeofenceView extends GetView<TrackController> {
                         borderRadius: BorderRadius.circular(7),
                         border: Border.all(color: Colors.grey.shade300),
                       ),
-                      child: const TextField(
-                        decoration: InputDecoration(
+                      child: TextField(
+                        controller: controller.fenceNameController,
+                        decoration: const InputDecoration(
                           hintText: "Enter Fence Name",
                           hintStyle: TextStyle(
                             fontSize: 13,
@@ -101,6 +102,20 @@ class AddGeofenceView extends GetView<TrackController> {
                           ),
                         ),
                       ),
+                    ),
+                    Obx(
+                      () => controller.fenceNameError.value.isNotEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 4, left: 4),
+                              child: Text(
+                                controller.fenceNameError.value,
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                     const SizedBox(height: 20),
                     Row(
@@ -164,8 +179,12 @@ class AddGeofenceView extends GetView<TrackController> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _buildActionBtn("Cancel", false),
-                        _buildActionBtn("Submit", true),
+                        _buildActionBtn("Cancel", false, () => Get.back()),
+                        _buildActionBtn(
+                          "Submit",
+                          true,
+                          () => controller.submitFence(),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 30),
@@ -228,9 +247,9 @@ class AddGeofenceView extends GetView<TrackController> {
     );
   }
 
-  Widget _buildActionBtn(String label, bool isPrimary) {
+  Widget _buildActionBtn(String label, bool isPrimary, VoidCallback onTap) {
     return GestureDetector(
-      onTap: () => Get.back(),
+      onTap: onTap,
       child: Container(
         width: 168,
         height: 45,

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../controllers/general_settings_controller.dart';
 
-class GeneralSettingsView extends StatelessWidget {
+class GeneralSettingsView extends GetView<GeneralSettingsController> {
   const GeneralSettingsView({Key? key}) : super(key: key);
 
   @override
@@ -43,40 +44,55 @@ class GeneralSettingsView extends StatelessWidget {
                 trailing: _buildToggle(true),
               ),
               const SizedBox(height: 10),
-              _buildSettingItem(
-                iconPath: 'lib/Asset/Icons/Vehicle size.png',
-                label: 'Vehicle Icon Size',
-                trailing: _buildDropdownArrow(),
+              // Vehicle Icon Size Expandable
+              Obx(
+                () => Column(
+                  children: [
+                    GestureDetector(
+                      onTap: () => controller.toggleVehicleIconSize(),
+                      child: _buildSettingItem(
+                        iconPath: 'lib/Asset/Icons/Vehicle size.png',
+                        label: 'Vehicle Icon Size',
+                        trailing: _buildDropdownArrow(
+                          isExpanded:
+                              controller.isVehicleIconSizeExpanded.value,
+                        ),
+                      ),
+                    ),
+                    if (controller.isVehicleIconSizeExpanded.value)
+                      _buildVehicleIconSizeOptions(),
+                  ],
+                ),
               ),
               const SizedBox(height: 10),
               _buildSettingItem(
                 iconPath: 'lib/Asset/Icons/Time Format.png',
                 label: 'Time Format',
-                trailing: _buildDropdownArrow(),
+                trailing: _buildDropdownArrow(isExpanded: false),
               ),
               const SizedBox(height: 10),
               _buildSettingItem(
                 iconPath: 'lib/Asset/Icons/Speedometer.png',
                 label: 'Speedometer',
-                trailing: _buildDropdownArrow(),
+                trailing: _buildDropdownArrow(isExpanded: false),
               ),
               const SizedBox(height: 10),
               _buildSettingItem(
                 iconPath: 'lib/Asset/Icons/Map type.png',
                 label: 'Map Type',
-                trailing: _buildDropdownArrow(),
+                trailing: _buildDropdownArrow(isExpanded: false),
               ),
               const SizedBox(height: 10),
               _buildSettingItem(
                 iconPath: 'lib/Asset/Icons/Top speed.png',
                 label: 'Speed',
-                trailing: _buildDropdownArrow(),
+                trailing: _buildDropdownArrow(isExpanded: false),
               ),
               const SizedBox(height: 10),
               _buildSettingItem(
                 iconPath: 'lib/Asset/Icons/Distance map.png',
                 label: 'Distance',
-                trailing: _buildDropdownArrow(),
+                trailing: _buildDropdownArrow(isExpanded: false),
               ),
               const SizedBox(height: 20),
             ],
@@ -134,12 +150,98 @@ class GeneralSettingsView extends StatelessWidget {
     return SwipeToggle(initialValue: initialValue);
   }
 
-  Widget _buildDropdownArrow() {
-    return Image.asset(
-      'lib/Asset/Icons/Down arrow.png',
-      width: 19,
-      height: 13,
-      color: Colors.blue.shade700,
+  Widget _buildDropdownArrow({required bool isExpanded}) {
+    return Transform.rotate(
+      angle: isExpanded ? 3.14159 : 0,
+      child: Image.asset(
+        'lib/Asset/Icons/Down arrow.png',
+        width: 19,
+        height: 13,
+        color: Colors.blue.shade700,
+      ),
+    );
+  }
+
+  Widget _buildVehicleIconSizeOptions() {
+    return Container(
+      width: 358,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildSizeOption("Small"),
+          const SizedBox(height: 12),
+          _buildSizeOption("Medium"),
+          const SizedBox(height: 12),
+          _buildSizeOption("Large"),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSizeOption(String label) {
+    return Container(
+      width: 250,
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F8FA),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
+          Obx(() {
+            bool isSelected = controller.selectedSize.value == label;
+            return GestureDetector(
+              onTap: () => controller.selectSize(label),
+              child: Container(
+                width: 38,
+                height: 22,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 200),
+                  alignment: isSelected
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: const BoxDecoration(
+                      color: Colors.black,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 }

@@ -1,7 +1,8 @@
+import 'package:airotrack/Screens/modules/settings/controllers/edit_profile_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-class EditProfileView extends StatelessWidget {
+class EditProfileView extends GetView<EditProfileController> {
   const EditProfileView({Key? key}) : super(key: key);
 
   @override
@@ -58,60 +59,105 @@ class EditProfileView extends StatelessWidget {
                   const SizedBox(width: 16),
                   // Name Field
                   Expanded(
-                    child: Container(
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade200),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 5,
-                            offset: const Offset(0, 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade200),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 5,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          hintText: "John Doe",
-                          contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                          border: InputBorder.none,
+                          child: TextField(
+                            controller: controller.nameController,
+                            decoration: const InputDecoration(
+                              hintText: "John Doe",
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              border: InputBorder.none,
+                            ),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.black,
+                            ),
+                          ),
                         ),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.black,
+                        Obx(
+                          () => controller.nameError.value.isNotEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 4,
+                                    top: 4,
+                                  ),
+                                  child: Text(
+                                    controller.nameError.value,
+                                    style: const TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 30),
               // Phone Number Field
-              Container(
-                width: double.infinity,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade200),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 5,
-                      offset: const Offset(0, 2),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 5,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: TextField(
-                  decoration: const InputDecoration(
-                    hintText: "+91 91234 56789",
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                    border: InputBorder.none,
+                    child: TextField(
+                      controller: controller.phoneController,
+                      decoration: const InputDecoration(
+                        hintText: "+91 91234 56789",
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                        border: InputBorder.none,
+                      ),
+                      style: const TextStyle(fontSize: 14, color: Colors.black),
+                    ),
                   ),
-                  style: const TextStyle(fontSize: 14, color: Colors.black),
-                ),
+                  Obx(
+                    () => controller.phoneError.value.isNotEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.only(left: 4, top: 4),
+                            child: Text(
+                              controller.phoneError.value,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontSize: 12,
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
               ),
               const SizedBox(height: 330), // Spacing to match "top 607" approx
               // Save Button
@@ -119,7 +165,7 @@ class EditProfileView extends StatelessWidget {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: () => Get.back(),
+                  onPressed: controller.saveProfile,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009FE3),
                     shape: RoundedRectangleBorder(

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../routes/app_routes.dart';
+import '../controllers/raise_ticket_controller.dart';
 
-class RaiseTicketView extends StatelessWidget {
+class RaiseTicketView extends GetView<RaiseTicketController> {
   const RaiseTicketView({Key? key}) : super(key: key);
 
   @override
@@ -43,31 +44,59 @@ class RaiseTicketView extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 9),
-              Container(
-                width: 358,
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade300),
+              GestureDetector(
+                onTap: () {
+                  // Simulate vehicle selection
+                  controller.selectedVehicle.value = 'KL 07 D 0518';
+                },
+                child: Container(
+                  width: 358,
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Obx(
+                        () => Text(
+                          controller.selectedVehicle.value.isEmpty
+                              ? 'Select Vehicle'
+                              : controller.selectedVehicle.value,
+                          style: TextStyle(
+                            color: controller.selectedVehicle.value.isEmpty
+                                ? Colors.grey
+                                : Colors.black,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      Image.asset(
+                        'lib/Asset/Icons/Down arrow.png',
+                        width: 15,
+                        height: 10,
+                        color: Colors.blue.shade700,
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Select Vehicle',
-                      style: TextStyle(color: Colors.grey, fontSize: 13),
-                    ),
-                    Image.asset(
-                      'lib/Asset/Icons/Down arrow.png',
-                      width: 15,
-                      height: 10,
-                      color: Colors.blue.shade700,
-                    ),
-                    // Icon(Icons.arrow_drop_down, color: Colors.blue.shade700),
-                  ],
-                ),
+              ),
+              Obx(
+                () => controller.vehicleError.value.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          controller.vehicleError.value,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
               const SizedBox(height: 10),
               // Type Section
@@ -80,30 +109,59 @@ class RaiseTicketView extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 9),
-              Container(
-                width: 358,
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade300),
+              GestureDetector(
+                onTap: () {
+                  // Simulate type selection
+                  controller.selectedType.value = 'General Issue';
+                },
+                child: Container(
+                  width: 358,
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Obx(
+                        () => Text(
+                          controller.selectedType.value.isEmpty
+                              ? 'Select Ticket Type'
+                              : controller.selectedType.value,
+                          style: TextStyle(
+                            color: controller.selectedType.value.isEmpty
+                                ? Colors.grey
+                                : Colors.black,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      Image.asset(
+                        'lib/Asset/Icons/Down arrow.png',
+                        width: 15,
+                        height: 10,
+                        color: Colors.blue.shade700,
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Select Ticket Type',
-                      style: TextStyle(color: Colors.grey, fontSize: 13),
-                    ),
-                    Image.asset(
-                      'lib/Asset/Icons/Down arrow.png',
-                      width: 15,
-                      height: 10,
-                      color: Colors.blue.shade700,
-                    ),
-                  ],
-                ),
+              ),
+              Obx(
+                () => controller.typeError.value.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          controller.typeError.value,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
               const SizedBox(height: 10),
               // Message Section
@@ -125,9 +183,10 @@ class RaiseTicketView extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Colors.grey.shade300),
                 ),
-                child: const TextField(
+                child: TextField(
+                  controller: controller.messageController,
                   maxLines: 4,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'Describe the issue in detail',
                     hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
                     border: InputBorder.none,
@@ -135,6 +194,20 @@ class RaiseTicketView extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
+              ),
+              Obx(
+                () => controller.messageError.value.isNotEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          controller.messageError.value,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
               const SizedBox(height: 10),
               // Upload Image Section
@@ -177,9 +250,7 @@ class RaiseTicketView extends StatelessWidget {
                 width: 359.54,
                 height: 45,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Get.toNamed(Routes.SUPPORT_TICKET);
-                  },
+                  onPressed: controller.submitTicket,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009FE3),
                     shape: RoundedRectangleBorder(

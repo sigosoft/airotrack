@@ -24,7 +24,7 @@ class StatisticsView extends GetView<StatisticsController> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
-          onPressed: () => Get.back(),
+          onPressed: () => Get.toNamed(Routes.TRACK),
         ),
         actions: [
           Container(

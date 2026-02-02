@@ -105,8 +105,9 @@ class AddReminderView extends GetView<AddReminderController> {
                       ),
                     ],
                   ),
-                  child: const TextField(
-                    decoration: InputDecoration(
+                  child: TextField(
+                    controller: controller.odometerController,
+                    decoration: const InputDecoration(
                       hintText: "Enter Starting Odometer",
                       hintStyle: TextStyle(
                         color: Colors.grey,
@@ -115,11 +116,26 @@ class AddReminderView extends GetView<AddReminderController> {
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: 0,
+                        vertical: 12, // Adjusted for alignment
                       ), // Centered vertically in 40px
                     ),
-                    style: TextStyle(fontSize: 13),
+                    style: const TextStyle(fontSize: 13),
+                    keyboardType: TextInputType.number,
                   ),
+                ),
+                Obx(
+                  () => controller.odometerError.value.isNotEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 4, left: 4),
+                          child: Text(
+                            controller.odometerError.value,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
                 const SizedBox(height: 16),
 
@@ -148,18 +164,34 @@ class AddReminderView extends GetView<AddReminderController> {
                       ),
                     ],
                   ),
-                  child: const TextField(
-                    decoration: InputDecoration(
+                  child: TextField(
+                    controller: controller.periodController,
+                    decoration: const InputDecoration(
                       hintText: "Enter the Odometer Period for Alerts",
                       hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: 0,
+                        vertical: 12, // Adjusted for alignment
                       ),
                     ),
-                    style: TextStyle(fontSize: 13),
+                    style: const TextStyle(fontSize: 13),
+                    keyboardType: TextInputType.number,
                   ),
+                ),
+                Obx(
+                  () => controller.periodError.value.isNotEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 4, left: 4),
+                          child: Text(
+                            controller.periodError.value,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ],
             ),
@@ -170,20 +202,23 @@ class AddReminderView extends GetView<AddReminderController> {
             left: 16,
             bottom:
                 30, // Using bottom positioning for responsiveness, although user said top 680px. 680px is quite far down on typical screens. Safest to dock bottom or use high margin.
-            child: Container(
-              width: 358,
-              height: 45,
-              decoration: BoxDecoration(
-                color: const Color(0xFF009FE3),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                "Submit",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+            child: GestureDetector(
+              onTap: controller.submit,
+              child: Container(
+                width: 358,
+                height: 45,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF009FE3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  "Submit",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
               ),
             ),

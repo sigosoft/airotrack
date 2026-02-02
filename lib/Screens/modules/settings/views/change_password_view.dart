@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../controllers/change_password_controller.dart';
 
-class ChangePasswordView extends StatelessWidget {
+class ChangePasswordView extends GetView<ChangePasswordController> {
   const ChangePasswordView({Key? key}) : super(key: key);
 
   @override
@@ -31,17 +32,35 @@ class ChangePasswordView extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: 15),
-              _buildPasswordField('Current Password'),
+              _buildPasswordField(
+                'Current Password',
+                controller.oldPasswordController,
+                controller.obscureOld,
+                controller.toggleOld,
+                controller.oldPasswordError,
+              ),
               const SizedBox(height: 15),
-              _buildPasswordField('New Password'),
+              _buildPasswordField(
+                'New Password',
+                controller.newPasswordController,
+                controller.obscureNew,
+                controller.toggleNew,
+                controller.newPasswordError,
+              ),
               const SizedBox(height: 15),
-              _buildPasswordField('Confirm Password'),
+              _buildPasswordField(
+                'Confirm Password',
+                controller.confirmPasswordController,
+                controller.obscureConfirm,
+                controller.toggleConfirm,
+                controller.confirmPasswordError,
+              ),
               const SizedBox(height: 300), // Spacing to match "top 607" approx
               SizedBox(
                 width: 357,
                 height: 45,
                 child: ElevatedButton(
-                  onPressed: () => Get.back(),
+                  onPressed: controller.changePassword,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009FE3),
                     shape: RoundedRectangleBorder(
@@ -67,36 +86,72 @@ class ChangePasswordView extends StatelessWidget {
     );
   }
 
-  Widget _buildPasswordField(String hint) {
-    return Container(
-      width: 357,
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              obscureText: true,
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.only(bottom: 12),
+  Widget _buildPasswordField(
+    String hint,
+    TextEditingController fieldController,
+    RxBool obscureText,
+    VoidCallback onToggle,
+    RxString errorText,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 357,
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Obx(
+                  () => TextField(
+                    controller: fieldController,
+                    obscureText: obscureText.value,
+                    decoration: InputDecoration(
+                      hintText: hint,
+                      hintStyle: const TextStyle(
+                        color: Colors.grey,
+                        fontSize: 13,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.only(bottom: 12),
+                    ),
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
               ),
-            ),
+              GestureDetector(
+                onTap: onToggle,
+                child: Obx(
+                  () => Icon(
+                    obscureText.value
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: Colors.grey.shade400,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
           ),
-          Icon(
-            Icons.visibility_off_outlined,
-            color: Colors.grey.shade400,
-            size: 20,
-          ),
-        ],
-      ),
+        ),
+        Obx(
+          () => errorText.value.isNotEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 4),
+                  child: Text(
+                    errorText.value,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 }

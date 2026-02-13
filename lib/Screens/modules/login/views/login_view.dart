@@ -47,8 +47,8 @@ class LoginView extends GetView<LoginController> {
                     child: Obx(
                       () => AuthTextField(
                         controller: controller.phoneController,
-                        hint: 'Enter your phone number',
-                        keyboardType: TextInputType.phone,
+                        hint: 'Enter your phone number, email or username',
+                        keyboardType: TextInputType.emailAddress,
                         errorText: controller.phoneError.value,
                       ),
                     ),

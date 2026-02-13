@@ -1,7 +1,7 @@
 class ApiConfig {
   // This is the Test Server URL
   static String baseUrl =
-      "https://ourworks.co.in/saimpex-backend/public/api/customer/";
+      "https://dev-api.airotrack.in/airotrack-api/public/website/";
 
   // This is the base Image URL
   static String imageUrl =
@@ -9,5 +9,5 @@ class ApiConfig {
 }
 
 class ApiEndPoints {
-  static String splash = "login";
+  static String login = "login";
 }

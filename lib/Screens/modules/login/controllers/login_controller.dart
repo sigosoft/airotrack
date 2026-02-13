@@ -1,3 +1,6 @@
+import 'package:airotrack/Configs/ApiConfigs.dart';
+import 'package:airotrack/Configs/DioClient.dart';
+import 'package:airotrack/Utils/Utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -8,6 +11,7 @@ class LoginController extends GetxController {
   final passwordController = TextEditingController();
 
   var isPasswordVisible = false.obs;
+  var isLoading = false.obs;
 
   // Validation messages
   var phoneError = ''.obs;
@@ -17,19 +21,41 @@ class LoginController extends GetxController {
     isPasswordVisible.value = !isPasswordVisible.value;
   }
 
+  static final _emailRegex = RegExp(r'^[\w\.-]+@[\w\.-]+\.\w+$');
+
+  bool _isValidEmail(String value) => _emailRegex.hasMatch(value);
+
+  bool _isValidPhone(String value) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    return digits.length >= 10;
+  }
+
+  bool _isValidUsername(String value) {
+    return value.length >= 3;
+  }
+
   bool validate() {
     bool isValid = true;
-    if (phoneController.text.trim().isEmpty) {
-      phoneError.value = 'Phone number is required';
+    final username = phoneController.text.trim();
+    if (username.isEmpty) {
+      phoneError.value = 'Phone number, email or username is required';
       isValid = false;
-    } else if (phoneController.text.length < 10) {
-      phoneError.value = 'Please enter a valid phone number';
-      isValid = false;
-    } else {
+    } else if (username.contains('@')) {
+      if (!_isValidEmail(username)) {
+        phoneError.value = 'Please enter a valid email address';
+        isValid = false;
+      } else {
+        phoneError.value = '';
+      }
+    } else if (_isValidPhone(username)) {
       phoneError.value = '';
+    } else if (_isValidUsername(username)) {
+      phoneError.value = '';
+    } else {
+      phoneError.value =
+          'Please enter a valid phone number (10+ digits), email or username (3+ characters)';
+      isValid = false;
     }
-
-    // Password validation
     if (passwordController.text.trim().isEmpty) {
       passwordError.value = 'Password is required';
       isValid = false;
@@ -43,9 +69,27 @@ class LoginController extends GetxController {
     return isValid;
   }
 
-  void signIn() {
-    if (validate()) {
-      print('Sign in');
+  Future<void> signIn() async {
+    if (!validate()) return;
+    isLoading.value = true;
+    try {
+      final response = await DioClient().post(
+        ApiEndPoints.login,
+        body: {
+          'username': phoneController.text.trim(),
+          'password': passwordController.text.trim(),
+          'fcm': '',
+        },
+      );
+      isLoading.value = false;
+      if (response.data != null) {
+        debugPrint(response.data.toString());
+        savename('token', response.data['token']);
+        Get.offAllNamed(Routes.HOME);
+      }
+    } catch (e) {
+      isLoading.value = false;
+      Get.snackbar('Error', e.toString());
     }
   }
 

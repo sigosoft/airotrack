@@ -21,11 +21,8 @@ class LoginView extends GetView<LoginController> {
           child: SingleChildScrollView(
             child: Column(
               children: [
-                // Logo with standard reusable positioning
                 const AuthLogo(),
-
                 const SizedBox(height: 30),
-                // Welcome Text
                 const Text(
                   'Hello!',
                   style: TextStyle(
@@ -42,9 +39,7 @@ class LoginView extends GetView<LoginController> {
                     color: Colors.black.withOpacity(0.6),
                   ),
                 ),
-                const SizedBox(height: 50),
-
-                // Phone Number Field
+                const SizedBox(height: 50), 
                 Padding(
                   padding: const EdgeInsets.only(left: 16),
                   child: Align(
@@ -60,8 +55,6 @@ class LoginView extends GetView<LoginController> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // Password Field
                 Padding(
                   padding: const EdgeInsets.only(left: 16),
                   child: Align(
@@ -85,7 +78,6 @@ class LoginView extends GetView<LoginController> {
                     ),
                   ),
                 ),
-                // Forgot Password
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
                   child: Align(
@@ -104,7 +96,6 @@ class LoginView extends GetView<LoginController> {
                   ),
                 ),
                 const SizedBox(height: 30),
-                // Sign In Button
                 Padding(
                   padding: const EdgeInsets.only(left: 16),
                   child: Align(
@@ -140,7 +131,6 @@ class LoginView extends GetView<LoginController> {
                   ),
                 ),
                 const SizedBox(height: 40),
-                // Sign Up Link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

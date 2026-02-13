@@ -19,8 +19,6 @@ class LoginController extends GetxController {
 
   bool validate() {
     bool isValid = true;
-
-    // Phone validation
     if (phoneController.text.trim().isEmpty) {
       phoneError.value = 'Phone number is required';
       isValid = false;
@@ -45,56 +43,9 @@ class LoginController extends GetxController {
     return isValid;
   }
 
-  Future<void> signIn() async {
+  void signIn() {
     if (validate()) {
-      try {
-        // Ensure Hive is open
-        if (!Hive.isBoxOpen('userBox')) {
-          // Basic init if needed (though main should have done it)
-          try {
-            await Hive.initFlutter();
-          } catch (_) {}
-          await Hive.openBox('userBox');
-        }
-        var box = Hive.box('userBox');
-
-        String? storedPhone = box.get('phone');
-        String? storedPassword = box.get('password');
-
-        if (storedPhone != null &&
-            storedPhone == phoneController.text.trim() &&
-            storedPassword != null &&
-            storedPassword == passwordController.text.trim()) {
-          // Login Success
-          box.put('isLoggedIn', true);
-
-          Get.snackbar(
-            'Success',
-            'Logged in successfully',
-            snackPosition: SnackPosition.BOTTOM,
-            backgroundColor: Colors.green,
-            colorText: Colors.white,
-          );
-
-          Get.offAllNamed(Routes.HOME);
-        } else {
-          Get.snackbar(
-            'Error',
-            'Invalid phone number or password',
-            snackPosition: SnackPosition.BOTTOM,
-            backgroundColor: Colors.red,
-            colorText: Colors.white,
-          );
-        }
-      } catch (e) {
-        Get.snackbar(
-          'Error',
-          'Login failed: $e',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
-      }
+      print('Sign in');
     }
   }
 

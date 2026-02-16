@@ -129,27 +129,49 @@ class HomeView extends GetView<HomeController> {
         ),
         const SizedBox(height: 15.5),
         // 2. Status Filters
-        SizedBox(
-          height: 76,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(left: 15.61, right: 16),
-            children: [
-              _buildStatusCard("All Vehicles", "15", Colors.blue, true),
-              const SizedBox(width: 11),
-              _buildStatusCard("Running", "2", const Color(0xFF00C853), false),
-              const SizedBox(width: 11),
-              _buildStatusCard("Stopped", "11", const Color(0xFFFF3D00), false),
-              const SizedBox(width: 11),
-              _buildStatusCard("Idle", "2", const Color(0xFFFFD600), false),
-              const SizedBox(width: 11),
-              _buildStatusCard(
-                "Inactive",
-                "0",
-                const Color.fromARGB(255, 21, 107, 178),
-                false,
-              ),
-            ],
+        Obx(
+          () => SizedBox(
+            height: 76,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(left: 15.61, right: 16),
+              children: [
+                _buildStatusCard(
+                  "All Vehicles",
+                  controller.totalCount.value,
+                  Colors.blue,
+                  true,
+                ),
+                const SizedBox(width: 11),
+                _buildStatusCard(
+                  "Running",
+                  controller.runningCount.value,
+                  const Color(0xFF00C853),
+                  false,
+                ),
+                const SizedBox(width: 11),
+                _buildStatusCard(
+                  "Stopped",
+                  controller.stoppedCount.value,
+                  const Color(0xFFFF3D00),
+                  false,
+                ),
+                const SizedBox(width: 11),
+                _buildStatusCard(
+                  "Idle",
+                  controller.idleCount.value,
+                  const Color(0xFFFFD600),
+                  false,
+                ),
+                const SizedBox(width: 11),
+                _buildStatusCard(
+                  "Inactive",
+                  controller.inactiveCount.value,
+                  const Color.fromARGB(255, 21, 107, 178),
+                  false,
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 20),
@@ -342,11 +364,15 @@ class HomeView extends GetView<HomeController> {
                                 color: statusColor,
                               ),
                               const SizedBox(width: 8),
-                              Text(
-                                vehicle.plateNumber,
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
+                              Expanded(
+                                child: Text(
+                                  vehicle.plateNumber,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                               ),
                             ],

@@ -82,9 +82,18 @@ class LoginController extends GetxController {
         },
       );
       isLoading.value = false;
-      if (response.data != null) {
-        debugPrint(response.data.toString());
-        savename('token', response.data['token']);
+      if (response.data != null && response.data['data'] != null) {
+        final token = response.data['data']['details']['token'];
+        debugPrint(token);
+        savename('token', token);
+        DioClient().updateToken(token);
+
+        // Persist login status for Splash screen check
+        if (!Hive.isBoxOpen('userBox')) {
+          await Hive.openBox('userBox');
+        }
+        await Hive.box('userBox').put('isLoggedIn', true);
+
         Get.offAllNamed(Routes.HOME);
       }
     } catch (e) {

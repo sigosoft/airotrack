@@ -10,4 +10,5 @@ class ApiConfig {
 
 class ApiEndPoints {
   static String login = "login";
+  static String home = "home";
 }

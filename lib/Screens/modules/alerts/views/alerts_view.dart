@@ -169,8 +169,9 @@ class AlertsView extends GetView<AlertsController> {
   }
 
   Widget _buildAlertTile(BuildContext context, int index) {
+    final alert = controller.alerts[index];
     double screenWidth = MediaQuery.of(context).size.width;
-    bool isIgnitionOn = index % 2 == 0;
+    bool isIgnitionOn = alert.isIgnitionOn;
     return Container(
       width: screenWidth - 32,
       height: 64, // From Reminder Page dimensions
@@ -213,27 +214,29 @@ class AlertsView extends GetView<AlertsController> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      "KL 07 D 0518",
-                      style: TextStyle(
+                    Text(
+                      alert.plateNumber.isNotEmpty
+                          ? alert.plateNumber
+                          : alert.deviceName,
+                      style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                         color: Colors.black,
                       ),
                     ),
                     Text(
-                      "Oct 17, 2025 5:38:08 PM",
-                      style: TextStyle(fontSize: 9, color: Colors.grey[500]),
+                      alert.date,
+                      style: TextStyle(fontSize: 9, color: Colors.black),
                     ),
                   ],
                 ),
                 Text(
-                  isIgnitionOn ? "Ignition On" : "Ignition Off",
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  alert.type,
+                  style: TextStyle(fontSize: 11, color: Colors.black),
                 ),
                 Text(
-                  "PuthiyakavuJunction, Karunagappalli...",
-                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                  alert.address,
+                  style: TextStyle(fontSize: 10, color: Colors.black),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

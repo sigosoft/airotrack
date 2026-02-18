@@ -9,11 +9,8 @@ import '../../../routes/app_routes.dart';
 class LoginController extends GetxController {
   final phoneController = TextEditingController();
   final passwordController = TextEditingController();
-
   var isPasswordVisible = false.obs;
   var isLoading = false.obs;
-
-  // Validation messages
   var phoneError = ''.obs;
   var passwordError = ''.obs;
 
@@ -22,14 +19,11 @@ class LoginController extends GetxController {
   }
 
   static final _emailRegex = RegExp(r'^[\w\.-]+@[\w\.-]+\.\w+$');
-
   bool _isValidEmail(String value) => _emailRegex.hasMatch(value);
-
   bool _isValidPhone(String value) {
     final digits = value.replaceAll(RegExp(r'\D'), '');
     return digits.length >= 10;
   }
-
   bool _isValidUsername(String value) {
     return value.length >= 3;
   }
@@ -83,21 +77,20 @@ class LoginController extends GetxController {
       );
       isLoading.value = false;
       if (response.data != null) {
-        debugPrint(response.data.toString());
-        savename('token', response.data['token']);
-        Get.offAllNamed(Routes.DASHBOARD);
-      if (response.data != null && response.data['data'] != null) {
-        final token = response.data['data']['details']['token'];
-        debugPrint(token);
-        savename('token', token);
-        DioClient().updateToken(token);
-
-        // Persist login status for Splash screen check
+        String? token;
+        if (response.data['data'] != null &&
+            response.data['data']['details'] != null) {
+          token = response.data['data']['details']['token']?.toString();
+        }
+        token ??= response.data['token']?.toString();
+        if (token != null && token.isNotEmpty) {
+          savename('token', token);
+          DioClient().updateToken(token);
+        }
         if (!Hive.isBoxOpen('userBox')) {
           await Hive.openBox('userBox');
         }
         await Hive.box('userBox').put('isLoggedIn', true);
-
         Get.offAllNamed(Routes.HOME);
       }
     } catch (e) {

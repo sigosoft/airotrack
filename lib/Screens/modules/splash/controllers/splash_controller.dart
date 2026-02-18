@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'dart:async';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:airotrack/Configs/DioClient.dart';
+import 'package:airotrack/Utils/Utils.dart';
 import '../../../routes/app_routes.dart';
 
 class SplashController extends GetxController {
@@ -88,6 +90,10 @@ class SplashController extends GetxController {
       // Ensure navigation happens
       print('Navigating to: ${isLoggedIn ? "HOME" : "WELCOME"}');
       if (isLoggedIn) {
+        final token = await getSavedObject('token');
+        if (token != null) {
+          DioClient().updateToken(token is String ? token : token.toString());
+        }
         Get.offAllNamed(Routes.HOME);
       } else {
         Get.offAllNamed(Routes.WELCOME);

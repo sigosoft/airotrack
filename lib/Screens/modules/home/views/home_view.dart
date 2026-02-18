@@ -236,9 +236,8 @@ class HomeView extends GetView<HomeController> {
     bool isSelected,
   ) {
     return Container(
-      // Min width or fixed? "Width Hug".
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      constraints: const BoxConstraints(minWidth: 80, maxHeight: 80),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      constraints: const BoxConstraints(minWidth: 80, maxHeight: 90),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(13),
@@ -255,6 +254,7 @@ class HomeView extends GetView<HomeController> {
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Image.asset(
@@ -262,8 +262,9 @@ class HomeView extends GetView<HomeController> {
             width: 25,
             height: 22,
             color: color,
+            fit: BoxFit.contain,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             title,
             style: const TextStyle(
@@ -271,6 +272,8 @@ class HomeView extends GetView<HomeController> {
               fontWeight: FontWeight.bold,
               color: Colors.black,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           Text(
             count,
@@ -279,6 +282,8 @@ class HomeView extends GetView<HomeController> {
               fontWeight: FontWeight.bold,
               color: Colors.black,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -295,7 +300,7 @@ class HomeView extends GetView<HomeController> {
       onTap: () => _showVehicleDialog(context, vehicle),
       child: Container(
         width: 358,
-        height: 165, // Fixed height to prevent layout errors
+        height: 165,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -338,9 +343,9 @@ class HomeView extends GetView<HomeController> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const SizedBox(height: 5),
+                          const SizedBox(height: 2),
                           SizedBox(
-                            height: 50,
+                            height: 48,
                             child: Image.asset(
                               isRunning
                                   ? 'lib/Asset/Images/Green right Car.png'
@@ -348,7 +353,7 @@ class HomeView extends GetView<HomeController> {
                               fit: BoxFit.contain,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 2),
                           Text(
                             vehicle.speed,
                             style: const TextStyle(
@@ -397,7 +402,7 @@ class HomeView extends GetView<HomeController> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 5),
+                          const SizedBox(height: 2),
 
                           // Timeline Items
                           _buildTimelineItem(
@@ -426,7 +431,7 @@ class HomeView extends GetView<HomeController> {
                   ],
                 ),
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
 
                 // Bottom Buttons
                 Row(

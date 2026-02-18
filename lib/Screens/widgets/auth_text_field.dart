@@ -8,6 +8,7 @@ class AuthTextField extends StatelessWidget {
   final Widget? suffixIcon;
   final TextInputType keyboardType;
   final String errorText;
+  final double? width;
 
   const AuthTextField({
     Key? key,
@@ -17,17 +18,22 @@ class AuthTextField extends StatelessWidget {
     this.suffixIcon,
     this.keyboardType = TextInputType.text,
     this.errorText = '',
+    this.width,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final effectiveWidth = width ??
+        (screenWidth < AppStyles.inputWidth + 32
+            ? screenWidth - 32
+            : AppStyles.inputWidth);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: MediaQuery.of(context).size.width < AppStyles.inputWidth + 32
-              ? MediaQuery.of(context).size.width - 32
-              : AppStyles.inputWidth,
+          width: effectiveWidth,
           height: AppStyles.inputHeight,
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(

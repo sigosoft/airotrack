@@ -106,9 +106,9 @@ class HomeController extends GetxController {
   Future<void> _initializeAndFetch() async {
     final token = await getSavedObject('token');
     if (token != null) {
-      DioClient().updateToken(token);
+      DioClient().updateToken(token is String ? token : token.toString());
     }
-    fetchVehicles();
+    await fetchVehicles();
   }
 
   Future<void> fetchVehicles() async {

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
@@ -74,8 +75,12 @@ class Vehicle {
 class HomeController extends GetxController {
   final vehicles = <Vehicle>[].obs;
   final isLoading = false.obs;
+  final isMoreLoading = false.obs;
+  final hasMore = true.obs;
   final errorMessage = ''.obs;
   final RxInt selectedIndex = 1.obs;
+  final ScrollController scrollController = ScrollController();
+  int currentPage = 1;
 
   // Status counts
   final totalCount = "0".obs;
@@ -88,6 +93,14 @@ class HomeController extends GetxController {
   void onInit() {
     super.onInit();
     _initializeAndFetch();
+    scrollController.addListener(() {
+      if (scrollController.position.pixels >=
+          scrollController.position.maxScrollExtent - 200) {
+        if (!isLoading.value && !isMoreLoading.value && hasMore.value) {
+          loadMoreVehicles();
+        }
+      }
+    });
   }
 
   Future<void> _initializeAndFetch() async {
@@ -105,7 +118,7 @@ class HomeController extends GetxController {
 
       final response = await DioClient().get(
         ApiEndPoints.home,
-        query: {'type': ''},
+        query: {'type': '', 'page': '1', 'limit': '20'},
       );
 
       if (response.data != null && response.data['data'] != null) {
@@ -156,7 +169,53 @@ class HomeController extends GetxController {
     }
   }
 
+  Future<void> loadMoreVehicles() async {
+    try {
+      isMoreLoading.value = true;
+      currentPage++;
+
+      final response = await DioClient().get(
+        ApiEndPoints.home,
+        query: {'type': '', 'page': currentPage.toString(), 'limit': '20'},
+      );
+
+      if (response.data != null && response.data['data'] != null) {
+        final data = response.data['data'];
+
+        if (data['vehicles_data'] != null) {
+          final List<dynamic> vehiclesList = data['vehicles_data'];
+          if (vehiclesList.isEmpty) {
+            hasMore.value = false;
+          } else {
+            final newVehicles = vehiclesList
+                .map((json) => Vehicle.fromJson(json))
+                .toList();
+            vehicles.addAll(newVehicles);
+
+            if (newVehicles.length < 20) {
+              hasMore.value = false;
+            }
+          }
+        } else {
+          hasMore.value = false;
+        }
+      } else {
+        hasMore.value = false;
+      }
+    } catch (e) {
+      hasMore.value = false;
+    } finally {
+      isMoreLoading.value = false;
+    }
+  }
+
   void changeTab(int index) {
     selectedIndex.value = index;
+  }
+
+  @override
+  void onClose() {
+    scrollController.dispose();
+    super.onClose();
   }
 }

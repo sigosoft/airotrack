@@ -182,16 +182,33 @@ class HomeView extends GetView<HomeController> {
               return const Center(child: CircularProgressIndicator());
             }
             return ListView.separated(
+              controller: controller.scrollController,
               padding: const EdgeInsets.only(
                 left: 15.61,
                 right: 15.61,
                 bottom: 120,
               ),
-              itemCount: controller.vehicles.length,
+              itemCount:
+                  controller.vehicles.length +
+                  (controller.isMoreLoading.value ? 1 : 0),
               separatorBuilder: (_, __) => const SizedBox(height: 11),
               itemBuilder: (context, index) {
-                final vehicle = controller.vehicles[index];
-                return _buildVehicleCard(context, vehicle);
+                if (index < controller.vehicles.length) {
+                  final vehicle = controller.vehicles[index];
+                  return _buildVehicleCard(context, vehicle);
+                } else {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color(0xFF009FE3),
+                        ),
+                      ),
+                    ),
+                  );
+                }
               },
             );
           }),

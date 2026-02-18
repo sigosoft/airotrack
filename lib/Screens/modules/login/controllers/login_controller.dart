@@ -85,11 +85,11 @@ class LoginController extends GetxController {
       if (response.data != null) {
         debugPrint(response.data.toString());
         savename('token', response.data['token']);
-        Get.offAllNamed(Routes.HOME);
+        Get.offAllNamed(Routes.DASHBOARD);
       }
     } catch (e) {
       isLoading.value = false;
-      Get.snackbar('Error', e.toString());
+      showErrorMessage(e);
     }
   }
 

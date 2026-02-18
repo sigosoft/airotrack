@@ -18,34 +18,37 @@ class HomeView extends GetView<HomeController> {
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: Colors.white, // Pure white background to match design
-      body: Stack(
-        children: [
-          // Main Content
-          Obx(() {
-            switch (controller.selectedIndex.value) {
-              case 0:
-                return DashboardView();
-              case 1:
-                return _buildHome();
-              case 2:
-                return const LocationView();
-              case 3:
-                return const ReportsView();
-              case 4:
-                return const SettingsView();
-              default:
-                return _buildPlaceholder("Coming Soon");
-            }
-          }),
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            // Main Content
+            Obx(() {
+              switch (controller.selectedIndex.value) {
+                case 0:
+                  return DashboardView();
+                case 1:
+                  return _buildHome();
+                case 2:
+                  return const LocationView();
+                case 3:
+                  return const ReportsView();
+                case 4:
+                  return const SettingsView();
+                default:
+                  return _buildPlaceholder("Coming Soon");
+              }
+            }),
 
-          // Bottom Navigation
-          Positioned(
-            left: -1.5,
-            right: 0,
-            bottom: 0,
-            child: SizedBox(height: 118, child: const CustomBottomNavBar()),
-          ),
-        ],
+            // Bottom Navigation
+            Positioned(
+              left: -1.5,
+              right: 0,
+              bottom: 0,
+              child: SizedBox(height: 118, child: const CustomBottomNavBar()),
+            ),
+          ],
+        ),
       ),
     );
   }

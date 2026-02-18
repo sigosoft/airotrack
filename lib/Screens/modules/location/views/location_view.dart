@@ -11,10 +11,7 @@ class LocationView extends GetView<LocationController> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Background Map
           const MapWidget(),
-
-          // 2. Top Left: Map Format Button
           Positioned(
             top: 45,
             left: 15,
@@ -23,8 +20,6 @@ class LocationView extends GetView<LocationController> {
               onTap: () {},
             ),
           ),
-
-          // 3. Top Right: Secondary Controls
           Positioned(
             top: 45,
             right: 15,
@@ -49,8 +44,6 @@ class LocationView extends GetView<LocationController> {
               ],
             ),
           ),
-
-          // 4. Side Arrows
           Positioned(
             left: 5,
             top: MediaQuery.of(context).size.height * 0.45,
@@ -61,13 +54,10 @@ class LocationView extends GetView<LocationController> {
             top: MediaQuery.of(context).size.height * 0.45,
             child: _buildSideArrow(Icons.chevron_right),
           ),
-
-          // 5. Vehicle Indicator (Centered)
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Vehicle Label
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -94,7 +84,6 @@ class LocationView extends GetView<LocationController> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                // Green Car Top View
                 Image.asset(
                   'lib/Asset/Images/Green right Car.png',
                   width: 55,
@@ -104,8 +93,6 @@ class LocationView extends GetView<LocationController> {
               ],
             ),
           ),
-
-          // 6. Bottom Right: Navigation Group
           Positioned(
             bottom: 130,
             right: 15,

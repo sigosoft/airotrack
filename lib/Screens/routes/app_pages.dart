@@ -239,7 +239,7 @@ class AppPages {
     ),
     GetPage(
       name: Routes.HISTORY,
-      page: () => const HistoryView(),
+      page: () => HistoryView(imei: Get.parameters['imei']),
       binding: HistoryBinding(),
     ),
   ];

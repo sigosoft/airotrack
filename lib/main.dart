@@ -6,6 +6,21 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Suppress flutter_map OSM tile usage warning to reduce console clutter
+  final originalDebugPrint = debugPrint;
+  debugPrint = (String? message, {int? wrapWidth}) {
+    if (message != null &&
+        (message.contains('flutter_map') && message.contains('tile') ||
+            message.contains('OpenStreetMap') ||
+            message.contains('osmfoundation.org') ||
+            message.contains('fleaflet.dev/osm-warn') ||
+            message.contains('NOT free to use by everyone'))) {
+      return;
+    }
+    originalDebugPrint(message, wrapWidth: wrapWidth);
+  };
+
   try {
     await Hive.initFlutter();
     await Hive.openBox('userBox');

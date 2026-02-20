@@ -89,16 +89,36 @@ class HomeController extends GetxController {
   final idleCount = "0".obs;
   final inactiveCount = "0".obs;
 
+  /// Search query for filtering vehicles (plate number, address, device id).
+  final searchQuery = ''.obs;
+
+  /// Vehicles filtered by [searchQuery] from the fetched list. Empty query = all vehicles.
+  List<Vehicle> get filteredVehicles {
+    final q = searchQuery.value.trim().toLowerCase();
+    if (q.isEmpty) return vehicles;
+    return vehicles
+        .where((v) =>
+            v.plateNumber.toLowerCase().contains(q) ||
+            v.address.toLowerCase().contains(q) ||
+            v.deviceId.toLowerCase().contains(q))
+        .toList();
+  }
+
   @override
   void onInit() {
     super.onInit();
     _initializeAndFetch();
     scrollController.addListener(() {
-      if (scrollController.position.pixels >=
-          scrollController.position.maxScrollExtent - 200) {
-        if (!isLoading.value && !isMoreLoading.value && hasMore.value) {
-          loadMoreVehicles();
+      try {
+        if (!scrollController.hasClients) return;
+        final position = scrollController.position;
+        if (position.pixels >= position.maxScrollExtent - 200) {
+          if (!isLoading.value && !isMoreLoading.value && hasMore.value) {
+            loadMoreVehicles();
+          }
         }
+      } catch (_) {
+        // ScrollController not attached or has multiple clients (e.g. during rebuild)
       }
     });
   }
@@ -111,28 +131,32 @@ class HomeController extends GetxController {
     await fetchVehicles();
   }
 
-  Future<void> fetchVehicles() async {
+  int? selectedType;
+
+  Future<void> fetchVehicles({int? type}) async {
     try {
+      selectedType = type;
+      currentPage = 1;
+      hasMore.value = true;
       isLoading.value = true;
       errorMessage.value = '';
 
       final response = await DioClient().get(
         ApiEndPoints.home,
-        query: {'type': '', 'page': '1', 'limit': '20'},
+        query: {
+          'type': type != null ? type.toString() : '',
+          'page': '1',
+          'limit': '20',
+        },
       );
-
       if (response.data != null && response.data['data'] != null) {
         final data = response.data['data'];
-
-        // Parse vehicles from vehicles_data list
         if (data['vehicles_data'] != null) {
           final List<dynamic> vehiclesList = data['vehicles_data'];
           vehicles.value = vehiclesList
               .map((json) => Vehicle.fromJson(json))
               .toList();
         }
-
-        // Update counts from statistics object
         if (data['statistics'] != null) {
           final stats = data['statistics'];
           totalCount.value = stats['total_vehicles']?.toString() ?? "0";
@@ -141,7 +165,6 @@ class HomeController extends GetxController {
           idleCount.value = stats['idle_vehicles']?.toString() ?? "0";
           inactiveCount.value = stats['expired_vehicles']?.toString() ?? "0";
         } else {
-          // Fallback to manual counting if statistics missing
           totalCount.value = vehicles.length.toString();
           runningCount.value = vehicles
               .where((v) => v.status == 'Running')
@@ -176,7 +199,11 @@ class HomeController extends GetxController {
 
       final response = await DioClient().get(
         ApiEndPoints.home,
-        query: {'type': '', 'page': currentPage.toString(), 'limit': '20'},
+        query: {
+          'type': selectedType != null ? selectedType.toString() : '',
+          'page': currentPage.toString(),
+          'limit': '20',
+        },
       );
 
       if (response.data != null && response.data['data'] != null) {

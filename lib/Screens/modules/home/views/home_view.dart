@@ -82,9 +82,11 @@ class HomeView extends GetView<HomeController> {
                 child: Row(
                   children: [
                     const SizedBox(width: 16),
-                    const Expanded(
+                    Expanded(
                       child: TextField(
-                        decoration: InputDecoration(
+                        onChanged: (value) =>
+                            controller.searchQuery.value = value,
+                        decoration: const InputDecoration(
                           hintText: "Search Vehicles",
                           border: InputBorder.none,
                           hintStyle: TextStyle(
@@ -146,11 +148,14 @@ class HomeView extends GetView<HomeController> {
                   true,
                 ),
                 const SizedBox(width: 11),
-                _buildStatusCard(
-                  "Running",
-                  controller.runningCount.value,
-                  const Color(0xFF00C853),
-                  false,
+                GestureDetector(
+                  onTap: () => controller.fetchVehicles(type: 2),
+                  child: _buildStatusCard(
+                    "Running",
+                    controller.runningCount.value,
+                    const Color(0xFF00C853),
+                    false,
+                  ),
                 ),
                 const SizedBox(width: 11),
                 _buildStatusCard(
@@ -184,6 +189,9 @@ class HomeView extends GetView<HomeController> {
             if (controller.isLoading.value) {
               return const Center(child: CircularProgressIndicator());
             }
+            final list = controller.filteredVehicles;
+            final showLoadMore = controller.searchQuery.value.trim().isEmpty &&
+                controller.isMoreLoading.value;
             return ListView.separated(
               controller: controller.scrollController,
               padding: const EdgeInsets.only(
@@ -191,13 +199,11 @@ class HomeView extends GetView<HomeController> {
                 right: 15.61,
                 bottom: 120,
               ),
-              itemCount:
-                  controller.vehicles.length +
-                  (controller.isMoreLoading.value ? 1 : 0),
+              itemCount: list.length + (showLoadMore ? 1 : 0),
               separatorBuilder: (_, __) => const SizedBox(height: 11),
               itemBuilder: (context, index) {
-                if (index < controller.vehicles.length) {
-                  final vehicle = controller.vehicles[index];
+                if (index < list.length) {
+                  final vehicle = list[index];
                   return _buildVehicleCard(context, vehicle);
                 } else {
                   return const Center(
@@ -619,7 +625,7 @@ class HomeView extends GetView<HomeController> {
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: Container(
-                        width: 125,
+                        width: 100,
                         height: 35,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -645,6 +651,37 @@ class HomeView extends GetView<HomeController> {
                         ),
                       ),
                     ),
+                    // History Button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        Get.toNamed(
+                          Routes.HISTORY,
+                          parameters: {
+                            'imei': vehicle.deviceId,
+                            'vehicleId': vehicle.plateNumber,
+                          },
+                        );
+                      },
+                      child: Container(
+                        width: 100,
+                        height: 35,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF009FE3),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            "History",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                     // Track Button
                     GestureDetector(
                       onTap: () {
@@ -652,7 +689,7 @@ class HomeView extends GetView<HomeController> {
                         Get.toNamed(Routes.TRACK);
                       },
                       child: Container(
-                        width: 125,
+                        width: 100,
                         height: 35,
                         decoration: BoxDecoration(
                           color: const Color(0xFF009FE3),

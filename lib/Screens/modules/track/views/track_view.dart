@@ -11,152 +11,164 @@ class TrackView extends GetView<TrackController> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          // 1. Map Background
-          const MapWidget(),
-          GestureDetector(
-            onTap: () => controller.showBottomSheet.value = false,
-            child: Stack(
-              children: [
-                // Top Left: Back Button
-                Positioned(
-                  top: 45,
-                  left: 15,
-                  child: GestureDetector(
-                    onTap: () => Get.toNamed(Routes.HOME),
-                    child: const Icon(
-                      Icons.arrow_back_ios_new,
-                      size: 22,
-                      color: Colors.black87,
+    return SafeArea(
+      top: false,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Stack(
+          children: [
+            // 1. Map Background
+            const MapWidget(),
+            GestureDetector(
+              onTap: () => controller.showBottomSheet.value = false,
+              child: Stack(
+                children: [
+                  // Top Left: Back Button
+                  Positioned(
+                    top: 45,
+                    left: 15,
+                    child: GestureDetector(
+                      onTap: () => Get.toNamed(Routes.HOME),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new,
+                        size: 22,
+                        color: Colors.black87,
+                      ),
                     ),
                   ),
-                ),
 
-                // Left Control Group
-                Positioned(
-                  top: 180,
-                  left: 15,
-                  child: Column(
-                    children: [
-                      _buildMapControl('lib/Asset/Icons/routes detail.png'),
-                      const SizedBox(height: 10),
-                      _buildMapControl(
-                        'lib/Asset/Icons/Focus.png',
-                        // null,
-                        // iconData: Icons.my_location,
-                        // color: Colors.black87,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildMapControl(
-                        'lib/Asset/Icons/Customer service.png',
-                        // null,
-                        // iconData: Icons.person_pin_circle_outlined,
-                        // color: Colors.black87,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/zoomin.png'),
-                    ],
-                  ),
-                ),
-
-                // Top Right: Control Group
-                Positioned(
-                  top: 45,
-                  right: 15,
-                  child: Column(
-                    children: [
-                      _buildMapControl('lib/Asset/Icons/map.png'),
-                      const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: () => Get.to(() => const LockCommandView()),
-                        child: _buildMapControl(
-                          'lib/Asset/Icons/Lock.png',
-                          // null,
-                          // iconData: Icons.lock_outline,
-                          // color: const Color(0xFF00C853),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _buildMapControl(null, text: 'P', textColor: Colors.red),
-                      const SizedBox(height: 10),
-                      _buildMapControl(
-                        'lib/Asset/Icons/Video.png',
-                        // null,
-                        // iconData: Icons.videocam_outlined,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/profile.png'),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/Locations.png'),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/zoomin.png'),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/zoomout.png'),
-                      // _buildAddRemoveControl(),
-                    ],
-                  ),
-                ),
-
-                // Map Markers Placeholder
-                Center(
-                  child: GestureDetector(
-                    onTap: () => controller.toggleBottomSheet(),
-                    behavior: HitTestBehavior.opaque,
+                  // Left Control Group
+                  Positioned(
+                    top: 180,
+                    left: 15,
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          // decoration: BoxDecoration(
-                          //   color: const Color(0xFF009FE3),
-                          //   borderRadius: BorderRadius.circular(20),
-                          //   boxShadow: const [
-                          //     BoxShadow(color: Colors.black12, blurRadius: 4),
-                          //   ],
-                          // ),
-                          // child: const Text(
-                          //   "1",
-                          //   style: TextStyle(
-                          //     color: Colors.white,
-                          //     fontWeight: FontWeight.bold,
-                          //   ),
-                          // ),
+                        _buildMapControl('lib/Asset/Icons/routes detail.png'),
+                        const SizedBox(height: 10),
+                        _buildMapControl(
+                          'lib/Asset/Icons/Focus.png',
+                          // null,
+                          // iconData: Icons.my_location,
+                          // color: Colors.black87,
                         ),
-                        const SizedBox(height: 5),
-                        // Transform.rotate(
-                        // angle: -math.pi / 4,
-                        // child:
-                        Image.asset(
-                          'lib/Asset/Images/Green Car.png',
-                          width: 60,
-                          height: 60,
-                          // color: const Color(0xFF00C853),
+                        const SizedBox(height: 10),
+                        _buildMapControl(
+                          'lib/Asset/Icons/Customer service.png',
+                          // null,
+                          // iconData: Icons.person_pin_circle_outlined,
+                          // color: Colors.black87,
                         ),
-                        // ),
+                        const SizedBox(height: 10),
+                        _buildMapControl('lib/Asset/Icons/zoomin.png'),
                       ],
                     ),
                   ),
-                ),
-              ],
+
+                  // Top Right: Control Group
+                  Positioned(
+                    top: 45,
+                    right: 15,
+                    child: Column(
+                      children: [
+                        _buildMapControl('lib/Asset/Icons/map.png'),
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: () => Get.to(() => const LockCommandView()),
+                          child: _buildMapControl(
+                            'lib/Asset/Icons/Lock.png',
+                            // null,
+                            // iconData: Icons.lock_outline,
+                            // color: const Color(0xFF00C853),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildMapControl(
+                          null,
+                          text: 'P',
+                          textColor: Colors.red,
+                        ),
+                        const SizedBox(height: 10),
+                        _buildMapControl(
+                          'lib/Asset/Icons/Video.png',
+                          // null,
+                          // iconData: Icons.videocam_outlined,
+                        ),
+                        const SizedBox(height: 10),
+                        _buildMapControl('lib/Asset/Icons/profile.png'),
+                        const SizedBox(height: 10),
+                        _buildMapControl('lib/Asset/Icons/Locations.png'),
+                        const SizedBox(height: 10),
+                        _buildMapControl('lib/Asset/Icons/zoomin.png'),
+                        const SizedBox(height: 10),
+                        _buildMapControl('lib/Asset/Icons/zoomout.png'),
+                        // _buildAddRemoveControl(),
+                      ],
+                    ),
+                  ),
+
+                  // Map Markers Placeholder
+                  Center(
+                    child: GestureDetector(
+                      onTap: () => controller.toggleBottomSheet(),
+                      behavior: HitTestBehavior.opaque,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            // decoration: BoxDecoration(
+                            //   color: const Color(0xFF009FE3),
+                            //   borderRadius: BorderRadius.circular(20),
+                            //   boxShadow: const [
+                            //     BoxShadow(color: Colors.black12, blurRadius: 4),
+                            //   ],
+                            // ),
+                            // child: const Text(
+                            //   "1",
+                            //   style: TextStyle(
+                            //     color: Colors.white,
+                            //     fontWeight: FontWeight.bold,
+                            //   ),
+                            // ),
+                          ),
+                          const SizedBox(height: 5),
+                          // Transform.rotate(
+                          // angle: -math.pi / 4,
+                          // child:
+                          Image.asset(
+                            'lib/Asset/Images/Green Car.png',
+                            width: 60,
+                            height: 60,
+                            // color: const Color(0xFF00C853),
+                          ),
+                          // ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          // 2. Bottom Sheet
-          Obx(
-            () => controller.showBottomSheet.value
-                ? _buildDraggableBottomSheet()
-                : const SizedBox.shrink(),
-          ),
+            // 2. Bottom Sheet
+            Obx(
+              () => controller.showBottomSheet.value
+                  ? _buildDraggableBottomSheet()
+                  : const SizedBox.shrink(),
+            ),
 
-          // 3. Bottom Navigation Bar (Always visible)
-          Positioned(bottom: 0, left: 0, right: 0, child: _buildBottomNavBar()),
-        ],
+            // 3. Bottom Navigation Bar (Always visible)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildBottomNavBar(),
+            ),
+          ],
+        ),
       ),
     );
   }

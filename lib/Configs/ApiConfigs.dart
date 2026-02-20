@@ -9,7 +9,7 @@ class ApiConfig {
 
   /// Mapbox public token for Map Matching API (snap GPS track to road).
   static const String mapboxAccessToken =
-      'pk.eyJ1Ijoic2FpbXBleGRldmxvcG1lbnQiLCJhIjoiY21rZXg1ZDA4MGFjZDNqcXptZmN6eXJwYyJ9.MhqmUUhQgPHXj-0nwnz9ww';
+      '';
 }
 
 class ApiEndPoints {

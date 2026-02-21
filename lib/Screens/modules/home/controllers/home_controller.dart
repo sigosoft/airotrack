@@ -40,14 +40,14 @@ class Vehicle {
     final speed = double.tryParse(json['speed']?.toString() ?? '0') ?? 0;
     final ignition = json['ignition'] == 1;
 
-    if (mode == 'R' || mode == 'RUNNING' || speed > 0) {
+    if (mode == 'INACTIVE') {
+      derivedStatus = 'Inactive';
+    } else if (mode == 'R' || mode == 'RUNNING' || (ignition && speed > 0)) {
       derivedStatus = 'Running';
     } else if (mode == 'I' || mode == 'IDLE' || (ignition && speed == 0)) {
       derivedStatus = 'Idle';
-    } else if (mode == 'S' || mode == 'STOPPED') {
+    } else {
       derivedStatus = 'Stopped';
-    } else if (mode == 'INACTIVE') {
-      derivedStatus = 'Inactive';
     }
 
     return Vehicle(
@@ -97,10 +97,12 @@ class HomeController extends GetxController {
     final q = searchQuery.value.trim().toLowerCase();
     if (q.isEmpty) return vehicles;
     return vehicles
-        .where((v) =>
-            v.plateNumber.toLowerCase().contains(q) ||
-            v.address.toLowerCase().contains(q) ||
-            v.deviceId.toLowerCase().contains(q))
+        .where(
+          (v) =>
+              v.plateNumber.toLowerCase().contains(q) ||
+              v.address.toLowerCase().contains(q) ||
+              v.deviceId.toLowerCase().contains(q),
+        )
         .toList();
   }
 
@@ -131,11 +133,11 @@ class HomeController extends GetxController {
     await fetchVehicles();
   }
 
-  int? selectedType;
+  final selectedType = RxnInt();
 
   Future<void> fetchVehicles({int? type}) async {
     try {
-      selectedType = type;
+      selectedType.value = type;
       currentPage = 1;
       hasMore.value = true;
       isLoading.value = true;
@@ -200,7 +202,9 @@ class HomeController extends GetxController {
       final response = await DioClient().get(
         ApiEndPoints.home,
         query: {
-          'type': selectedType != null ? selectedType.toString() : '',
+          'type': selectedType.value != null
+              ? selectedType.value.toString()
+              : '',
           'page': currentPage.toString(),
           'limit': '20',
         },

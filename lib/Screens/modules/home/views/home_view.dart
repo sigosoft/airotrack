@@ -141,11 +141,14 @@ class HomeView extends GetView<HomeController> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.only(left: 15.61, right: 16),
               children: [
-                _buildStatusCard(
-                  "All Vehicles",
-                  controller.totalCount.value,
-                  Colors.blue,
-                  true,
+                GestureDetector(
+                  onTap: () => controller.fetchVehicles(type: null),
+                  child: _buildStatusCard(
+                    "All Vehicles",
+                    controller.totalCount.value,
+                    Colors.blue,
+                    controller.selectedType.value == null,
+                  ),
                 ),
                 const SizedBox(width: 11),
                 GestureDetector(
@@ -154,29 +157,38 @@ class HomeView extends GetView<HomeController> {
                     "Running",
                     controller.runningCount.value,
                     const Color(0xFF00C853),
-                    false,
+                    controller.selectedType.value == 2,
                   ),
                 ),
                 const SizedBox(width: 11),
-                _buildStatusCard(
-                  "Stopped",
-                  controller.stoppedCount.value,
-                  const Color(0xFFFF3D00),
-                  false,
+                GestureDetector(
+                  onTap: () => controller.fetchVehicles(type: 1),
+                  child: _buildStatusCard(
+                    "Stopped",
+                    controller.stoppedCount.value,
+                    const Color(0xFFFF3D00),
+                    controller.selectedType.value == 1,
+                  ),
                 ),
                 const SizedBox(width: 11),
-                _buildStatusCard(
-                  "Idle",
-                  controller.idleCount.value,
-                  const Color(0xFFFFD600),
-                  false,
+                GestureDetector(
+                  onTap: () => controller.fetchVehicles(type: 3),
+                  child: _buildStatusCard(
+                    "Idle",
+                    controller.idleCount.value,
+                    const Color(0xFFFFD600),
+                    controller.selectedType.value == 3,
+                  ),
                 ),
                 const SizedBox(width: 11),
-                _buildStatusCard(
-                  "Inactive",
-                  controller.inactiveCount.value,
-                  const Color.fromARGB(255, 21, 107, 178),
-                  false,
+                GestureDetector(
+                  onTap: () => controller.fetchVehicles(type: 4),
+                  child: _buildStatusCard(
+                    "Inactive",
+                    controller.inactiveCount.value,
+                    const Color.fromARGB(255, 21, 107, 178),
+                    controller.selectedType.value == 4,
+                  ),
                 ),
               ],
             ),
@@ -190,7 +202,8 @@ class HomeView extends GetView<HomeController> {
               return const Center(child: CircularProgressIndicator());
             }
             final list = controller.filteredVehicles;
-            final showLoadMore = controller.searchQuery.value.trim().isEmpty &&
+            final showLoadMore =
+                controller.searchQuery.value.trim().isEmpty &&
                 controller.isMoreLoading.value;
             return ListView.separated(
               controller: controller.scrollController,
@@ -297,8 +310,10 @@ class HomeView extends GetView<HomeController> {
   }
 
   Widget _buildVehicleCard(BuildContext context, Vehicle vehicle) {
-    final isRunning = vehicle.status == 'Running';
-    final statusColor = isRunning
+    // Both 'Running' and 'Idle' (Moving or Ignition-On) should show as Active (Green).
+    final isStatusActive =
+        vehicle.status == 'Running' || vehicle.status == 'Idle';
+    final statusColor = isStatusActive
         ? const Color(0xFF00C853)
         : const Color(0xFFFF3D00);
 
@@ -353,7 +368,7 @@ class HomeView extends GetView<HomeController> {
                           SizedBox(
                             height: 48,
                             child: Image.asset(
-                              isRunning
+                              vehicle.isIgnitionOn
                                   ? 'lib/Asset/Images/Green right Car.png'
                                   : 'lib/Asset/Images/Red right Car.png',
                               fit: BoxFit.contain,
@@ -445,7 +460,7 @@ class HomeView extends GetView<HomeController> {
                   children: [
                     _buildSquareBtn(
                       const AssetImage("lib/Asset/Icons/Mask.png"),
-                      isRunning ? Colors.blue : Colors.black,
+                      isStatusActive ? Colors.blue : Colors.black,
                       width: 16,
                       height: 16,
                     ),
@@ -457,13 +472,13 @@ class HomeView extends GetView<HomeController> {
                     ),
                     _buildSquareBtn(
                       const AssetImage("lib/Asset/Icons/power.png"),
-                      isRunning ? Colors.green : Colors.red,
+                      isStatusActive ? Colors.green : Colors.red,
                       width: 16,
                       height: 16,
                     ),
                     _buildSquareBtn(
                       const AssetImage("lib/Asset/Icons/key.png"),
-                      isRunning ? Colors.green : Colors.red,
+                      isStatusActive ? Colors.green : Colors.red,
                       width: 16,
                       height: 16,
                     ),
@@ -625,7 +640,7 @@ class HomeView extends GetView<HomeController> {
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: Container(
-                        width: 100,
+                        width: 120,
                         height: 35,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -652,11 +667,42 @@ class HomeView extends GetView<HomeController> {
                       ),
                     ),
                     // History Button
+                    // GestureDetector(
+                    //   onTap: () {
+                    //     Navigator.pop(context);
+                    //     Get.toNamed(
+                    //       Routes.HISTORY,
+                    //       parameters: {
+                    //         'imei': vehicle.deviceId,
+                    //         'vehicleId': vehicle.plateNumber,
+                    //       },
+                    //     );
+                    //   },
+                    //   child: Container(
+                    //     width: 100,
+                    //     height: 35,
+                    //     decoration: BoxDecoration(
+                    //       color: const Color(0xFF009FE3),
+                    //       borderRadius: BorderRadius.circular(7),
+                    //     ),
+                    //     child: const Center(
+                    //       child: Text(
+                    //         "History",
+                    //         style: TextStyle(
+                    //           color: Colors.white,
+                    //           fontWeight: FontWeight.bold,
+                    //           fontSize: 14,
+                    //         ),
+                    //       ),
+                    //     ),
+                    //   ),
+                    // ),
+                    // Track Button
                     GestureDetector(
                       onTap: () {
                         Navigator.pop(context);
                         Get.toNamed(
-                          Routes.HISTORY,
+                          Routes.TRACK,
                           parameters: {
                             'imei': vehicle.deviceId,
                             'vehicleId': vehicle.plateNumber,
@@ -664,32 +710,7 @@ class HomeView extends GetView<HomeController> {
                         );
                       },
                       child: Container(
-                        width: 100,
-                        height: 35,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF009FE3),
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            "History",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Track Button
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(context);
-                        Get.toNamed(Routes.TRACK);
-                      },
-                      child: Container(
-                        width: 100,
+                        width: 120,
                         height: 35,
                         decoration: BoxDecoration(
                           color: const Color(0xFF009FE3),

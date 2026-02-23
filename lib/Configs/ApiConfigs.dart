@@ -3,6 +3,10 @@ class ApiConfig {
   static String baseUrl =
       "https://dev-api.airotrack.in/airotrack-api/public/website/";
 
+  // TCP server base URL — used for real-time device position (live tracking)
+  static const String tcpBaseUrl =
+      "https://dev-api.airotrack.in/airotrack-tcp/public";
+
   // This is the base Image URL
   static String imageUrl =
       "https://ourworks.co.in/saimpex-backend/public/storage/";

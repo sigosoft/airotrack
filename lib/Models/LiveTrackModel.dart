@@ -151,11 +151,15 @@ class LiveCurrentPosition {
   bool get isPowerOn => power == 1;
 
   /// Derived vehicle status from mode / ignition / speed.
+  /// Mode codes per official API guide:
+  ///   M = Moving, S = Stopped, H = Idle (TCP server)
+  ///   R/RUNNING, I/IDLE, INACTIVE (legacy)
   String get derivedStatus {
     final m = mode?.toUpperCase();
     final spd = speed?.toDouble() ?? 0;
-    if (m == 'R' || m == 'RUNNING' || spd > 0) return 'Running';
-    if (m == 'I' || m == 'IDLE' || (ignition == 1 && spd == 0)) return 'Idle';
+    if (m == 'M' || m == 'R' || m == 'RUNNING' || spd > 0) return 'Running';
+    if (m == 'H' || m == 'I' || m == 'IDLE' || (ignition == 1 && spd == 0))
+      return 'Idle';
     if (m == 'S' || m == 'STOPPED') return 'Stopped';
     if (m == 'INACTIVE') return 'Inactive';
     return 'Stopped';

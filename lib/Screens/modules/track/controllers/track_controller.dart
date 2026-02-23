@@ -31,11 +31,20 @@ class TrackController extends GetxController {
     final lng = double.tryParse(displayLongitude);
     if (lat != null && lng != null) {
       double zoom = mapController.camera.zoom;
-      if (isFirstPosition.value) {
-        zoom = 15.0; // Zoom in on first load
-        isFirstPosition.value = false;
+
+      final now = DateTime.now();
+      final isFirst = isFirstPosition.value;
+
+      // Throttle map moves to once every 1 second to avoid Signal 3 (ANR)
+      if (isFirst ||
+          now.difference(_lastMapUpdate) > const Duration(seconds: 1)) {
+        if (isFirst) {
+          zoom = 15.0; // Zoom in on first load
+          isFirstPosition.value = false;
+        }
+        mapController.move(LatLng(lat, lng), zoom);
+        _lastMapUpdate = now;
       }
-      mapController.move(LatLng(lat, lng), zoom);
     }
   }
 
@@ -191,7 +200,9 @@ class TrackController extends GetxController {
   StreamSubscription? _socketSubscription;
   bool _disposed = false;
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // Throttling for map updates to prevent Signal 3 (ANR) during rapid WebSocket data
+  DateTime _lastMapUpdate = DateTime.now();
+
   @override
   void onInit() {
     super.onInit();
@@ -215,19 +226,24 @@ class TrackController extends GetxController {
 
   @override
   void onClose() {
+    log("TrackController onClose for IMEI: ${vehicleImei.value}");
     _disposed = true;
     _stopLiveTracking();
     fenceNameController.dispose();
     super.onClose();
   }
 
-  // ─── Public API ────────────────────────────────────────────────────────────
+  // ─── Live tracking control ───────────────────────────────────────────────────
 
-  /// Starts live tracking for [imei] (fetches immediately, then connects via WebSocket).
+  /// Starts live tracking:
+  ///  1. Fetches vehicle info + statistics from the legacy API (once).
+  ///  2. Fetches the latest real-time position from the TCP API (once).
+  ///  3. Opens the WebSocket and subscribes — all subsequent updates are push-only.
   void _startLiveTracking(String imei) {
     _stopLiveTracking();
-    _fetchLiveTrack(imei); // immediate first fetch for initial state
-    _connectWebSocket(imei);
+    _fetchLiveTrack(imei); // vehicle info + today statistics (legacy API)
+    _fetchTcpPosition(imei); // initial real-time position (new TCP API)
+    _connectWebSocket(imei); // push updates — no polling
   }
 
   void _stopLiveTracking() {
@@ -240,20 +256,31 @@ class TrackController extends GetxController {
   void _connectWebSocket(String imei) async {
     if (_disposed || imei.trim().isEmpty) return;
 
-    final wsUrl = "wss://dev-api.airotrack.in/app/airotrack-key";
+    const wsUrl = "wss://dev-api.airotrack.in/app/airotrack-key";
     try {
       _socket = await WebSocket.connect(wsUrl);
+      if (_disposed) {
+        _socket?.close();
+        return;
+      }
       log('WebSocket connected: $wsUrl');
 
-      // Pusher subscribe message
       final subscribeMsg = jsonEncode({
         "event": "pusher:subscribe",
         "data": {"channel": "device.$imei"},
       });
+      log('WebSocket Sending: $subscribeMsg');
       _socket?.add(subscribeMsg);
 
       _socketSubscription = _socket?.listen(
-        (message) => _handleSocketMessage(message, imei),
+        (message) {
+          // Log only the first 100 chars to avoid crashing the console buffer
+          final msgStr = message.toString();
+          log(
+            'WS Received: ${msgStr.substring(0, math.min(100, msgStr.length))}...',
+          );
+          _handleSocketMessage(message, imei);
+        },
         onError: (err) {
           log('WebSocket error: $err');
           _reconnect(imei);
@@ -285,19 +312,36 @@ class TrackController extends GetxController {
     try {
       final decoded = jsonDecode(message);
       final event = decoded['event'];
+      log('Handling Socket Message Event: $event');
 
-      // Handle Pusher ping/pong to keep connection alive
+      // Keep the connection alive
       if (event == 'pusher:ping') {
         _socket?.add(jsonEncode({"event": "pusher:pong", "data": {}}));
         return;
       }
 
       if (event == 'device.update') {
+        // Per API guide: 'data' is a JSON string.
+        // Parsed outer shape: { "imei": "...", "data": { ...device fields... }, "timestamp": "..." }
+        // The actual device fields are inside the nested 'data' key.
         final dataRaw = decoded['data'];
-        final data = dataRaw is String ? jsonDecode(dataRaw) : dataRaw;
+        final outer = dataRaw is String ? jsonDecode(dataRaw) : dataRaw;
 
-        if (data != null && data is Map<String, dynamic>) {
-          _processUpdate(data);
+        if (outer is Map<String, dynamic>) {
+          final inner = outer['data'];
+          final payloadImei = outer['imei']?.toString() ?? 'Unknown';
+
+          // Only process updates if this is the active route to prevent Signal 3 (ANR)
+          // Background controllers shouldn't move maps or rebuild UI.
+          final currentRoute = Get.currentRoute;
+          if (currentRoute.contains('track') || currentRoute.contains('home')) {
+            log('WebSocket: Processing update for IMEI: $payloadImei');
+            if (inner is Map<String, dynamic>) {
+              _processUpdate(inner);
+            }
+          } else {
+            // Skip processing but acknowledge we received it
+          }
         }
       }
     } catch (e) {
@@ -305,57 +349,56 @@ class TrackController extends GetxController {
     }
   }
 
-  void _processUpdate(Map<String, dynamic> data) {
+  /// Maps flat TCP device data (from REST or WebSocket) into [LiveTrackData],
+  /// preserving vehicle_info and today_statistics from any prior data.
+  LiveTrackData _mergeTcpData(
+    Map<String, dynamic> tcp, {
+    LiveTrackData? existing,
+  }) {
+    final pos = LiveCurrentPosition(
+      imei: tcp['imei']?.toString(),
+      latitude: tcp['latitude']?.toString(),
+      longitude: tcp['longitude']?.toString(),
+      speed: tcp['speed'] as num?,
+      deviceTime: tcp['devicetime']?.toString(),
+      ignition: tcp['ignition'] as int?,
+      power: tcp['power'] as int?,
+      mode: tcp['mode']?.toString(),
+      kilometer: null,
+    );
+
+    final posApi = LiveCurrentPositionApi(
+      success: true,
+      data: LiveCurrentPositionApiData(
+        imei: tcp['imei']?.toString(),
+        deviceId: tcp['deviceid'] as int?,
+        latitude: tcp['latitude']?.toString(),
+        longitude: tcp['longitude']?.toString(),
+        speed: tcp['speed'] as num?,
+        deviceTime: tcp['devicetime']?.toString(),
+        ignition: tcp['ignition'] as int?,
+        power: tcp['power'] as int?,
+        altitude: tcp['altitude']?.toString(),
+        gsmSignalStrength: tcp['gsm_signal_strength']?.toString(),
+        mode: tcp['mode']?.toString(),
+        network: tcp['network']?.toString(),
+        lastUpdate: tcp['last_update']?.toString(),
+      ),
+    );
+
+    return LiveTrackData(
+      vehicleInfo: existing?.vehicleInfo, // kept from legacy API
+      currentPosition: pos,
+      currentStatus: pos.derivedStatus,
+      todayStatistics: existing?.todayStatistics, // kept from legacy API
+      currentPositionApi: posApi,
+    );
+  }
+
+  /// Updates [liveTrackData] from a parsed TCP device data map (WebSocket push).
+  void _processUpdate(Map<String, dynamic> tcp) {
     if (_disposed) return;
-
-    // Merge WS data into liveTrackData.
-    // If WS data has full state (vehicle_info, current_position), use it directly.
-    if (data.containsKey('current_position') ||
-        data.containsKey('vehicle_info')) {
-      liveTrackData.value = LiveTrackData.fromJson(data);
-    } else {
-      // Otherwise, update position and status selectively
-      final current = liveTrackData.value;
-      if (current == null) return;
-
-      final newPosJson = data; // Assuming data itself contains pos fields
-      final updatedPos = LiveCurrentPosition(
-        id: newPosJson['id'] ?? current.currentPosition?.id,
-        imei: newPosJson['imei'] ?? current.currentPosition?.imei,
-        deviceTime:
-            newPosJson['devicetime'] ??
-            newPosJson['device_time'] ??
-            current.currentPosition?.deviceTime,
-        latitude:
-            newPosJson['latitude']?.toString() ??
-            current.currentPosition?.latitude,
-        longitude:
-            newPosJson['longitude']?.toString() ??
-            current.currentPosition?.longitude,
-        mode: newPosJson['mode'] ?? current.currentPosition?.mode,
-        speed: newPosJson['speed'] != null
-            ? num.tryParse(newPosJson['speed'].toString()) ??
-                  current.currentPosition?.speed
-            : current.currentPosition?.speed,
-        ignition: newPosJson['ignition'] ?? current.currentPosition?.ignition,
-        power: newPosJson['power'] ?? current.currentPosition?.power,
-        kilometer:
-            newPosJson['kilometer']?.toString() ??
-            current.currentPosition?.kilometer,
-      );
-
-      liveTrackData.value = LiveTrackData(
-        vehicleInfo: current.vehicleInfo,
-        currentPosition: updatedPos,
-        currentStatus:
-            newPosJson['current_status'] ??
-            newPosJson['status'] ??
-            current.currentStatus,
-        todayStatistics: current.todayStatistics,
-        currentPositionApi: current.currentPositionApi,
-      );
-    }
-
+    liveTrackData.value = _mergeTcpData(tcp, existing: liveTrackData.value);
     _onDataUpdated();
   }
 
@@ -375,8 +418,10 @@ class TrackController extends GetxController {
     update();
   }
 
-  // ─── Internal fetch ────────────────────────────────────────────────────────
+  // ─── Fetch helpers ────────────────────────────────────────────────────────────
 
+  /// Fetches vehicle info + today statistics from the legacy REST API.
+  /// Used once at tracking start to populate plate, total km, and daily stats.
   Future<void> _fetchLiveTrack(String imei) async {
     if (_disposed || imei.trim().isEmpty) return;
     try {
@@ -389,22 +434,51 @@ class TrackController extends GetxController {
       if (_disposed) return;
 
       final raw = response.data;
-      if (raw == null) return;
-
-      if (raw is! Map<String, dynamic>) return;
+      if (raw == null || raw is! Map<String, dynamic>) return;
 
       final model = LiveTrackModel.fromJson(raw);
-
       if (model.data != null) {
-        liveTrackData.value = model.data;
+        // Merge vehicle info + statistics into existing (may already have position)
+        final current = liveTrackData.value;
+        liveTrackData.value = LiveTrackData(
+          vehicleInfo: model.data!.vehicleInfo,
+          currentPosition:
+              current?.currentPosition ?? model.data!.currentPosition,
+          currentStatus: current?.currentStatus ?? model.data!.currentStatus,
+          todayStatistics: model.data!.todayStatistics,
+          currentPositionApi:
+              current?.currentPositionApi ?? model.data!.currentPositionApi,
+        );
         _onDataUpdated();
       }
     } catch (e, st) {
-      if (!_disposed) {
-        log('LiveTrack fetch error: $e\n$st');
-      }
+      if (!_disposed) log('LiveTrack fetch error: $e\n$st');
     } finally {
       if (!_disposed) isLiveLoading.value = false;
+    }
+  }
+
+  /// Fetches the latest real-time position from the new TCP API.
+  /// This matches the data shape sent by the WebSocket device.update events.
+  /// URL: GET {tcpBaseUrl}/api/live-tracking/device/{imei}
+  Future<void> _fetchTcpPosition(String imei) async {
+    if (_disposed || imei.trim().isEmpty) return;
+    try {
+      final url =
+          '${ApiConfig.tcpBaseUrl}/api/live-tracking/device/${imei.trim()}';
+      log('Fetching TCP Position from: $url');
+      final response = await DioClient().dio.get<Map<String, dynamic>>(url);
+      if (_disposed) return;
+
+      final body = response.data;
+      if (body == null) return;
+      if (body['success'] == true && body['data'] is Map<String, dynamic>) {
+        final tcp = body['data'] as Map<String, dynamic>;
+        liveTrackData.value = _mergeTcpData(tcp, existing: liveTrackData.value);
+        _onDataUpdated();
+      }
+    } catch (e) {
+      if (!_disposed) log('TCP position fetch error: $e');
     }
   }
 

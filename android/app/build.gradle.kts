@@ -39,6 +39,13 @@ android {
     }
 }
 
+dependencies {
+    // Mapbox Maps SDK for Android (draw matched route on map)
+    implementation("com.mapbox.maps:android:11.18.2")
+    // HTTP client for Mapbox Map Matching API
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}
+
 flutter {
     source = "../.."
 }

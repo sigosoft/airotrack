@@ -55,21 +55,28 @@ class _HistoryMapLayerState extends State<HistoryMapLayer> {
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     if (widget.polylinePoints.length >= 2) {
-      _fitToPolyline();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _mapController != null) _fitToPolyline();
+      });
     }
   }
 
   @override
   void didUpdateWidget(HistoryMapLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.polylinePoints != oldWidget.polylinePoints &&
-        widget.polylinePoints.length >= 2 &&
-        _mapController != null) {
+    if (widget.polylinePoints.length >= 2 && _mapController != null) {
+      final pointsChanged = widget.polylinePoints != oldWidget.polylinePoints ||
+          widget.polylinePoints.length != oldWidget.polylinePoints.length;
+      if (!pointsChanged) return;
       final now = DateTime.now();
-      if (_lastFitTime == null ||
-          now.difference(_lastFitTime!).compareTo(_fitThrottle) > 0) {
+      final isFirstFit = _lastFitTime == null;
+      final throttlePassed = _lastFitTime == null ||
+          now.difference(_lastFitTime!).compareTo(_fitThrottle) > 0;
+      if (isFirstFit || throttlePassed) {
         _lastFitTime = now;
-        _fitToPolyline();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _mapController != null) _fitToPolyline();
+        });
       }
     }
   }

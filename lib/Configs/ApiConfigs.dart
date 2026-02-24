@@ -7,7 +7,9 @@ class ApiConfig {
   static String imageUrl =
       "https://ourworks.co.in/saimpex-backend/public/storage/";
 
-
+  /// Mapbox public token for Map Matching API (snap GPS track to road).
+  static const String mapboxAccessToken =
+      'pk.eyJ1Ijoic2FpbXBleGRldmxvcG1lbnQiLCJhIjoiY21rZXg1ZDA4MGFjZDNqcXptZmN6eXJwYyJ9.MhqmUUhQgPHXj-0nwnz9ww';
 }
 
 class ApiEndPoints {

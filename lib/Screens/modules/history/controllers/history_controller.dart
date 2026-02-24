@@ -51,6 +51,11 @@ List<Map<String, dynamic>> _buildPolylinePointsInIsolate(Map<String, dynamic>? r
     debugPrint('[History] Isolate: no responseBody, returning []');
     return [];
   }
+/// Top-level for isolate: build polyline points from response (sendable types only).
+List<List<double>> _buildPolylinePointsInIsolate(
+  Map<String, dynamic>? responseBody,
+) {
+  if (responseBody == null) return [];
   final model = HistoryModel.fromJson(responseBody);
   final list = model.data?.locationHistory ?? [];
   debugPrint('[History] Isolate: location_history count from backend = ${list.length}');
@@ -90,21 +95,24 @@ double _getBearing(LatLng start, LatLng end) {
   final lon2 = end.longitude * math.pi / 180;
   final dLon = lon2 - lon1;
   final y = math.sin(dLon) * math.cos(lat2);
-  final x = math.cos(lat1) * math.sin(lat2) -
+  final x =
+      math.cos(lat1) * math.sin(lat2) -
       math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
   final bearing = math.atan2(y, x);
   return (bearing * 180 / math.pi + 360) % 360;
 }
 
 /// Mapbox Map Matching API (snaps GPS track to road). Max 100 points per request.
-const String _mapboxMatchBase = 'https://api.mapbox.com/matching/v5/mapbox/driving';
+const String _mapboxMatchBase =
+    'https://api.mapbox.com/matching/v5/mapbox/driving';
 
 /// Top-level: parse Mapbox match response to list of [lat, lng]. Geometry is GeoJSON [lng, lat].
 List<List<double>> _processMapboxChunk(Map<String, dynamic> data) {
   final result = <List<double>>[];
   if (data['code']?.toString() != 'Ok') return result;
   final matchings = data['matchings'];
-  if (matchings == null || matchings is! List || matchings.isEmpty) return result;
+  if (matchings == null || matchings is! List || matchings.isEmpty)
+    return result;
   for (final m in matchings) {
     if (m is! Map<String, dynamic>) continue;
     final geometry = m['geometry'];
@@ -214,8 +222,10 @@ class HistoryController extends GetxController {
 
   /// Cached after parsing in isolate; avoids recomputing on every build.
   List<LatLng> _cachedPolylinePoints = [];
+
   /// Incremented when starting a new progressive load; stale runs skip updates.
   int _progressiveRunId = 0;
+
   /// Set when controller is closed; prevents timer/async from touching state and avoids crashes.
   bool _disposed = false;
 
@@ -257,6 +267,7 @@ class HistoryController extends GetxController {
 
   // --- Moving marker along polyline (reactive to avoid full GetBuilder rebuilds) ---
   final Rxn<LatLng> movingMarkerPosition = Rxn<LatLng>();
+
   /// Bearing in degrees (0-360) for rotating the vehicle marker along the route.
   final Rxn<double> movingMarkerBearing = Rxn<double>();
   Timer? _movingMarkerTimer;
@@ -333,7 +344,19 @@ class HistoryController extends GetxController {
 
   /// Progressive load: process and draw polyline in chunks of this size.
   static const int _progressiveChunkSize = 50;
+
+  /// Remove duplicate points: keep only if consecutive points are at least this far apart (~5m).
+  static const double _redundantPointMinDistKm = 0.005; // 5m
+  /// Douglas–Peucker tolerance (km) before Mapbox: simplify each chunk with this (5–8m) before sending.
+  static const double _simplifyBeforeMapboxToleranceKm =
+      0.006; // ~6m (5–8m range)
   /// Simplify Mapbox result per chunk before merging so dense road geometry doesn’t clutter the display.
+  static const double _simplifyChunkAfterMapboxKm = 0.01; // ~10m
+  /// Douglas–Peucker tolerance (km) for display: keeps polyline smooth as more chunks load.
+  static const double _simplifyToleranceKm = 0.018; // ~18m
+  /// Max points before using lighter corner smoothing (1 iteration) to avoid clutter.
+  static const int _smoothCornersMaxPoints = 250;
+
   static const int _maxDisplayPoints = 350;
   /// Mapbox: smaller chunks (50) for better match quality; max 100 per request.
   static const int _mapboxChunkSize = 50;
@@ -431,6 +454,37 @@ class HistoryController extends GetxController {
         (a.longitude - b.longitude).abs() < _coordEpsilon;
   }
 
+  /// Rounds sharp turns into smooth curves using Chaikin's corner-cutting algorithm.
+  /// Uses 1 iteration when path is long to avoid clutter.
+  List<LatLng> _smoothPolylineCorners(List<LatLng> points, {int? iterations}) {
+    if (points.length < 3) return points;
+    final iter =
+        iterations ?? (points.length > _smoothCornersMaxPoints ? 1 : 2);
+    List<LatLng> current = List.from(points);
+    for (int i = 0; i < iter; i++) {
+      final next = <LatLng>[current.first];
+      for (int i = 0; i < current.length - 1; i++) {
+        final p0 = current[i];
+        final p1 = current[i + 1];
+        next.add(
+          LatLng(
+            p0.latitude * 0.25 + p1.latitude * 0.75,
+            p0.longitude * 0.25 + p1.longitude * 0.75,
+          ),
+        );
+        next.add(
+          LatLng(
+            p0.latitude * 0.75 + p1.latitude * 0.25,
+            p0.longitude * 0.75 + p1.longitude * 0.25,
+          ),
+        );
+      }
+      next.add(current.last);
+      current = next;
+    }
+    return current;
+  }
+
   /// Snaps path to roads using Mapbox Map Matching API. Returns raw points on failure.
   Future<List<LatLng>> _smoothPathWithMapbox(List<LatLng> rawPoints) async {
     final token = ApiConfig.mapboxAccessToken;
@@ -448,6 +502,14 @@ class HistoryController extends GetxController {
       receiveTimeout: const Duration(seconds: 25),
       validateStatus: (status) => status != null && status < 500,
     ));
+    if (token.isEmpty || rawPoints.length < 2) return rawPoints;
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 25),
+        receiveTimeout: const Duration(seconds: 25),
+        validateStatus: (status) => status != null && status < 500,
+      ),
+    );
     final snappedPath = <LatLng>[];
     int successChunks = 0;
     int totalChunks = 0;
@@ -471,6 +533,11 @@ class HistoryController extends GetxController {
         final response = await dio.get<Map<String, dynamic>>(url);
         if (response.statusCode != 200 || response.data == null) {
           debugPrint('[History] Mapbox: chunk $chunkIndex HTTP ${response.statusCode}, skipping');
+          if (response.data != null) {
+            debugPrint(
+              'Mapbox chunk ${i ~/ _mapboxChunkSize}: ${response.statusCode}',
+            );
+          }
           continue;
         }
         final chunkSmoothed = await compute(
@@ -486,7 +553,8 @@ class HistoryController extends GetxController {
         final chunkLatLng = chunkSmoothed
             .map((p) => LatLng(p[0], p[1]))
             .toList();
-        if (snappedPath.isNotEmpty && chunkLatLng.isNotEmpty &&
+        if (snappedPath.isNotEmpty &&
+            chunkLatLng.isNotEmpty &&
             _samePoint(snappedPath.last, chunkLatLng.first)) {
           chunkLatLng.removeAt(0);
         }
@@ -499,6 +567,9 @@ class HistoryController extends GetxController {
       }
       if (successChunks < totalChunks) {
         debugPrint('[History] Mapbox: partial ($successChunks/$totalChunks chunks), snapped ${snappedPath.length} points');
+        debugPrint(
+          'Mapbox: partial ($successChunks/$totalChunks chunks), ${snappedPath.length} points',
+        );
       } else {
         debugPrint('[History] Mapbox: all $totalChunks chunks ok, snapped ${snappedPath.length} points');
       }
@@ -515,9 +586,9 @@ class HistoryController extends GetxController {
     final dLon = (b.longitude - a.longitude) * math.pi / 180;
     final la1 = a.latitude * math.pi / 180;
     final la2 = b.latitude * math.pi / 180;
-    final x = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(la1) * math.cos(la2) *
-            math.sin(dLon / 2) * math.sin(dLon / 2);
+    final x =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(la1) * math.cos(la2) * math.sin(dLon / 2) * math.sin(dLon / 2);
     final c = 2 * math.atan2(math.sqrt(x), math.sqrt(1 - x));
     return R * c;
   }
@@ -610,6 +681,68 @@ class HistoryController extends GetxController {
     if (points.length <= 1) return points;
     final n = points.length;
     final step = (n - 1) / (_maxDisplayPoints - 1);
+  /// Removes consecutive points that are too close (redundant lats/longs) for quality.
+  List<LatLng> _removeRedundantPoints(List<LatLng> points) {
+    if (points.length < 3) return points;
+    final out = <LatLng>[points.first];
+    for (int i = 1; i < points.length; i++) {
+      if (_distanceKm(out.last, points[i]) >= _redundantPointMinDistKm) {
+        out.add(points[i]);
+      }
+    }
+    return out;
+  }
+
+  /// Perpendicular distance (km) from point [p] to line segment [a]–[b].
+  double _distanceToSegmentKm(LatLng p, LatLng a, LatLng b) {
+    final dLab = _distanceKm(a, b);
+    if (dLab < 1e-9) return _distanceKm(p, a);
+    final dPa = _distanceKm(p, a);
+    final dPb = _distanceKm(p, b);
+    final t =
+        ((b.latitude - a.latitude) * (p.latitude - a.latitude) +
+            (b.longitude - a.longitude) * (p.longitude - a.longitude)) /
+        ((b.latitude - a.latitude) * (b.latitude - a.latitude) +
+            (b.longitude - a.longitude) * (b.longitude - a.longitude));
+    if (t <= 0) return dPa;
+    if (t >= 1) return dPb;
+    final q = LatLng(
+      a.latitude + t * (b.latitude - a.latitude),
+      a.longitude + t * (b.longitude - a.longitude),
+    );
+    return _distanceKm(p, q);
+  }
+
+  /// Douglas–Peucker simplification (iterative to avoid stack overflow on long polylines).
+  List<LatLng> _simplifyPolyline(List<LatLng> points, double toleranceKm) {
+    if (points.length < 3 || toleranceKm <= 0) return points;
+    final keep = List<bool>.filled(points.length, false);
+    keep[0] = true;
+    keep[points.length - 1] = true;
+    final stack = <int>[0, points.length - 1];
+    while (stack.length >= 2) {
+      final end = stack.removeLast();
+      final start = stack.removeLast();
+      if (end <= start + 1) continue;
+      double maxDist = 0;
+      int maxIdx = start;
+      final a = points[start];
+      final b = points[end];
+      for (int i = start + 1; i < end; i++) {
+        final d = _distanceToSegmentKm(points[i], a, b);
+        if (d > maxDist) {
+          maxDist = d;
+          maxIdx = i;
+        }
+      }
+      if (maxDist >= toleranceKm) {
+        keep[maxIdx] = true;
+        stack.add(start);
+        stack.add(maxIdx);
+        stack.add(maxIdx);
+        stack.add(end);
+      }
+    }
     return [
       for (int i = 0; i < _maxDisplayPoints; i++)
         points[(i * step).round().clamp(0, n - 1)],
@@ -629,6 +762,14 @@ class HistoryController extends GetxController {
       debugPrint('[History] Progressive: points to Mapbox = ${reducedPoints.length}');
       int chunkIndex = 0;
       for (int start = 0; start < reducedPoints.length; start += _progressiveChunkSize) {
+      final reducedPoints = cleanPoints.length >= 3
+          ? _simplifyPolyline(cleanPoints, _simplifyBeforeMapboxToleranceKm)
+          : cleanPoints;
+      for (
+        int start = 0;
+        start < reducedPoints.length;
+        start += _progressiveChunkSize
+      ) {
         if (_disposed || runId != _progressiveRunId) return;
         final end = (start + _progressiveChunkSize > reducedPoints.length)
             ? reducedPoints.length
@@ -650,6 +791,11 @@ class HistoryController extends GetxController {
         if (start == 0) {
           _cachedPolylinePoints = _capPolylinePoints(snapped);
           debugPrint('[History] Progressive: chunk 0 drawn (Mapbox only), cached points = ${_cachedPolylinePoints.length}');
+          _cachedPolylinePoints = _smoothPolylineCorners(snapped);
+          _cachedPolylinePoints = _simplifyPolyline(
+            _cachedPolylinePoints,
+            _simplifyToleranceKm,
+          );
         } else {
           if (_cachedPolylinePoints.isNotEmpty &&
               snapped.isNotEmpty &&
@@ -660,6 +806,11 @@ class HistoryController extends GetxController {
             ..addAll(snapped);
           _cachedPolylinePoints = _capPolylinePoints(_cachedPolylinePoints);
           debugPrint('[History] Progressive: chunk $chunkIndex merged, cached points = ${_cachedPolylinePoints.length}');
+          _cachedPolylinePoints = _smoothPolylineCorners(_cachedPolylinePoints);
+          _cachedPolylinePoints = _simplifyPolyline(
+            _cachedPolylinePoints,
+            _simplifyToleranceKm,
+          );
         }
         chunkIndex++;
         if (_disposed || runId != _progressiveRunId) return;
@@ -733,12 +884,33 @@ class HistoryController extends GetxController {
         // Pipeline: Sort by devicetime → Remove speed < 5 → Remove distance < 8 m → Mapbox → Draw
         final cleanList = _applyPolylinePipeline(rawPoints);
         debugPrint('[History] getHistory: pipeline cleanList = ${cleanList.length} points');
+        final rawPoints = await compute(
+          _buildPolylinePointsInIsolate,
+          responseBody,
+        );
+        List<LatLng> rawList = rawPoints
+            .map((p) => LatLng(p[0], p[1]))
+            .toList();
         historyModel = HistoryModel.fromJson(responseBody);
         resetMovingMarker();
         if (cleanList.length >= 2) {
           // Do not draw raw points: only draw after Mapbox returns snapped geometry.
           _cachedPolylinePoints = [];
           debugPrint('[History] getHistory: no raw draw; starting Mapbox matching (cleanList=${cleanList.length})');
+        if (rawList.length >= 2) {
+          final cleanList = _removeRedundantPoints(rawList);
+          final firstChunkEnd = cleanList.length < _progressiveChunkSize
+              ? cleanList.length
+              : _progressiveChunkSize;
+          _cachedPolylinePoints = List<LatLng>.from(
+            cleanList.sublist(0, firstChunkEnd),
+          );
+          if (_cachedPolylinePoints.length >= 3) {
+            _cachedPolylinePoints = _simplifyPolyline(
+              _cachedPolylinePoints,
+              _simplifyToleranceKm,
+            );
+          }
           final info = historyModel.data?.vehicleInfo;
           if (info != null) {
             currentSpeed.value = '${info.speed ?? 0} Kmph';

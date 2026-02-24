@@ -1,10 +1,6 @@
 import 'dart:developer';
 import 'package:airotrack/Configs/RetryInterceptor.dart';
-import 'package:airotrack/Screens/modules/ServerDown/ServerDown.dart';
 import 'package:dio/dio.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-
 
 import 'ApiConfigs.dart';
 
@@ -16,11 +12,13 @@ class DioClient {
   DioClient._internal() {
     dio
       ..options.baseUrl = ApiConfig.baseUrl
-      ..options.connectTimeout = Duration(seconds: 20)
-      ..options.receiveTimeout = Duration(seconds: 20)
+      ..options.connectTimeout = const Duration(seconds: 20)
+      ..options.receiveTimeout = const Duration(seconds: 20)
       ..options.headers = {
         "Accept": "application/json",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "Airotrack-Mobile/1.0.0 (Android)",
+        "X-Requested-With": "XMLHttpRequest",
       };
 
     dio.interceptors.add(RetryInterceptor(dio: dio));
@@ -41,21 +39,33 @@ class DioClient {
         return handler.next(response);
       },
       onError: (DioException error, handler) {
-        log("❌ ERROR: ${error.error}");
+        log("❌ ERROR: ${error.error ?? error.message}");
+        if (error.response != null) {
+          log("Error Response Data: ${error.response?.data}");
+          log("Error Status Code: ${error.response?.statusCode}");
+        }
         return handler.next(error);
       },
     );
   }
 
-  Future<Response> get(String path, {Map<String, dynamic>? query}) async {
+  Future<Response> get(
+    String path, {
+    Map<String, dynamic>? query,
+    Options? options,
+  }) async {
     try {
-      return await dio.get(path, queryParameters: query);
+      return await dio.get(path, queryParameters: query, options: options);
     } on DioException catch (e) {
       throw _handleError(e);
     }
   }
 
-  Future<Response> post(String path, {dynamic body, Map<String, dynamic>? query}) async {
+  Future<Response> post(
+    String path, {
+    dynamic body,
+    Map<String, dynamic>? query,
+  }) async {
     try {
       return await dio.post(path, data: body, queryParameters: query);
     } on DioException catch (e) {
@@ -73,6 +83,8 @@ class DioClient {
     if (e.response != null) {
       final data = e.response!.data;
       final statusCode = e.response!.statusCode;
+
+      log("Global Error Handler: Status=$statusCode, Data=$data");
 
       if (statusCode == 422 && data is Map) {
         final msg = data['message'];
@@ -93,19 +105,15 @@ class DioClient {
         }
 
         return "Validation failed";
-      }
-      else if(statusCode == 500){
-        Get.to(ServerDown());
-        return "Server error occurred";
+      } else if (statusCode == 500) {
+        // Redirection disabled to avoid jumping to the black placeholder screen.
+        // Get.to(() => const ServerDown());
+        return "Server error occurred. Please try again later.";
       } else {
-        // Log more details about the error
-        log("Error Status Code: $statusCode");
-        log("Error Data: $data");
         if (data is Map && data['message'] != null) {
           final msg = data['message'];
           if (msg is String) return msg;
           if (msg is Map) {
-            // Try to extract message from map
             final keys = msg.keys.toList();
             if (keys.isNotEmpty) {
               final firstKey = keys[0];
@@ -119,7 +127,7 @@ class DioClient {
             }
           }
         }
-        return "Something went wrong. Code: $statusCode";
+        return "Error occurred. Code: $statusCode";
       }
     }
 
@@ -149,5 +157,4 @@ class DioClient {
 
     return "Unexpected error occurred: ${e.message ?? e.type.toString()}";
   }
-
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
+import 'package:latlong2/latlong.dart';
 import 'dart:math' as math;
 import '../../../../widgets/map_widget.dart';
 import '../controllers/track_controller.dart';
@@ -18,139 +20,160 @@ class TrackView extends GetView<TrackController> {
         body: Stack(
           children: [
             // 1. Map Background
-            const MapWidget(),
-            GestureDetector(
-              onTap: () => controller.showBottomSheet.value = false,
-              child: Stack(
-                children: [
-                  // Top Left: Back Button
-                  Positioned(
-                    top: 45,
-                    left: 15,
-                    child: GestureDetector(
-                      onTap: () => Get.toNamed(Routes.HOME),
-                      child: const Icon(
-                        Icons.arrow_back_ios_new,
-                        size: 22,
-                        color: Colors.black87,
+            Obx(
+              () => MapWidget(
+                mapController: controller.mapController,
+                onTap: () => controller.showBottomSheet.value = false,
+                markers: [
+                  if (double.tryParse(controller.displayLatitude) != null &&
+                      double.tryParse(controller.displayLongitude) != null)
+                    Marker(
+                      point: LatLng(
+                        double.parse(controller.displayLatitude),
+                        double.parse(controller.displayLongitude),
                       ),
-                    ),
-                  ),
-
-                  // Left Control Group
-                  Positioned(
-                    top: 180,
-                    left: 15,
-                    child: Column(
-                      children: [
-                        _buildMapControl('lib/Asset/Icons/routes detail.png'),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          'lib/Asset/Icons/Focus.png',
-                          // null,
-                          // iconData: Icons.my_location,
-                          // color: Colors.black87,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          'lib/Asset/Icons/Customer service.png',
-                          // null,
-                          // iconData: Icons.person_pin_circle_outlined,
-                          // color: Colors.black87,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl('lib/Asset/Icons/zoomin.png'),
-                      ],
-                    ),
-                  ),
-
-                  // Top Right: Control Group
-                  Positioned(
-                    top: 45,
-                    right: 15,
-                    child: Column(
-                      children: [
-                        _buildMapControl('lib/Asset/Icons/map.png'),
-                        const SizedBox(height: 10),
-                        GestureDetector(
-                          onTap: () => Get.to(() => const LockCommandView()),
-                          child: _buildMapControl(
-                            'lib/Asset/Icons/Lock.png',
-                            // null,
-                            // iconData: Icons.lock_outline,
-                            // color: const Color(0xFF00C853),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          null,
-                          text: 'P',
-                          textColor: Colors.red,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl(
-                          'lib/Asset/Icons/Video.png',
-                          // null,
-                          // iconData: Icons.videocam_outlined,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildMapControl('lib/Asset/Icons/profile.png'),
-                        const SizedBox(height: 10),
-                        _buildMapControl('lib/Asset/Icons/Locations.png'),
-                        const SizedBox(height: 10),
-                        _buildMapControl('lib/Asset/Icons/zoomin.png'),
-                        const SizedBox(height: 10),
-                        _buildMapControl('lib/Asset/Icons/zoomout.png'),
-                        // _buildAddRemoveControl(),
-                      ],
-                    ),
-                  ),
-
-                  // Map Markers Placeholder
-                  Center(
-                    child: GestureDetector(
-                      onTap: () => controller.toggleBottomSheet(),
-                      behavior: HitTestBehavior.opaque,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
+                      width: 100,
+                      height: 100,
+                      child: GestureDetector(
+                        onTap: () => controller.toggleBottomSheet(),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Obx(
+                              () => Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: controller.displayStatusColor,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  controller.displayPlate,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                             ),
-                            // decoration: BoxDecoration(
-                            //   color: const Color(0xFF009FE3),
-                            //   borderRadius: BorderRadius.circular(20),
-                            //   boxShadow: const [
-                            //     BoxShadow(color: Colors.black12, blurRadius: 4),
-                            //   ],
-                            // ),
-                            // child: const Text(
-                            //   "1",
-                            //   style: TextStyle(
-                            //     color: Colors.white,
-                            //     fontWeight: FontWeight.bold,
-                            //   ),
-                            // ),
-                          ),
-                          const SizedBox(height: 5),
-                          // Transform.rotate(
-                          // angle: -math.pi / 4,
-                          // child:
-                          Image.asset(
-                            'lib/Asset/Images/Green Car.png',
-                            width: 60,
-                            height: 60,
-                            // color: const Color(0xFF00C853),
-                          ),
-                          // ),
-                        ],
+                            const Icon(
+                              Icons.arrow_drop_down,
+                              size: 12,
+                              color: Colors.black54,
+                            ),
+                            Obx(
+                              () => Transform.rotate(
+                                angle:
+                                    (controller.vehicleRotation.value - 45) *
+                                    (math.pi / 180),
+                                child: Image.asset(
+                                  'lib/Asset/Icons/Track Vehicle.png',
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
+            ),
+
+            // 2. Control Layout
+            Stack(
+              children: [
+                // Top Left: Back Button
+                Positioned(
+                  top: 45,
+                  left: 15,
+                  child: GestureDetector(
+                    onTap: () => Get.toNamed(Routes.HOME),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new,
+                      size: 22,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+
+                // Left Control Group
+                Positioned(
+                  top: 180,
+                  left: 15,
+                  child: Column(
+                    children: [
+                      _buildMapControl('lib/Asset/Icons/routes detail.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl(
+                        'lib/Asset/Icons/Focus.png',
+                        onTap: () => controller.moveMapToVehicle(),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/Customer service.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl(
+                        'lib/Asset/Icons/zoomin.png',
+                        onTap: () {
+                          controller.mapController.move(
+                            controller.mapController.camera.center,
+                            controller.mapController.camera.zoom + 1,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Top Right: Control Group
+                Positioned(
+                  top: 45,
+                  right: 15,
+                  child: Column(
+                    children: [
+                      _buildMapControl('lib/Asset/Icons/map.png'),
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: () => Get.to(() => const LockCommandView()),
+                        child: _buildMapControl('lib/Asset/Icons/Lock.png'),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildMapControl(null, text: 'P', textColor: Colors.red),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/Video.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/profile.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/Locations.png'),
+                      const SizedBox(height: 10),
+                      _buildMapControl(
+                        'lib/Asset/Icons/zoomin.png',
+                        onTap: () {
+                          controller.mapController.move(
+                            controller.mapController.camera.center,
+                            controller.mapController.camera.zoom + 1,
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _buildMapControl(
+                        'lib/Asset/Icons/zoomout.png',
+                        onTap: () {
+                          controller.mapController.move(
+                            controller.mapController.camera.center,
+                            controller.mapController.camera.zoom - 1,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
 
             // 2. Bottom Sheet
@@ -179,30 +202,38 @@ class TrackView extends GetView<TrackController> {
     Color? color,
     String? text,
     Color? textColor,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      width: 35,
-      height: 35,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
-        ],
-      ),
-      child: Center(
-        child: imagePath != null
-            ? Image.asset(imagePath, width: 20, height: 20)
-            : text != null
-            ? Text(
-                text,
-                style: TextStyle(
-                  color: textColor ?? Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              )
-            : Icon(iconData, color: color ?? Colors.black, size: 24),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 35,
+        height: 35,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: imagePath != null
+              ? Image.asset(imagePath, width: 20, height: 20)
+              : text != null
+              ? Text(
+                  text,
+                  style: TextStyle(
+                    color: textColor ?? Colors.black,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                )
+              : Icon(iconData, color: color ?? Colors.black, size: 24),
+        ),
       ),
     );
   }
@@ -235,49 +266,62 @@ class TrackView extends GetView<TrackController> {
   // }
 
   Widget _buildSpeedometerIndicator() {
-    return Container(
-      width: 140,
-      height: 130,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CustomPaint(size: const Size(120, 120), painter: GaugePainter()),
-          Positioned(
-            bottom: 20,
-            child: Column(
-              children: const [
-                Text(
-                  "65",
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  "Km/h",
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          // Needle
-          Transform.rotate(
-            angle: math.pi / 4,
-            child: Container(
-              width: 3,
-              height: 45,
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(2),
+    return Obx(() {
+      final speedStr = controller.displaySpeed;
+      final speed = double.tryParse(speedStr) ?? 0.0;
+      // Gauge starts at 0.75pi and ends at 2.25pi (sweep 1.5pi)
+      // The needle is vertical by default (pointing at 1.5pi position if not rotated)
+      // So we rotate relative to 1.5pi.
+      // 0 speed should be at 0.75pi. 140 speed at 2.25pi.
+      final targetAngle = (speed / 140) * 1.5 * math.pi - (0.75 * math.pi);
+
+      return Container(
+        width: 140,
+        height: 130,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CustomPaint(size: const Size(120, 120), painter: GaugePainter()),
+            Positioned(
+              bottom: 20,
+              child: Column(
+                children: [
+                  Text(
+                    speedStr,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Text(
+                    "Km/h",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
               ),
-              margin: const EdgeInsets.only(bottom: 45),
             ),
-          ),
-        ],
-      ),
-    );
+            // Needle
+            Transform.rotate(
+              angle: targetAngle,
+              child: Container(
+                width: 3,
+                height: 45,
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                margin: const EdgeInsets.only(bottom: 45),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   Widget _buildDraggableBottomSheet() {
@@ -325,39 +369,39 @@ class TrackView extends GetView<TrackController> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              "KL 07 D 0518",
-                              style: TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: List.generate(
-                                8,
-                                (index) => _buildIdBox(
-                                  [
-                                    '0',
-                                    '6',
-                                    '3',
-                                    '6',
-                                    '6',
-                                    '6',
-                                    '6',
-                                    '6',
-                                  ][index],
+                            Obx(
+                              () => Text(
+                                controller.displayPlate,
+                                style: const TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
                                 ),
                               ),
                             ),
+                            const SizedBox(height: 8),
+                            Obx(() {
+                              final imei = controller.vehicleImei.value;
+                              // Show last 8 digits of IMEI to fit design
+                              final displayImei = imei.length > 8
+                                  ? imei.substring(imei.length - 8)
+                                  : imei;
+                              return Row(
+                                children: List.generate(
+                                  displayImei.length,
+                                  (index) => _buildIdBox(displayImei[index]),
+                                ),
+                              );
+                            }),
                             const SizedBox(height: 15),
-                            const Text(
-                              "Jul 31, 2025 5:38:08 PM",
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
+                            Obx(
+                              () => Text(
+                                controller.displayDeviceTime,
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -370,12 +414,14 @@ class TrackView extends GetView<TrackController> {
                                   color: Colors.grey.shade600,
                                 ),
                                 const SizedBox(width: 8),
-                                const Text(
-                                  "20.12 Km",
-                                  style: TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
+                                Obx(
+                                  () => Text(
+                                    "${controller.displayTodayKm} Km",
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -391,7 +437,6 @@ class TrackView extends GetView<TrackController> {
                         child: Image.asset(
                           'lib/Asset/Images/Green Car.png',
                           fit: BoxFit.contain,
-                          // color: Colors.green,
                         ),
                       ),
                     ],
@@ -409,12 +454,14 @@ class TrackView extends GetView<TrackController> {
                           color: const Color(0xFFF7F8FA),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
-                          "8°58'49.1\"N 76°32'05.8\"E",
-                          style: TextStyle(
-                            color: Color(0xFF009FE3),
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                        child: Obx(
+                          () => Text(
+                            "${controller.displayLatitude} ${controller.displayLongitude}",
+                            style: const TextStyle(
+                              color: Color(0xFF009FE3),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -430,15 +477,19 @@ class TrackView extends GetView<TrackController> {
                               color: Colors.black54,
                             ),
                             const SizedBox(width: 6),
-                            const Expanded(
-                              child: Text(
-                                "Puthiyakavu Junction, Karunagappalli, Kerala 690539, India",
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.black,
-                                  height: 1.3,
+                            Expanded(
+                              child: Obx(
+                                () => Text(
+                                  controller.displayLatitude != '–'
+                                      ? "Coordinates: ${controller.displayLatitude}, ${controller.displayLongitude}"
+                                      : "Address information unavailable",
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black,
+                                    height: 1.3,
+                                  ),
+                                  maxLines: 2,
                                 ),
-                                maxLines: 2,
                               ),
                             ),
                           ],
@@ -495,16 +546,20 @@ class TrackView extends GetView<TrackController> {
                   Row(
                     children: [
                       Expanded(
-                        child: _buildTimeBox(
-                          "Device Time",
-                          "Aug 02,2025 02:30:40 PM",
+                        child: Obx(
+                          () => _buildTimeBox(
+                            "Device Time",
+                            controller.displayDeviceTime,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 15),
                       Expanded(
-                        child: _buildTimeBox(
-                          "Server Time",
-                          "Aug 02,2025 02:30:40 PM",
+                        child: Obx(
+                          () => _buildTimeBox(
+                            "Server Time",
+                            controller.displayLastUpdate,
+                          ),
                         ),
                       ),
                     ],
@@ -512,30 +567,32 @@ class TrackView extends GetView<TrackController> {
                   const SizedBox(height: 25),
 
                   // Status Capsules
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildDurationStatusCard(
-                        "Running",
-                        "06:38 hrs",
-                        const Color.fromARGB(255, 3, 145, 62),
-                      ),
-                      _buildDurationStatusCard(
-                        "Idle",
-                        "06:38 hrs",
-                        const Color(0xFFFFB300),
-                      ),
-                      _buildDurationStatusCard(
-                        "Stoped",
-                        "06:38 hrs",
-                        const Color(0xFFFF4B2B),
-                      ),
-                      _buildDurationStatusCard(
-                        "Inactive",
-                        "06:38 hrs",
-                        const Color(0xFF00BCD4),
-                      ),
-                    ],
+                  Obx(
+                    () => Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildDurationStatusCard(
+                          "Running",
+                          controller.displayRunningDuration,
+                          const Color.fromARGB(255, 3, 145, 62),
+                        ),
+                        _buildDurationStatusCard(
+                          "Idle",
+                          controller.displayIdleDuration,
+                          const Color(0xFFFFB300),
+                        ),
+                        _buildDurationStatusCard(
+                          "Stopped",
+                          controller.displayStoppedDuration,
+                          const Color(0xFFFF4B2B),
+                        ),
+                        _buildDurationStatusCard(
+                          "Inactive",
+                          controller.displayInactiveDuration,
+                          const Color(0xFF00BCD4),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 25),
 
@@ -546,38 +603,40 @@ class TrackView extends GetView<TrackController> {
                       color: const Color(0xFFEDF8FF),
                       borderRadius: BorderRadius.circular(15),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildMetricCard(
-                            "Avg Speed",
-                            "50",
-                            "Kmph",
-                            'lib/Asset/Icons/AVG speed.png',
-                            const Color(0xFF009FE3),
+                    child: Obx(
+                      () => Row(
+                        children: [
+                          Expanded(
+                            child: _buildMetricCard(
+                              "Avg Speed",
+                              "–", // Placeholder
+                              "Kmph",
+                              'lib/Asset/Icons/AVG speed.png',
+                              const Color(0xFF009FE3),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildMetricCard(
-                            "Max Speed",
-                            "70",
-                            "Kmph",
-                            'lib/Asset/Icons/Max Distance.png',
-                            const Color(0xFFFF5252),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildMetricCard(
+                              "Max Speed",
+                              "–", // Placeholder
+                              "Kmph",
+                              'lib/Asset/Icons/Max Distance.png',
+                              const Color(0xFFFF5252),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildMetricCard(
-                            "Today Km",
-                            "80",
-                            "Km",
-                            'lib/Asset/Icons/location outlined.png',
-                            Colors.black,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildMetricCard(
+                              "Today Km",
+                              controller.displayTodayKm,
+                              "Km",
+                              'lib/Asset/Icons/location outlined.png',
+                              Colors.black,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 25),
@@ -586,56 +645,58 @@ class TrackView extends GetView<TrackController> {
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: [
-                        _buildSmallGridItem(
-                          "Battery",
-                          "0%",
-                          'lib/Asset/Icons/Battery.png',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSmallGridItem(
-                          "Car Battery",
-                          "13V",
-                          'lib/Asset/Icons/Car Battery.png',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSmallGridItem(
-                          "Satellite",
-                          "4/5",
-                          'lib/Asset/Icons/Satelites.png',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSmallGridItem(
-                          "Fuel",
-                          "N/A",
-                          'lib/Asset/Icons/Fuel.png',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSmallGridItem(
-                          "Accuracy",
-                          "0.0",
-                          'lib/Asset/Icons/Accuracy.png',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSmallGridItem(
-                          "Temperature",
-                          "N/A",
-                          'lib/Asset/Icons/temperature.png',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSmallGridItem(
-                          "Movement",
-                          "False",
-                          'lib/Asset/Icons/Movement.png',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSmallGridItem(
-                          "Movement",
-                          "N/A",
-                          'lib/Asset/Icons/Movement car.png',
-                        ),
-                      ],
+                    child: Obx(
+                      () => Row(
+                        children: [
+                          _buildSmallGridItem(
+                            "Battery",
+                            controller.isPowerOn ? "ON" : "OFF",
+                            'lib/Asset/Icons/Battery.png',
+                          ),
+                          const SizedBox(width: 12),
+                          _buildSmallGridItem(
+                            "GSM Signal",
+                            controller.displayGsmSignal,
+                            'lib/Asset/Icons/Network.png',
+                          ),
+                          const SizedBox(width: 12),
+                          _buildSmallGridItem(
+                            "Ignition",
+                            controller.isIgnitionOn ? "ON" : "OFF",
+                            'lib/Asset/Icons/Key start.png',
+                          ),
+                          const SizedBox(width: 12),
+                          _buildSmallGridItem(
+                            "Network",
+                            controller.displayNetwork,
+                            'lib/Asset/Icons/Network.png',
+                          ),
+                          const SizedBox(width: 12),
+                          _buildSmallGridItem(
+                            "Altitude",
+                            controller.displayAltitude,
+                            'lib/Asset/Icons/Distance.png',
+                          ),
+                          const SizedBox(width: 12),
+                          _buildSmallGridItem(
+                            "Fuel",
+                            "N/A",
+                            'lib/Asset/Icons/Fuel.png',
+                          ),
+                          const SizedBox(width: 12),
+                          _buildSmallGridItem(
+                            "Temperature",
+                            "N/A",
+                            'lib/Asset/Icons/temperature.png',
+                          ),
+                          const SizedBox(width: 12),
+                          _buildSmallGridItem(
+                            "Movement",
+                            controller.displaySpeed != "0.0" ? "True" : "False",
+                            'lib/Asset/Icons/Movement.png',
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 35),

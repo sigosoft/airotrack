@@ -3,6 +3,9 @@ import 'package:get/get.dart';
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
 import 'package:airotrack/Utils/Utils.dart';
+import 'package:dio/dio.dart';
+import 'dart:developer';
+import 'dart:math' as math;
 
 class AlertModel {
   final int id;
@@ -50,32 +53,58 @@ class AlertsController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    log("AlertsController: onInit called");
     loadAlerts();
     scrollController.addListener(() {
-      if (scrollController.position.pixels ==
-          scrollController.position.maxScrollExtent) {
-        if (!isLoading.value && hasMore.value) {
-          loadMoreAlerts();
+      try {
+        if (!scrollController.hasClients) return;
+        final position = scrollController.position;
+        if (position.pixels >= position.maxScrollExtent - 100) {
+          if (!isLoading.value && hasMore.value) {
+            loadMoreAlerts();
+          }
         }
+      } catch (_) {
+        // ScrollController not yet attached or detached during rebuild
       }
     });
   }
 
   Future<void> loadAlerts() async {
+    log("AlertsController: loadAlerts started");
     try {
       isLoading.value = true;
 
       final token = await getSavedObject('token');
       if (token != null) {
-        DioClient().updateToken(token);
+        DioClient().updateToken(token.toString().trim());
       }
+
+      // Strictly following the provided API request structure: imei=&limit=100
+      final Map<String, dynamic> queryParams = {
+        'imei': Get.parameters['imei'] ?? '',
+        'limit': '100',
+      };
 
       final response = await DioClient().get(
         ApiEndPoints.alerts,
-        query: {'imei': '', 'limit': '100'},
+        query: queryParams,
+        options: Options(
+          headers: {"Content-Type": null, "Accept": "application/json"},
+          validateStatus: (status) =>
+              true, // Capture all status codes for debugging
+        ),
       );
 
-      if (response.data != null &&
+      // Diagnostic Logging
+      log("[Alerts] Debug - Status: ${response.statusCode}");
+      log("[Alerts] Debug - Data: ${response.data}");
+      log(
+        "[Alerts] Token (start): ${token?.toString().substring(0, math.min(10, token.toString().length))}...",
+      );
+
+      if (response.statusCode == 200 &&
+          response.data != null &&
           response.data['data'] != null &&
           response.data['data']['alerts'] != null) {
         final List<dynamic> data = response.data['data']['alerts'];
@@ -83,10 +112,17 @@ class AlertsController extends GetxController {
           data.map((json) => AlertModel.fromJson(json)).toList(),
         );
 
-        // If we got less than 100 items, assume no more for now
+        if (data.isEmpty) {
+          log("[Alerts] Notice: List is empty (Matching Postman).");
+        }
+
         if (data.length < 100) {
           hasMore.value = false;
         }
+      } else {
+        log(
+          "[Alerts] API Request failed or list not found. Status: ${response.statusCode}",
+        );
       }
     } catch (e) {
       print("Error loading alerts: $e");
@@ -103,9 +139,18 @@ class AlertsController extends GetxController {
       isLoading.value = true;
       currentPage++;
 
+      final Map<String, dynamic> queryParams = {
+        'imei': Get.parameters['imei'] ?? '',
+        'limit': '100',
+        'page': currentPage.toString(),
+      };
+
       final response = await DioClient().get(
         ApiEndPoints.alerts,
-        query: {'imei': '', 'limit': '100', 'page': currentPage},
+        query: queryParams,
+        options: Options(
+          headers: {"Content-Type": null, "X-Requested-With": "XMLHttpRequest"},
+        ),
       );
 
       if (response.data != null &&

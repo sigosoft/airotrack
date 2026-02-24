@@ -51,11 +51,6 @@ List<Map<String, dynamic>> _buildPolylinePointsInIsolate(Map<String, dynamic>? r
     debugPrint('[History] Isolate: no responseBody, returning []');
     return [];
   }
-/// Top-level for isolate: build polyline points from response (sendable types only).
-List<List<double>> _buildPolylinePointsInIsolate(
-  Map<String, dynamic>? responseBody,
-) {
-  if (responseBody == null) return [];
   final model = HistoryModel.fromJson(responseBody);
   final list = model.data?.locationHistory ?? [];
   debugPrint('[History] Isolate: location_history count from backend = ${list.length}');
@@ -502,14 +497,6 @@ class HistoryController extends GetxController {
       receiveTimeout: const Duration(seconds: 25),
       validateStatus: (status) => status != null && status < 500,
     ));
-    if (token.isEmpty || rawPoints.length < 2) return rawPoints;
-    final dio = Dio(
-      BaseOptions(
-        connectTimeout: const Duration(seconds: 25),
-        receiveTimeout: const Duration(seconds: 25),
-        validateStatus: (status) => status != null && status < 500,
-      ),
-    );
     final snappedPath = <LatLng>[];
     int successChunks = 0;
     int totalChunks = 0;
@@ -681,16 +668,10 @@ class HistoryController extends GetxController {
     if (points.length <= 1) return points;
     final n = points.length;
     final step = (n - 1) / (_maxDisplayPoints - 1);
-  /// Removes consecutive points that are too close (redundant lats/longs) for quality.
-  List<LatLng> _removeRedundantPoints(List<LatLng> points) {
-    if (points.length < 3) return points;
-    final out = <LatLng>[points.first];
-    for (int i = 1; i < points.length; i++) {
-      if (_distanceKm(out.last, points[i]) >= _redundantPointMinDistKm) {
-        out.add(points[i]);
-      }
-    }
-    return out;
+    return [
+      for (int i = 0; i < _maxDisplayPoints; i++)
+        points[(i * step).round().clamp(0, n - 1)],
+    ];
   }
 
   /// Perpendicular distance (km) from point [p] to line segment [a]–[b].
@@ -744,8 +725,8 @@ class HistoryController extends GetxController {
       }
     }
     return [
-      for (int i = 0; i < _maxDisplayPoints; i++)
-        points[(i * step).round().clamp(0, n - 1)],
+      for (int i = 0; i < points.length; i++)
+        if (keep[i]) points[i],
     ];
   }
 
@@ -762,14 +743,6 @@ class HistoryController extends GetxController {
       debugPrint('[History] Progressive: points to Mapbox = ${reducedPoints.length}');
       int chunkIndex = 0;
       for (int start = 0; start < reducedPoints.length; start += _progressiveChunkSize) {
-      final reducedPoints = cleanPoints.length >= 3
-          ? _simplifyPolyline(cleanPoints, _simplifyBeforeMapboxToleranceKm)
-          : cleanPoints;
-      for (
-        int start = 0;
-        start < reducedPoints.length;
-        start += _progressiveChunkSize
-      ) {
         if (_disposed || runId != _progressiveRunId) return;
         final end = (start + _progressiveChunkSize > reducedPoints.length)
             ? reducedPoints.length
@@ -791,11 +764,6 @@ class HistoryController extends GetxController {
         if (start == 0) {
           _cachedPolylinePoints = _capPolylinePoints(snapped);
           debugPrint('[History] Progressive: chunk 0 drawn (Mapbox only), cached points = ${_cachedPolylinePoints.length}');
-          _cachedPolylinePoints = _smoothPolylineCorners(snapped);
-          _cachedPolylinePoints = _simplifyPolyline(
-            _cachedPolylinePoints,
-            _simplifyToleranceKm,
-          );
         } else {
           if (_cachedPolylinePoints.isNotEmpty &&
               snapped.isNotEmpty &&
@@ -806,11 +774,6 @@ class HistoryController extends GetxController {
             ..addAll(snapped);
           _cachedPolylinePoints = _capPolylinePoints(_cachedPolylinePoints);
           debugPrint('[History] Progressive: chunk $chunkIndex merged, cached points = ${_cachedPolylinePoints.length}');
-          _cachedPolylinePoints = _smoothPolylineCorners(_cachedPolylinePoints);
-          _cachedPolylinePoints = _simplifyPolyline(
-            _cachedPolylinePoints,
-            _simplifyToleranceKm,
-          );
         }
         chunkIndex++;
         if (_disposed || runId != _progressiveRunId) return;
@@ -884,33 +847,12 @@ class HistoryController extends GetxController {
         // Pipeline: Sort by devicetime → Remove speed < 5 → Remove distance < 8 m → Mapbox → Draw
         final cleanList = _applyPolylinePipeline(rawPoints);
         debugPrint('[History] getHistory: pipeline cleanList = ${cleanList.length} points');
-        final rawPoints = await compute(
-          _buildPolylinePointsInIsolate,
-          responseBody,
-        );
-        List<LatLng> rawList = rawPoints
-            .map((p) => LatLng(p[0], p[1]))
-            .toList();
         historyModel = HistoryModel.fromJson(responseBody);
         resetMovingMarker();
         if (cleanList.length >= 2) {
           // Do not draw raw points: only draw after Mapbox returns snapped geometry.
           _cachedPolylinePoints = [];
           debugPrint('[History] getHistory: no raw draw; starting Mapbox matching (cleanList=${cleanList.length})');
-        if (rawList.length >= 2) {
-          final cleanList = _removeRedundantPoints(rawList);
-          final firstChunkEnd = cleanList.length < _progressiveChunkSize
-              ? cleanList.length
-              : _progressiveChunkSize;
-          _cachedPolylinePoints = List<LatLng>.from(
-            cleanList.sublist(0, firstChunkEnd),
-          );
-          if (_cachedPolylinePoints.length >= 3) {
-            _cachedPolylinePoints = _simplifyPolyline(
-              _cachedPolylinePoints,
-              _simplifyToleranceKm,
-            );
-          }
           final info = historyModel.data?.vehicleInfo;
           if (info != null) {
             currentSpeed.value = '${info.speed ?? 0} Kmph';

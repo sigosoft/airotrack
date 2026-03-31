@@ -21,6 +21,7 @@ class TrackView extends GetView<TrackController> {
           children: [
             // 1. Map Background
             MapWidget(
+              key: ValueKey(controller.vehicleImei.value),
               mapController: controller.mapController,
               onTap: () => controller.showBottomSheet.value = false,
               markers: controller.mapMarkers, // Use optimized markers logic

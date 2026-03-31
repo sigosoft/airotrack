@@ -26,9 +26,17 @@ class TrackController extends GetxController {
   final mapController = MapController();
   final isFirstPosition = true.obs;
 
-  void moveMapToVehicle() {
-    final lat = double.tryParse(displayLatitude);
-    final lng = double.tryParse(displayLongitude);
+  void moveMapToVehicle({bool force = false}) {
+    if (_disposed) return;
+
+    // Smooth camera: prioritize animated coords if available
+    final lat = animatedLat.value != 0.0
+        ? animatedLat.value
+        : double.tryParse(displayLatitude);
+    final lng = animatedLng.value != 0.0
+        ? animatedLng.value
+        : double.tryParse(displayLongitude);
+
     if (lat != null && lng != null) {
       try {
         double zoom = 15.0;
@@ -39,20 +47,25 @@ class TrackController extends GetxController {
         final now = DateTime.now();
         final isFirst = isFirstPosition.value;
 
-        // Throttle map moves to once every 1 second to avoid Signal 3 (ANR)
-        if (isFirst ||
-            now.difference(_lastMapUpdate) > const Duration(seconds: 1)) {
-          if (isFirst) {
-            zoom = 15.0; // Zoom in on first load
+        // Smooth camera follow: Match car's 25ms animation loop for zero-snap movement
+        final throttleMs = animatedLat.value != 0.0 ? 0 : 1000;
+        final delta = now.difference(_lastMapUpdate).inMilliseconds;
+
+        if (isFirst || force || delta >= throttleMs) {
+          if (isFirst) zoom = 15.0;
+          // Use direct move instead of post-frame callback if it's safe to eliminate one-frame lag
+          try {
+            mapController.move(LatLng(lat, lng), zoom);
+          } catch (_) {
+            // Fallback for rare cases where map is not ready
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!_disposed) {
+                try {
+                  mapController.move(LatLng(lat, lng), zoom);
+                } catch (_) {}
+              }
+            });
           }
-          // Wrap in post frame callback to avoid "setState() or markNeedsBuild() called during build"
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!_disposed) {
-              try {
-                mapController.move(LatLng(lat, lng), zoom);
-              } catch (_) {}
-            }
-          });
           isFirstPosition.value = false;
           _lastMapUpdate = now;
         }
@@ -144,13 +157,15 @@ class TrackController extends GetxController {
   String get displayLastUpdate =>
       liveTrackData.value?.currentPositionApi?.data?.lastUpdate ?? '–';
 
-  /// Latitude from current_position.
-  String get displayLatitude =>
-      liveTrackData.value?.currentPosition?.latitude ?? '–';
+  /// Latitude from current_position. Optimized for smooth animation focus.
+  String get displayLatitude => animatedLat.value != 0.0
+      ? animatedLat.value.toStringAsFixed(7)
+      : (liveTrackData.value?.currentPosition?.latitude ?? '–');
 
-  /// Longitude from current_position.
-  String get displayLongitude =>
-      liveTrackData.value?.currentPosition?.longitude ?? '–';
+  /// Longitude from current_position. Optimized for smooth animation focus.
+  String get displayLongitude => animatedLng.value != 0.0
+      ? animatedLng.value.toStringAsFixed(7)
+      : (liveTrackData.value?.currentPosition?.longitude ?? '–');
 
   /// Ignition state from current_position.
   bool get isIgnitionOn =>
@@ -346,7 +361,8 @@ class TrackController extends GetxController {
     _stopLiveTracking();
     _fetchLiveTrack(imei); // vehicle info + today statistics (legacy API)
     _fetchTcpPosition(imei); // initial real-time position (new TCP API)
-    _connectWebSocket(imei); // push updates — no polling
+    _connectWebSocket(imei); // push updates
+    _ensurePolling(imei); // Robust 1s polling fallback active FROM START
   }
 
   void _stopLiveTracking() {
@@ -403,8 +419,10 @@ class TrackController extends GetxController {
   /// Ensures REST polling is active as a fallback.
   void _ensurePolling(String imei) {
     if (_disposed || imei.trim().isEmpty) return;
-    _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+    if (_pollingTimer != null && _pollingTimer!.isActive) return;
+    // We start polling immediately when called, then periodic
+    _fetchTcpPosition(imei);
+    _pollingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_disposed) {
         timer.cancel();
         return;
@@ -458,8 +476,6 @@ class TrackController extends GetxController {
             if (inner is Map<String, dynamic>) {
               _processUpdate(inner);
             }
-          } else {
-            // Skip processing but acknowledge we received it
           }
         }
       }
@@ -523,8 +539,31 @@ class TrackController extends GetxController {
 
   void _onDataUpdated() {
     // Calculate rotation if coordinates changed
-    final lat = double.tryParse(displayLatitude);
-    final lng = double.tryParse(displayLongitude);
+    final pos = liveTrackData.value?.currentPosition;
+    if (pos == null) return;
+
+    final dynamic latRaw = pos.latitude;
+    final dynamic lngRaw = pos.longitude;
+
+    double? lat;
+    double? lng;
+
+    if (latRaw is double) {
+      lat = latRaw;
+    } else if (latRaw is String) {
+      lat = double.tryParse(latRaw);
+    } else if (latRaw is int) {
+      lat = latRaw.toDouble();
+    }
+
+    if (lngRaw is double) {
+      lng = lngRaw;
+    } else if (lngRaw is String) {
+      lng = double.tryParse(lngRaw);
+    } else if (lngRaw is int) {
+      lng = lngRaw.toDouble();
+    }
+
     if (lat != null && lng != null) {
       final target = LatLng(lat, lng);
 
@@ -542,8 +581,6 @@ class TrackController extends GetxController {
       }
       _previousLatLng = target;
     }
-
-    moveMapToVehicle();
   }
 
   void _animateTo(LatLng target) {
@@ -558,13 +595,14 @@ class TrackController extends GetxController {
     // No change? Just ensure markers up to date
     if (startLat == destLat && startLng == destLng) {
       _updateMarkers();
+      moveMapToVehicle();
       return;
     }
 
-    const int steps = 25; // Smooth 40fps animation over ~1 second
+    const int steps = 40; // High-res 40fps animation over ~1 second
     int currentStep = 0;
 
-    _interpolationTimer = Timer.periodic(const Duration(milliseconds: 40), (
+    _interpolationTimer = Timer.periodic(const Duration(milliseconds: 25), (
       timer,
     ) {
       if (_disposed) {
@@ -576,6 +614,7 @@ class TrackController extends GetxController {
         animatedLat.value = destLat;
         animatedLng.value = destLng;
         _updateMarkers();
+        moveMapToVehicle();
         timer.cancel();
       } else {
         double t = currentStep / steps;
@@ -586,6 +625,7 @@ class TrackController extends GetxController {
         animatedLat.value = startLat + (destLat - startLat) * easeT;
         animatedLng.value = startLng + (destLng - startLng) * easeT;
         _updateMarkers();
+        moveMapToVehicle(); // Follow the animated car
       }
     });
   }
@@ -657,11 +697,23 @@ class TrackController extends GetxController {
   /// Called from the Track button if the IMEI changes (re-entering the screen).
   void startTrackingForImei(String imei, {String plate = ''}) {
     if (imei.trim().isEmpty) return;
+
+    // Idempotent check: if already tracking this imei, do nothing
+    if (vehicleImei.value == imei &&
+        !isLiveLoading.value &&
+        (animatedLat.value != 0.0 || liveTrackData.value != null)) {
+      // Already tracking and have data, ensure polling/WS is active but don't reset state
+      _ensurePolling(imei);
+      return;
+    }
+
     vehicleImei.value = imei;
     if (plate.isNotEmpty) vehiclePlate.value = plate;
     liveTrackData.value = null;
     animatedLat.value = 0.0;
     animatedLng.value = 0.0;
+    _interpolationTimer?.cancel();
+    _pollingTimer?.cancel();
     _stopLiveTracking();
     _startLiveTracking(imei);
   }

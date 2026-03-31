@@ -1476,7 +1476,13 @@ class TrackView extends GetView<TrackController> {
             "History",
             'lib/Asset/Icons/history.png',
             false,
-            onTap: () => Get.toNamed(Routes.HISTORY),
+            onTap: () => Get.toNamed(
+              Routes.HISTORY,
+              parameters: {
+                'imei': controller.vehicleImei.value,
+                'vehicleId': controller.displayPlate,
+              },
+            ),
           ),
           _buildBottomNavItem(
             "Alerts",

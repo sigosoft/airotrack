@@ -45,15 +45,21 @@ Future<Map<String, dynamic>> _getHistoryInIsolate(
   }
 }
 
-/// Top-level for isolate: build polyline points with deviceTime for pipeline (sendable types only).
-List<Map<String, dynamic>> _buildPolylinePointsInIsolate(Map<String, dynamic>? responseBody) {
+/// Top-level for isolate: build polyline points with deviceTime (sendable types only).
+/// [args] must be {'responseBody': Map?}.
+List<Map<String, dynamic>> _buildPolylinePointsInIsolate(
+  Map<String, dynamic> args,
+) {
+  final responseBody = args['responseBody'] as Map<String, dynamic>?;
   if (responseBody == null) {
     debugPrint('[History] Isolate: no responseBody, returning []');
     return [];
   }
   final model = HistoryModel.fromJson(responseBody);
   final list = model.data?.locationHistory ?? [];
-  debugPrint('[History] Isolate: location_history count from backend = ${list.length}');
+  debugPrint(
+    '[History] Isolate: location_history count from backend = ${list.length}',
+  );
   final points = <Map<String, dynamic>>[];
   for (final item in list) {
     final lat = item.latitude != null
@@ -71,13 +77,20 @@ List<Map<String, dynamic>> _buildPolylinePointsInIsolate(Map<String, dynamic>? r
         'lat': lat,
         'lng': lng,
         'deviceTime': item.deviceTime ?? '',
+        'speed': item.speed ?? '0',
       });
     }
   }
-  debugPrint('[History] Isolate: valid points (lat/lng parsed) = ${points.length}');
+  debugPrint(
+    '[History] Isolate: valid points (lat/lng parsed) = ${points.length}',
+  );
   if (points.isNotEmpty) {
-    debugPrint('[History] Isolate: first point lat=${points.first['lat']} lng=${points.first['lng']} deviceTime=${points.first['deviceTime']}');
-    debugPrint('[History] Isolate: last point lat=${points.last['lat']} lng=${points.last['lng']} deviceTime=${points.last['deviceTime']}');
+    debugPrint(
+      '[History] Isolate: first point lat=${points.first['lat']} lng=${points.first['lng']} deviceTime=${points.first['deviceTime']}',
+    );
+    debugPrint(
+      '[History] Isolate: last point lat=${points.last['lat']} lng=${points.last['lng']} deviceTime=${points.last['deviceTime']}',
+    );
   }
   return points;
 }
@@ -103,24 +116,43 @@ const String _mapboxMatchBase =
 
 /// Top-level: parse Mapbox match response to list of [lat, lng]. Geometry is GeoJSON [lng, lat].
 List<List<double>> _processMapboxChunk(Map<String, dynamic> data) {
+  debugPrint('[History] Mapbox parse: _processMapboxChunk START');
   final result = <List<double>>[];
-  if (data['code']?.toString() != 'Ok') return result;
-  final matchings = data['matchings'];
-  if (matchings == null || matchings is! List || matchings.isEmpty)
-    return result;
-  for (final m in matchings) {
-    if (m is! Map<String, dynamic>) continue;
-    final geometry = m['geometry'];
-    if (geometry == null || geometry is! Map) continue;
-    final coords = geometry['coordinates'];
-    if (coords == null || coords is! List) continue;
-    for (final c in coords) {
-      if (c is List && c.length >= 2) {
-        final lng = (c[0] is num) ? (c[0] as num).toDouble() : null;
-        final lat = (c[1] is num) ? (c[1] as num).toDouble() : null;
-        if (lat != null && lng != null) result.add([lat, lng]);
+  try {
+    final code = data['code']?.toString();
+    debugPrint('[History] Mapbox parse: code=$code');
+    if (code != 'Ok') {
+      debugPrint('[History] Mapbox parse: code != Ok, returning empty');
+      return result;
+    }
+    final matchings = data['matchings'];
+    debugPrint(
+      '[History] Mapbox parse: matchings type=${matchings.runtimeType} length=${matchings is List ? matchings.length : "n/a"}',
+    );
+    if (matchings == null || matchings is! List || matchings.isEmpty) {
+      debugPrint('[History] Mapbox parse: no matchings, returning empty');
+      return result;
+    }
+    for (final m in matchings) {
+      if (m is! Map<String, dynamic>) continue;
+      final geometry = m['geometry'];
+      if (geometry == null || geometry is! Map) continue;
+      final coords = geometry['coordinates'];
+      if (coords == null || coords is! List) continue;
+      for (final c in coords) {
+        if (c is List && c.length >= 2) {
+          final lng = (c[0] is num) ? (c[0] as num).toDouble() : null;
+          final lat = (c[1] is num) ? (c[1] as num).toDouble() : null;
+          if (lat != null && lng != null) result.add([lat, lng]);
+        }
       }
     }
+    debugPrint(
+      '[History] Mapbox parse: _processMapboxChunk DONE result.length=${result.length}',
+    );
+  } catch (e, st) {
+    debugPrint('[History] Mapbox parse: _processMapboxChunk THREW $e');
+    debugPrint('[History] Mapbox parse: $st');
   }
   return result;
 }
@@ -145,15 +177,42 @@ class HistoryController extends GetxController {
   var fromDate = "-:-".obs;
   var toDate = "-:-".obs;
   var vehicleId = "KL 07 D 0518".obs;
+  String _activeImei = '';
 
   @override
   void onInit() {
     super.onInit();
-    final imeiParam = Get.parameters['imei'];
-    final nameParam = Get.parameters['vehicleId'];
-    if (imeiParam != null && imeiParam.isNotEmpty) {
-      vehicleId.value = nameParam ?? imeiParam;
+    syncRouteParams(
+      imei: Get.parameters['imei'],
+      vehicleNameOrId: Get.parameters['vehicleId'],
+    );
+  }
+
+  String get activeImei => _activeImei;
+
+  void syncRouteParams({String? imei, String? vehicleNameOrId}) {
+    final resolvedImei = (imei ?? '').trim();
+    if (resolvedImei.isNotEmpty) {
+      _activeImei = resolvedImei;
+      if ((vehicleNameOrId ?? '').trim().isNotEmpty) {
+        vehicleId.value = vehicleNameOrId!.trim();
+      } else {
+        vehicleId.value = resolvedImei;
+      }
+      return;
     }
+    if (_activeImei.isNotEmpty && vehicleId.value.trim().isEmpty) {
+      vehicleId.value = _activeImei;
+    }
+  }
+
+  String _resolveImeiForHistoryCall() {
+    final routeImei = (Get.parameters['imei'] ?? '').trim();
+    if (routeImei.isNotEmpty) {
+      _activeImei = routeImei;
+      return routeImei;
+    }
+    return _activeImei;
   }
 
   var currentSpeed = "0 Kmph".obs;
@@ -161,8 +220,43 @@ class HistoryController extends GetxController {
   var totalDistance = "12.5 Km".obs;
 
   var playbackSpeed = "1X".obs;
+
+  /// Playback speed multiplier: 1.0, 1.5, or 2.0. Used for smooth movement animation.
+  final playbackSpeedMultiplier = 1.0.obs;
+
+  /// Camera follows moving marker during playback when enabled.
+  final isFollowCameraEnabled = true.obs;
   var isPlaying = false.obs;
   var progress = 0.0.obs;
+
+  void enableFollowCamera() {
+    if (!isFollowCameraEnabled.value) {
+      isFollowCameraEnabled.value = true;
+      debugPrint('[History] Camera: follow enabled');
+    }
+  }
+
+  void disableFollowCamera() {
+    if (isFollowCameraEnabled.value) {
+      isFollowCameraEnabled.value = false;
+      debugPrint('[History] Camera: follow disabled');
+    }
+  }
+
+  /// Cycles playback speed: 1 → 1.5 → 2 → 1. Updates display and animation speed.
+  void cyclePlaybackSpeed() {
+    final current = playbackSpeedMultiplier.value;
+    if (current < 1.25) {
+      playbackSpeedMultiplier.value = 1.5;
+      playbackSpeed.value = '1.5X';
+    } else if (current < 1.75) {
+      playbackSpeedMultiplier.value = 2.0;
+      playbackSpeed.value = '2X';
+    } else {
+      playbackSpeedMultiplier.value = 1.0;
+      playbackSpeed.value = '1X';
+    }
+  }
 
   void toggleBottomSheet() {
     showBottomSheet.value = !showBottomSheet.value;
@@ -190,7 +284,7 @@ class HistoryController extends GetxController {
     if (picked != null) {
       fromDate.value = _dateFormat.format(picked);
       if (toDate.value != '-:-') {
-        final imei = Get.parameters['imei'] ?? '';
+        final imei = _resolveImeiForHistoryCall();
         getHistory(imei);
       }
     }
@@ -207,13 +301,47 @@ class HistoryController extends GetxController {
     if (picked != null) {
       toDate.value = _dateFormat.format(picked);
       if (fromDate.value != '-:-') {
-        final imei = Get.parameters['imei'] ?? '';
+        final imei = _resolveImeiForHistoryCall();
         getHistory(imei);
       }
     }
   }
 
   HistoryModel historyModel = HistoryModel();
+
+  /// Small list for bottom-sheet timeline UI (kept lightweight to avoid huge widget/data allocation).
+  final RxList<LocationHistoryItem> historyPreviewItems =
+      <LocationHistoryItem>[].obs;
+  List<double> _playbackSpeedSeries = <double>[];
+
+  static const int _maxHistoryPreviewItems = 300;
+
+  List<LocationHistoryItem> _buildHistoryPreview(
+    Map<String, dynamic>? responseBody, {
+    int maxItems = _maxHistoryPreviewItems,
+  }) {
+    final data = responseBody?['data'];
+    if (data is! Map<String, dynamic>) return <LocationHistoryItem>[];
+    final raw = data['location_history'];
+    if (raw is! List || raw.isEmpty) return <LocationHistoryItem>[];
+    final int n = raw.length;
+    if (n <= maxItems || maxItems <= 1) {
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(LocationHistoryItem.fromJson)
+          .toList();
+    }
+    final step = (n - 1) / (maxItems - 1);
+    final preview = <LocationHistoryItem>[];
+    for (int i = 0; i < maxItems; i++) {
+      final idx = (i * step).round().clamp(0, n - 1);
+      final item = raw[idx];
+      if (item is Map<String, dynamic>) {
+        preview.add(LocationHistoryItem.fromJson(item));
+      }
+    }
+    return preview;
+  }
 
   /// Cached after parsing in isolate; avoids recomputing on every build.
   List<LatLng> _cachedPolylinePoints = [];
@@ -229,11 +357,14 @@ class HistoryController extends GetxController {
 
   /// Polyline points from location_history (cached; set when history is loaded).
   List<LatLng> get polylinePoints => _cachedPolylinePoints;
+  bool _isPolylineFullyDrawn = false;
+  bool _pendingPlayRequest = false;
 
   /// Initial map center: center of polyline bounds when 2+ points, else first point or default.
   LatLng get initialMapCenter {
     final points = polylinePoints;
-    if (points.length < 2) return points.isNotEmpty ? points.first : _defaultMapCenter;
+    if (points.length < 2)
+      return points.isNotEmpty ? points.first : _defaultMapCenter;
     double south = points.first.latitude, north = south;
     double west = points.first.longitude, east = west;
     for (final p in points) {
@@ -256,6 +387,7 @@ class HistoryController extends GetxController {
     final points = polylinePoints;
     if (points.isEmpty) return [];
     if (points.length == 1) return [points.first];
+    if (!_isPolylineFullyDrawn) return [points.first];
     if (points.first == points.last) return [points.first];
     return [points.first, points.last];
   }
@@ -268,46 +400,136 @@ class HistoryController extends GetxController {
   Timer? _movingMarkerTimer;
   int _movingSegmentIndex = 0;
   double _movingSegmentFraction = 0.0;
+  bool _isHoldingForZeroSpeed = false;
 
   /// Whether the marker is currently animating along the route.
   bool get isMovingMarkerActive => _movingMarkerTimer?.isActive ?? false;
 
-  /// Starts moving the marker along the polyline. No-op if route has < 2 points.
+  void _tryFulfillPendingPlay() {
+    if (!_pendingPlayRequest) return;
+    if (isPlaying.value) return;
+    if (polylinePoints.length < 2) return;
+    _pendingPlayRequest = false;
+    debugPrint('[History] Playback: fulfilling queued play request');
+    startMovingMarker();
+  }
+
+  /// Starts moving the marker along the polyline. Resumes from current position if paused; otherwise starts from beginning.
   void startMovingMarker() {
     final points = polylinePoints;
-    if (points.length < 2) return;
+    if (points.length < 2) {
+      _pendingPlayRequest = true;
+      debugPrint('[History] Playback: queued play request (route not ready)');
+      return;
+    }
+    _pendingPlayRequest = false;
+    enableFollowCamera();
     stopMovingMarker();
-    _movingSegmentIndex = 0;
-    _movingSegmentFraction = 0.0;
-    movingMarkerPosition.value = points.first;
-    movingMarkerBearing.value = points.length > 1
-        ? _getBearing(points[0], points[1])
-        : 0.0;
-    const step = 0.02;
+    final bool resumeFromCurrent =
+        movingMarkerPosition.value != null &&
+        progress.value < 1.0 &&
+        _movingSegmentIndex >= 0 &&
+        _movingSegmentIndex < points.length - 1;
+    if (!resumeFromCurrent) {
+      _movingSegmentIndex = 0;
+      _movingSegmentFraction = 0.0;
+      movingMarkerPosition.value = points.first;
+      movingMarkerBearing.value = points.length > 1
+          ? _getBearing(points[0], points[1])
+          : 0.0;
+    }
+    debugPrint(
+      '[History] Playback: start movement mode=${resumeFromCurrent ? "resume" : "start"}',
+    );
+    debugPrint('[History] Playback: backend speed driven movement enabled');
+    if (!_disposed) update();
     const period = Duration(milliseconds: 150);
-    _movingMarkerTimer = Timer.periodic(period, (_) {
+    const tickSeconds = 0.15;
+    isPlaying.value = true;
+
+    void advanceFrame() {
       if (_disposed) return;
       final points = polylinePoints;
       if (points.length < 2) {
         stopMovingMarker();
         return;
       }
-      _movingSegmentFraction += step;
-      if (_movingSegmentFraction >= 1.0) {
-        _movingSegmentIndex++;
-        _movingSegmentFraction = 0.0;
+
+      final currentProgress = _getProgressFromMarkerPosition();
+      final backendKmph = _getBackendSpeedKmphAtProgress(currentProgress);
+      double effectiveMps;
+      if (_playbackSpeedSeries.isEmpty) {
+        // Fallback when backend speed series is unavailable.
+        effectiveMps = _basePlaybackSpeedMps * playbackSpeedMultiplier.value;
+      } else {
+        final effectiveKmph = backendKmph * playbackSpeedMultiplier.value;
+        if (effectiveKmph <= _zeroMovementSpeedThresholdKmph) {
+          if (!_isHoldingForZeroSpeed) {
+            debugPrint(
+              '[History] Playback: holding movement at low speed (${effectiveKmph.toStringAsFixed(1)} kmph)',
+            );
+            _isHoldingForZeroSpeed = true;
+          }
+          _syncCurrentSpeedWithProgress(currentProgress);
+          return;
+        }
+        if (_isHoldingForZeroSpeed) {
+          _isHoldingForZeroSpeed = false;
+          debugPrint(
+            '[History] Playback: resuming movement as speed increased',
+          );
+        }
+        effectiveMps = effectiveKmph / 3.6;
+      }
+      double distanceBudgetMeters = effectiveMps * tickSeconds;
+
+      while (distanceBudgetMeters > 0) {
         if (_movingSegmentIndex >= points.length - 1) {
           movingMarkerPosition.value = points.last;
-          movingMarkerBearing.value = _movingSegmentIndex >= 1
-              ? _getBearing(
-                  points[_movingSegmentIndex - 1],
-                  points[_movingSegmentIndex],
-                )
+          movingMarkerBearing.value = points.length >= 2
+              ? _getBearing(points[points.length - 2], points.last)
               : movingMarkerBearing.value;
+          progress.value = 1.0;
+          _syncCurrentSpeedWithProgress(1.0);
+          debugPrint('[History] Playback: reached end');
           stopMovingMarker();
           return;
         }
+
+        final a = points[_movingSegmentIndex];
+        final b = points[_movingSegmentIndex + 1];
+        final segmentMeters = _distanceMeters(a, b);
+        if (segmentMeters <= 1e-6) {
+          _movingSegmentIndex++;
+          _movingSegmentFraction = 0.0;
+          continue;
+        }
+
+        final currentT = _movingSegmentFraction.clamp(0.0, 1.0);
+        final remainingMeters = segmentMeters * (1.0 - currentT);
+        if (distanceBudgetMeters >= remainingMeters) {
+          distanceBudgetMeters -= remainingMeters;
+          _movingSegmentIndex++;
+          _movingSegmentFraction = 0.0;
+        } else {
+          final additionalT = distanceBudgetMeters / segmentMeters;
+          _movingSegmentFraction = (currentT + additionalT).clamp(0.0, 1.0);
+          distanceBudgetMeters = 0.0;
+        }
       }
+
+      if (_movingSegmentIndex >= points.length - 1) {
+        movingMarkerPosition.value = points.last;
+        movingMarkerBearing.value = points.length >= 2
+            ? _getBearing(points[points.length - 2], points.last)
+            : movingMarkerBearing.value;
+        progress.value = 1.0;
+        _syncCurrentSpeedWithProgress(1.0);
+        debugPrint('[History] Playback: reached end');
+        stopMovingMarker();
+        return;
+      }
+
       final a = points[_movingSegmentIndex];
       final b = points[_movingSegmentIndex + 1];
       final t = _movingSegmentFraction.clamp(0.0, 1.0);
@@ -318,17 +540,32 @@ class HistoryController extends GetxController {
       movingMarkerPosition.value = interpolated;
       movingMarkerBearing.value = _getBearing(a, b);
       _ensureMarkerOnPolyline(points);
-    });
+      // Progress should reflect the final (possibly snapped) marker position.
+      progress.value = _getProgressFromMarkerPosition();
+      _syncCurrentSpeedWithProgress();
+    }
+
+    // Move immediately on tap so playback feels responsive (no initial timer wait).
+    advanceFrame();
+    debugPrint('[History] Playback: first movement frame applied');
+    if (!isPlaying.value) return;
+    _movingMarkerTimer = Timer.periodic(period, (_) => advanceFrame());
   }
 
   /// Stops the marker animation.
   void stopMovingMarker() {
     _movingMarkerTimer?.cancel();
     _movingMarkerTimer = null;
+    _isHoldingForZeroSpeed = false;
+    isPlaying.value = false;
   }
 
-  /// Resets moving marker to start of route (e.g. when route data changes).
+  /// Resets moving marker (hides it). Used when route is cleared or reloading.
   void resetMovingMarker() {
+    if (_pendingPlayRequest) {
+      debugPrint('[History] Playback: cleared pending play request on reset');
+    }
+    _pendingPlayRequest = false;
     stopMovingMarker();
     movingMarkerPosition.value = null;
     movingMarkerBearing.value = null;
@@ -337,30 +574,137 @@ class HistoryController extends GetxController {
     if (!_disposed) update();
   }
 
+  /// Places the car marker at the start of the route (resting position). Does not start animation.
+  void placeMovingMarkerAtStart() {
+    stopMovingMarker();
+    final points = polylinePoints;
+    _movingSegmentIndex = 0;
+    _movingSegmentFraction = 0.0;
+    progress.value = 0.0;
+    if (points.isEmpty) {
+      movingMarkerPosition.value = null;
+      movingMarkerBearing.value = null;
+    } else {
+      movingMarkerPosition.value = points.first;
+      movingMarkerBearing.value = points.length >= 2
+          ? _getBearing(points[0], points[1])
+          : 0.0;
+    }
+    _syncCurrentSpeedWithProgress(0.0);
+    if (!_disposed) update();
+  }
+
+  /// Total distance along the polyline in km.
+  double _getTotalDistanceKm(List<LatLng> points) {
+    if (points.length < 2) return 0.0;
+    double total = 0.0;
+    for (int i = 0; i < points.length - 1; i++) {
+      total += _distanceKm(points[i], points[i + 1]);
+    }
+    return total;
+  }
+
+  /// Distance covered from start up to (segmentIndex, segmentFraction). In km.
+  double _getDistanceCoveredKm(
+    List<LatLng> points,
+    int segmentIndex,
+    double segmentFraction,
+  ) {
+    if (points.length < 2) return 0.0;
+    double covered = 0.0;
+    for (int i = 0; i < segmentIndex && i < points.length - 1; i++) {
+      covered += _distanceKm(points[i], points[i + 1]);
+    }
+    if (segmentIndex < points.length - 1) {
+      covered +=
+          segmentFraction *
+          _distanceKm(points[segmentIndex], points[segmentIndex + 1]);
+    }
+    return covered;
+  }
+
+  /// Progress 0.0..1.0 from current marker position (distance covered / total distance).
+  double _getProgressFromMarkerPosition() {
+    final points = polylinePoints;
+    if (points.length < 2) return 0.0;
+    final total = _getTotalDistanceKm(points);
+    if (total <= 0) return 0.0;
+    final covered = _getDistanceCoveredKm(
+      points,
+      _movingSegmentIndex,
+      _movingSegmentFraction,
+    );
+    return (covered / total).clamp(0.0, 1.0);
+  }
+
+  /// Moves the marker to the position corresponding to [p] (0.0..1.0) along the route. Stops animation.
+  void seekToProgress(double p) {
+    final points = polylinePoints;
+    if (points.length < 2) return;
+    stopMovingMarker();
+    final clamped = p.clamp(0.0, 1.0);
+    if (clamped <= 0.0) {
+      _movingSegmentIndex = 0;
+      _movingSegmentFraction = 0.0;
+      movingMarkerPosition.value = points.first;
+      movingMarkerBearing.value = _getBearing(points[0], points[1]);
+      progress.value = 0.0;
+      _syncCurrentSpeedWithProgress(0.0);
+      if (!_disposed) update();
+      return;
+    }
+    if (clamped >= 1.0) {
+      _movingSegmentIndex = points.length - 1;
+      _movingSegmentFraction = 1.0;
+      movingMarkerPosition.value = points.last;
+      movingMarkerBearing.value = points.length >= 2
+          ? _getBearing(points[points.length - 2], points[points.length - 1])
+          : 0.0;
+      progress.value = 1.0;
+      _syncCurrentSpeedWithProgress(1.0);
+      if (!_disposed) update();
+      return;
+    }
+    final totalKm = _getTotalDistanceKm(points);
+    final targetKm = clamped * totalKm;
+    double cum = 0.0;
+    for (int i = 0; i < points.length - 1; i++) {
+      final segKm = _distanceKm(points[i], points[i + 1]);
+      if (cum + segKm >= targetKm) {
+        final t = segKm > 0 ? (targetKm - cum) / segKm : 0.0;
+        _movingSegmentIndex = i;
+        _movingSegmentFraction = t.clamp(0.0, 1.0);
+        final a = points[i];
+        final b = points[i + 1];
+        movingMarkerPosition.value = LatLng(
+          a.latitude + (b.latitude - a.latitude) * _movingSegmentFraction,
+          a.longitude + (b.longitude - a.longitude) * _movingSegmentFraction,
+        );
+        movingMarkerBearing.value = _getBearing(a, b);
+        progress.value = clamped;
+        _syncCurrentSpeedWithProgress(clamped);
+        if (!_disposed) update();
+        return;
+      }
+      cum += segKm;
+    }
+    _movingSegmentIndex = points.length - 1;
+    _movingSegmentFraction = 1.0;
+    movingMarkerPosition.value = points.last;
+    progress.value = 1.0;
+    _syncCurrentSpeedWithProgress(1.0);
+    if (!_disposed) update();
+  }
+
   /// Progressive load: process and draw polyline in chunks of this size.
   static const int _progressiveChunkSize = 50;
 
-  /// Remove duplicate points: keep only if consecutive points are at least this far apart (~5m).
-  static const double _redundantPointMinDistKm = 0.005; // 5m
-  /// Douglas–Peucker tolerance (km) before Mapbox: simplify each chunk with this (5–8m) before sending.
-  static const double _simplifyBeforeMapboxToleranceKm =
-      0.006; // ~6m (5–8m range)
-  /// Simplify Mapbox result per chunk before merging so dense road geometry doesn’t clutter the display.
-  static const double _simplifyChunkAfterMapboxKm = 0.01; // ~10m
-  /// Douglas–Peucker tolerance (km) for display: keeps polyline smooth as more chunks load.
-  static const double _simplifyToleranceKm = 0.018; // ~18m
-  /// Max points before using lighter corner smoothing (1 iteration) to avoid clutter.
-  static const int _smoothCornersMaxPoints = 250;
+  /// Base playback velocity in meters/second. Effective speed = base * playbackSpeedMultiplier.
+  static const double _basePlaybackSpeedMps = 12.0;
+  static const double _zeroMovementSpeedThresholdKmph = 0.5;
 
-  static const int _maxDisplayPoints = 350;
-  /// Mapbox: smaller chunks (50) for better match quality; max 100 per request.
-  static const int _mapboxChunkSize = 50;
-
-  /// Pipeline: drop segments with implied speed below this (km/h).
-  static const double _minSpeedKmh = 5.0;
-  /// Pipeline: drop consecutive points closer than this (meters).
-  static const double _minDistanceMeters = 8.0;
-  static const double _minDistanceKm = _minDistanceMeters / 1000.0;
+  /// Mapbox chunk size kept conservative for faster first response and smoother perceived start.
+  static const int _mapboxChunkSize = 25;
 
   static const double _coordEpsilon = 1e-6;
 
@@ -380,66 +724,82 @@ class HistoryController extends GetxController {
     }
   }
 
-  /// Pipeline: Sort by devicetime → Remove speed < 5 km/h → Remove distance < 8 m → List<LatLng>.
-  List<LatLng> _applyPolylinePipeline(List<Map<String, dynamic>> raw) {
+  double _parseSpeedValue(dynamic raw) {
+    if (raw == null) return 0.0;
+    final v = double.tryParse(raw.toString().trim());
+    return v ?? 0.0;
+  }
+
+  void _buildPlaybackSpeedSeries(List<Map<String, dynamic>> raw) {
     if (raw.isEmpty) {
-      debugPrint('[History] Pipeline: raw input empty, returning []');
-      return [];
+      _playbackSpeedSeries = <double>[];
+      return;
     }
-    debugPrint('[History] Pipeline: input raw points = ${raw.length}');
-    // 1. Sort by devicetime
     final sorted = List<Map<String, dynamic>>.from(raw)
       ..sort((a, b) {
         final t1 = _parseDeviceTime(a['deviceTime'] as String?);
         final t2 = _parseDeviceTime(b['deviceTime'] as String?);
         return t1.compareTo(t2);
       });
-    debugPrint('[History] Pipeline: after sort by devicetime = ${sorted.length}');
-    // 2. Remove speed < 5 (keep first; then keep only if implied speed >= 5 km/h from last kept)
-    final afterSpeed = <Map<String, dynamic>>[];
-    for (final p in sorted) {
-      if (afterSpeed.isEmpty) {
-        afterSpeed.add(p);
-        continue;
-      }
-      final prev = afterSpeed.last;
-      final lat1 = prev['lat'] as double;
-      final lng1 = prev['lng'] as double;
-      final lat2 = p['lat'] as double;
-      final lng2 = p['lng'] as double;
-      final dt = _parseDeviceTime(p['deviceTime'] as String?)
-          .difference(_parseDeviceTime(prev['deviceTime'] as String?));
-      final timeHours = dt.inMilliseconds / (3600 * 1000);
-      if (timeHours <= 0) {
-        afterSpeed.add(p);
-        continue;
-      }
-      final distKm = _distanceKm(LatLng(lat1, lng1), LatLng(lat2, lng2));
-      final speedKmh = distKm / timeHours;
-      if (speedKmh >= _minSpeedKmh) afterSpeed.add(p);
+    _playbackSpeedSeries = sorted
+        .map((m) => _parseSpeedValue(m['speed']))
+        .toList(growable: false);
+  }
+
+  int _speedSeriesIndexForProgress(double progressValue) {
+    if (_playbackSpeedSeries.isEmpty) return -1;
+    return (progressValue.clamp(0.0, 1.0) * (_playbackSpeedSeries.length - 1))
+        .round()
+        .clamp(0, _playbackSpeedSeries.length - 1);
+  }
+
+  double _getBackendSpeedKmphAtProgress([double? p]) {
+    if (_playbackSpeedSeries.isEmpty) return 0.0;
+    final idx = _speedSeriesIndexForProgress(p ?? progress.value);
+    if (idx < 0) return 0.0;
+    return _playbackSpeedSeries[idx];
+  }
+
+  void _syncCurrentSpeedWithProgress([double? p]) {
+    if (_playbackSpeedSeries.isEmpty) return;
+    final progressValue = (p ?? progress.value).clamp(0.0, 1.0);
+    final idx = _speedSeriesIndexForProgress(progressValue);
+    if (idx < 0) return;
+    final speed = _playbackSpeedSeries[idx];
+    final speedText = speed % 1 == 0
+        ? '${speed.toInt()} Kmph'
+        : '${speed.toStringAsFixed(1)} Kmph';
+    if (currentSpeed.value != speedText) {
+      currentSpeed.value = speedText;
     }
-    debugPrint('[History] Pipeline: after remove speed < $_minSpeedKmh km/h = ${afterSpeed.length}');
-    // 3. Remove distance < 8 m (keep first; then keep only if distance from last kept >= 8 m)
-    final afterDist = <Map<String, dynamic>>[];
-    for (final p in afterSpeed) {
-      if (afterDist.isEmpty) {
-        afterDist.add(p);
-        continue;
-      }
-      final prev = afterDist.last;
-      final lat1 = prev['lat'] as double;
-      final lng1 = prev['lng'] as double;
-      final lat2 = p['lat'] as double;
-      final lng2 = p['lng'] as double;
-      if (_distanceKm(LatLng(lat1, lng1), LatLng(lat2, lng2)) >= _minDistanceKm) {
-        afterDist.add(p);
-      }
+  }
+
+  /// Pipeline: Sort by devicetime only. No filtering — send full track to Mapbox for accurate road snapping.
+  List<LatLng> _applyPolylinePipeline(List<Map<String, dynamic>> raw) {
+    if (raw.isEmpty) {
+      debugPrint('[History] Pipeline: raw input empty, returning []');
+      return [];
     }
-    debugPrint('[History] Pipeline: after remove distance < $_minDistanceMeters m = ${afterDist.length}');
-    final result = afterDist.map((m) => LatLng(m['lat'] as double, m['lng'] as double)).toList();
+    debugPrint('[History] Pipeline: input raw points = ${raw.length}');
+    final sorted = List<Map<String, dynamic>>.from(raw)
+      ..sort((a, b) {
+        final t1 = _parseDeviceTime(a['deviceTime'] as String?);
+        final t2 = _parseDeviceTime(b['deviceTime'] as String?);
+        return t1.compareTo(t2);
+      });
+    debugPrint(
+      '[History] Pipeline: after sort by devicetime = ${sorted.length}',
+    );
+    final result = sorted
+        .map((m) => LatLng(m['lat'] as double, m['lng'] as double))
+        .toList();
     if (result.isNotEmpty) {
-      debugPrint('[History] Pipeline: final cleanList first lat=${result.first.latitude} lng=${result.first.longitude}');
-      debugPrint('[History] Pipeline: final cleanList last lat=${result.last.latitude} lng=${result.last.longitude}');
+      debugPrint(
+        '[History] Pipeline: final cleanList first lat=${result.first.latitude} lng=${result.first.longitude}',
+      );
+      debugPrint(
+        '[History] Pipeline: final cleanList last lat=${result.last.latitude} lng=${result.last.longitude}',
+      );
     }
     return result;
   }
@@ -447,37 +807,6 @@ class HistoryController extends GetxController {
   bool _samePoint(LatLng a, LatLng b) {
     return (a.latitude - b.latitude).abs() < _coordEpsilon &&
         (a.longitude - b.longitude).abs() < _coordEpsilon;
-  }
-
-  /// Rounds sharp turns into smooth curves using Chaikin's corner-cutting algorithm.
-  /// Uses 1 iteration when path is long to avoid clutter.
-  List<LatLng> _smoothPolylineCorners(List<LatLng> points, {int? iterations}) {
-    if (points.length < 3) return points;
-    final iter =
-        iterations ?? (points.length > _smoothCornersMaxPoints ? 1 : 2);
-    List<LatLng> current = List.from(points);
-    for (int i = 0; i < iter; i++) {
-      final next = <LatLng>[current.first];
-      for (int i = 0; i < current.length - 1; i++) {
-        final p0 = current[i];
-        final p1 = current[i + 1];
-        next.add(
-          LatLng(
-            p0.latitude * 0.25 + p1.latitude * 0.75,
-            p0.longitude * 0.25 + p1.longitude * 0.75,
-          ),
-        );
-        next.add(
-          LatLng(
-            p0.latitude * 0.75 + p1.latitude * 0.25,
-            p0.longitude * 0.75 + p1.longitude * 0.25,
-          ),
-        );
-      }
-      next.add(current.last);
-      current = next;
-    }
-    return current;
   }
 
   /// Snaps path to roads using Mapbox Map Matching API. Returns raw points on failure.
@@ -492,11 +821,13 @@ class HistoryController extends GetxController {
       debugPrint('[History] Mapbox: rawPoints < 2, returning as-is');
       return rawPoints;
     }
-    final dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 25),
-      receiveTimeout: const Duration(seconds: 25),
-      validateStatus: (status) => status != null && status < 500,
-    ));
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 25),
+        receiveTimeout: const Duration(seconds: 25),
+        validateStatus: (status) => status != null && status < 500,
+      ),
+    );
     final snappedPath = <LatLng>[];
     int successChunks = 0;
     int totalChunks = 0;
@@ -509,60 +840,123 @@ class HistoryController extends GetxController {
         if (chunk.length < 2) continue;
         totalChunks++;
         final chunkIndex = i ~/ _mapboxChunkSize;
-        debugPrint('[History] Mapbox: chunk $chunkIndex request points ${chunk.length} (indices $i–${end - 1})');
-        final coords = chunk
-            .map((p) => '${p.longitude},${p.latitude}')
-            .join(';');
-        final radiuses = List.filled(chunk.length, 50).join(';');
-        // Coordinates in path as semicolon-separated lng,lat (Mapbox expects unencoded in path).
-        final url =
-            '$_mapboxMatchBase/$coords.json?geometries=geojson&overview=full&radiuses=$radiuses&tidy=true&access_token=$token';
-        final response = await dio.get<Map<String, dynamic>>(url);
-        if (response.statusCode != 200 || response.data == null) {
-          debugPrint('[History] Mapbox: chunk $chunkIndex HTTP ${response.statusCode}, skipping');
-          if (response.data != null) {
-            debugPrint(
-              'Mapbox chunk ${i ~/ _mapboxChunkSize}: ${response.statusCode}',
-            );
-          }
+        debugPrint(
+          '[History] Mapbox: chunk $chunkIndex request points ${chunk.length} (indices $i–${end - 1})',
+        );
+        Map<String, dynamic>? responseData;
+        int? statusCode;
+        try {
+          final coords = chunk
+              .map((p) => '${p.longitude},${p.latitude}')
+              .join(';');
+          final radiuses = List.filled(chunk.length, 25).join(';');
+          final url =
+              '$_mapboxMatchBase/$coords.json?geometries=geojson&overview=full&radiuses=$radiuses&tidy=true&access_token=$token';
+          debugPrint(
+            '[History] Mapbox: chunk $chunkIndex about to HTTP GET (url length=${url.length})',
+          );
+          final response = await dio.get<Map<String, dynamic>>(url);
+          statusCode = response.statusCode;
+          responseData = response.data;
+          debugPrint(
+            '[History] Mapbox: chunk $chunkIndex HTTP done statusCode=$statusCode dataNull=${responseData == null}',
+          );
+        } catch (e, st) {
+          debugPrint('[History] Mapbox: chunk $chunkIndex HTTP THREW $e');
+          debugPrint('[History] Mapbox: chunk $chunkIndex stack: $st');
           continue;
         }
-        final chunkSmoothed = await compute(
-          _processMapboxChunk,
-          response.data!,
+        if (statusCode != 200 || responseData == null) {
+          debugPrint(
+            '[History] Mapbox: chunk $chunkIndex HTTP ${statusCode ?? "null"}, skipping',
+          );
+          continue;
+        }
+        final matchingsRaw = responseData['matchings'];
+        final inputMatchingsCount = matchingsRaw is List
+            ? matchingsRaw.length
+            : 0;
+        debugPrint(
+          '[History] Mapbox: chunk $chunkIndex parse isolate start inputMatchings=$inputMatchingsCount',
+        );
+        final parsePayload = <String, dynamic>{
+          // Send only fields required by parser to reduce isolate transfer payload.
+          'code': responseData['code'],
+          'matchings': matchingsRaw is List ? matchingsRaw : const [],
+        };
+        final parseSw = Stopwatch()..start();
+        List<List<double>> chunkSmoothed;
+        try {
+          chunkSmoothed = await compute(_processMapboxChunk, parsePayload);
+        } catch (e, st) {
+          debugPrint(
+            '[History] Mapbox: chunk $chunkIndex parse isolate FAILED error=$e',
+          );
+          debugPrint('[History] Mapbox: chunk $chunkIndex parse stack: $st');
+          continue;
+        } finally {
+          parseSw.stop();
+        }
+        debugPrint(
+          '[History] Mapbox: chunk $chunkIndex parse isolate done outputPoints=${chunkSmoothed.length} elapsedMs=${parseSw.elapsedMilliseconds}',
         );
         if (chunkSmoothed.isEmpty) {
-          debugPrint('[History] Mapbox: chunk $chunkIndex parsed 0 points, skipping');
+          debugPrint(
+            '[History] Mapbox: chunk $chunkIndex parsed 0 points, skipping',
+          );
           continue;
         }
         successChunks++;
-        debugPrint('[History] Mapbox: chunk $chunkIndex matched ${chunkSmoothed.length} points');
-        final chunkLatLng = chunkSmoothed
-            .map((p) => LatLng(p[0], p[1]))
-            .toList();
-        if (snappedPath.isNotEmpty &&
-            chunkLatLng.isNotEmpty &&
-            _samePoint(snappedPath.last, chunkLatLng.first)) {
-          chunkLatLng.removeAt(0);
+        debugPrint(
+          '[History] Mapbox: chunk $chunkIndex matched ${chunkSmoothed.length} points',
+        );
+        try {
+          final chunkLatLng = chunkSmoothed
+              .map((p) => LatLng(p[0], p[1]))
+              .toList();
+          if (snappedPath.isNotEmpty &&
+              chunkLatLng.isNotEmpty &&
+              _samePoint(snappedPath.last, chunkLatLng.first)) {
+            chunkLatLng.removeAt(0);
+          }
+          snappedPath.addAll(chunkLatLng);
+        } catch (e, st) {
+          debugPrint(
+            '[History] Mapbox: chunk $chunkIndex to LatLng/addAll THREW $e',
+          );
+          debugPrint('[History] Mapbox: chunk $chunkIndex stack: $st');
+          continue;
         }
-        snappedPath.addAll(chunkLatLng);
+        debugPrint(
+          '[History] Mapbox: chunk $chunkIndex fully done, snappedPath.length=${snappedPath.length}',
+        );
         await Future<void>.delayed(const Duration(milliseconds: 60));
       }
       if (snappedPath.isEmpty) {
-        debugPrint('[History] Mapbox: all chunks failed, returning raw points (${rawPoints.length})');
+        debugPrint(
+          '[History] Mapbox: all chunks failed, returning raw points (${rawPoints.length})',
+        );
         return rawPoints;
       }
       if (successChunks < totalChunks) {
-        debugPrint('[History] Mapbox: partial ($successChunks/$totalChunks chunks), snapped ${snappedPath.length} points');
+        debugPrint(
+          '[History] Mapbox: partial ($successChunks/$totalChunks chunks), snapped ${snappedPath.length} points',
+        );
         debugPrint(
           'Mapbox: partial ($successChunks/$totalChunks chunks), ${snappedPath.length} points',
         );
       } else {
-        debugPrint('[History] Mapbox: all $totalChunks chunks ok, snapped ${snappedPath.length} points');
+        debugPrint(
+          '[History] Mapbox: all $totalChunks chunks ok, snapped ${snappedPath.length} points',
+        );
       }
+      debugPrint(
+        '[History] Mapbox: _smoothPathWithMapbox returning snappedPath.length=${snappedPath.length}',
+      );
       return snappedPath;
     } catch (e, st) {
-      debugPrint('[History] Mapbox error: $e\n$st');
+      debugPrint('[History] Mapbox: _smoothPathWithMapbox OUTER CATCH $e');
+      debugPrint('[History] Mapbox: _smoothPathWithMapbox FULL STACK:\n$st');
       return rawPoints;
     }
   }
@@ -598,7 +992,12 @@ class HistoryController extends GetxController {
     }
     if (polyline.length == 1) {
       final dist = _distanceMeters(currentLocation, polyline[0]);
-      return {'point': polyline[0], 'distance': dist, 'segmentIndex': 0, 't': 0.0};
+      return {
+        'point': polyline[0],
+        'distance': dist,
+        'segmentIndex': 0,
+        't': 0.0,
+      };
     }
     double minDistance = double.infinity;
     LatLng closestPoint = polyline[0];
@@ -620,7 +1019,8 @@ class HistoryController extends GetxController {
         }
         continue;
       }
-      final t = ((currentLocation.longitude - p1.longitude) * dx +
+      final t =
+          ((currentLocation.longitude - p1.longitude) * dx +
               (currentLocation.latitude - p1.latitude) * dy) /
           segmentLengthSq;
       final clampedT = t.clamp(0.0, 1.0);
@@ -662,74 +1062,6 @@ class HistoryController extends GetxController {
     }
   }
 
-  /// Keeps polyline under [_maxDisplayPoints] by even sampling (no Douglas–Peucker).
-  List<LatLng> _capPolylinePoints(List<LatLng> points) {
-    if (points.length <= _maxDisplayPoints) return points;
-    if (points.length <= 1) return points;
-    final n = points.length;
-    final step = (n - 1) / (_maxDisplayPoints - 1);
-    return [
-      for (int i = 0; i < _maxDisplayPoints; i++)
-        points[(i * step).round().clamp(0, n - 1)],
-    ];
-  }
-
-  /// Perpendicular distance (km) from point [p] to line segment [a]–[b].
-  double _distanceToSegmentKm(LatLng p, LatLng a, LatLng b) {
-    final dLab = _distanceKm(a, b);
-    if (dLab < 1e-9) return _distanceKm(p, a);
-    final dPa = _distanceKm(p, a);
-    final dPb = _distanceKm(p, b);
-    final t =
-        ((b.latitude - a.latitude) * (p.latitude - a.latitude) +
-            (b.longitude - a.longitude) * (p.longitude - a.longitude)) /
-        ((b.latitude - a.latitude) * (b.latitude - a.latitude) +
-            (b.longitude - a.longitude) * (b.longitude - a.longitude));
-    if (t <= 0) return dPa;
-    if (t >= 1) return dPb;
-    final q = LatLng(
-      a.latitude + t * (b.latitude - a.latitude),
-      a.longitude + t * (b.longitude - a.longitude),
-    );
-    return _distanceKm(p, q);
-  }
-
-  /// Douglas–Peucker simplification (iterative to avoid stack overflow on long polylines).
-  List<LatLng> _simplifyPolyline(List<LatLng> points, double toleranceKm) {
-    if (points.length < 3 || toleranceKm <= 0) return points;
-    final keep = List<bool>.filled(points.length, false);
-    keep[0] = true;
-    keep[points.length - 1] = true;
-    final stack = <int>[0, points.length - 1];
-    while (stack.length >= 2) {
-      final end = stack.removeLast();
-      final start = stack.removeLast();
-      if (end <= start + 1) continue;
-      double maxDist = 0;
-      int maxIdx = start;
-      final a = points[start];
-      final b = points[end];
-      for (int i = start + 1; i < end; i++) {
-        final d = _distanceToSegmentKm(points[i], a, b);
-        if (d > maxDist) {
-          maxDist = d;
-          maxIdx = i;
-        }
-      }
-      if (maxDist >= toleranceKm) {
-        keep[maxIdx] = true;
-        stack.add(start);
-        stack.add(maxIdx);
-        stack.add(maxIdx);
-        stack.add(end);
-      }
-    }
-    return [
-      for (int i = 0; i < points.length; i++)
-        if (keep[i]) points[i],
-    ];
-  }
-
   /// Loads polyline step-by-step: sends points to Mapbox for snapping.
   void _runProgressiveSnapInBackground(List<LatLng> cleanPoints) {
     if (cleanPoints.length < 2) {
@@ -737,33 +1069,65 @@ class HistoryController extends GetxController {
       return;
     }
     final runId = ++_progressiveRunId;
-    debugPrint('[History] Progressive: runId=$runId cleanPoints=${cleanPoints.length}');
+    debugPrint(
+      '[History] Progressive: runId=$runId cleanPoints=${cleanPoints.length}',
+    );
     Future<void>.delayed(Duration.zero, () async {
+      _isPolylineFullyDrawn = false;
       final reducedPoints = cleanPoints;
-      debugPrint('[History] Progressive: points to Mapbox = ${reducedPoints.length}');
+      debugPrint(
+        '[History] Progressive: points to Mapbox = ${reducedPoints.length}',
+      );
       int chunkIndex = 0;
-      for (int start = 0; start < reducedPoints.length; start += _progressiveChunkSize) {
+      for (
+        int start = 0;
+        start < reducedPoints.length;
+        start += _progressiveChunkSize
+      ) {
         if (_disposed || runId != _progressiveRunId) return;
         final end = (start + _progressiveChunkSize > reducedPoints.length)
             ? reducedPoints.length
             : start + _progressiveChunkSize;
         final chunk = reducedPoints.sublist(start, end);
         if (chunk.length < 2) continue;
-        debugPrint('[History] Progressive: chunk $chunkIndex start=$start end=$end size=${chunk.length}');
-        List<LatLng> snapped = await _smoothPathWithMapbox(chunk);
-        if (_disposed || runId != _progressiveRunId) return;
-        // Only draw Mapbox-matched geometry; never draw raw points on the map.
-        final mapboxOk = !identical(snapped, chunk) && snapped.length >= 2;
-        if (!mapboxOk) {
-          debugPrint('[History] Progressive: chunk $chunkIndex skipped (Mapbox failed or < 2 points, no raw drawn)');
+        debugPrint(
+          '[History] Progressive: chunk $chunkIndex start=$start end=$end size=${chunk.length}',
+        );
+        debugPrint(
+          '[History] Progressive: chunk $chunkIndex calling _smoothPathWithMapbox...',
+        );
+        List<LatLng> snapped;
+        try {
+          snapped = await _smoothPathWithMapbox(chunk);
+          debugPrint(
+            '[History] Progressive: chunk $chunkIndex _smoothPathWithMapbox returned length=${snapped.length}',
+          );
+        } catch (e, st) {
+          debugPrint(
+            '[History] Progressive: chunk $chunkIndex _smoothPathWithMapbox THREW $e',
+          );
+          debugPrint('[History] Progressive: chunk $chunkIndex stack: $st');
           chunkIndex++;
           continue;
         }
-        debugPrint('[History] Progressive: chunk $chunkIndex using Mapbox snapped ${snapped.length} points');
+        if (_disposed || runId != _progressiveRunId) return;
+        final mapboxOk = !identical(snapped, chunk) && snapped.length >= 2;
+        if (!mapboxOk) {
+          debugPrint(
+            '[History] Progressive: chunk $chunkIndex skipped (Mapbox failed or < 2 points, no raw drawn)',
+          );
+          chunkIndex++;
+          continue;
+        }
+        debugPrint(
+          '[History] Progressive: chunk $chunkIndex using Mapbox snapped ${snapped.length} points',
+        );
         if (_disposed || runId != _progressiveRunId) return;
         if (start == 0) {
-          _cachedPolylinePoints = _capPolylinePoints(snapped);
-          debugPrint('[History] Progressive: chunk 0 drawn (Mapbox only), cached points = ${_cachedPolylinePoints.length}');
+          _cachedPolylinePoints = List<LatLng>.from(snapped);
+          debugPrint(
+            '[History] Progressive: chunk 0 drawn (Mapbox only), cached points = ${_cachedPolylinePoints.length}',
+          );
         } else {
           if (_cachedPolylinePoints.isNotEmpty &&
               snapped.isNotEmpty &&
@@ -772,23 +1136,26 @@ class HistoryController extends GetxController {
           }
           _cachedPolylinePoints = List<LatLng>.from(_cachedPolylinePoints)
             ..addAll(snapped);
-          _cachedPolylinePoints = _capPolylinePoints(_cachedPolylinePoints);
-          debugPrint('[History] Progressive: chunk $chunkIndex merged, cached points = ${_cachedPolylinePoints.length}');
+          debugPrint(
+            '[History] Progressive: chunk $chunkIndex merged, cached points = ${_cachedPolylinePoints.length}',
+          );
         }
+        _tryFulfillPendingPlay();
         chunkIndex++;
         if (_disposed || runId != _progressiveRunId) return;
         update();
         await Future<void>.delayed(const Duration(milliseconds: 300));
       }
       if (_disposed || runId != _progressiveRunId) return;
-      debugPrint('[History] Progressive: done. Total polyline points on map = ${_cachedPolylinePoints.length}');
-      resetMovingMarker();
+      _isPolylineFullyDrawn = true;
+      debugPrint(
+        '[History] Progressive: done. Total polyline points on map = ${_cachedPolylinePoints.length}',
+      );
+      placeMovingMarkerAtStart();
       if (_disposed) return;
       update();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_disposed) return;
-        if (polylinePoints.length >= 2) startMovingMarker();
-      });
+      _tryFulfillPendingPlay();
+      // Smooth movement starts only when user taps play (no auto-start).
     });
   }
 
@@ -809,9 +1176,24 @@ class HistoryController extends GetxController {
   }
 
   Future<void> getHistory(String imei) async {
-    if (imei.trim().isEmpty) return;
+    final effectiveImei = imei.trim().isNotEmpty
+        ? imei.trim()
+        : _resolveImeiForHistoryCall();
+    debugPrint(
+      '[History] getHistory: imei=$effectiveImei fromDate=${fromDate.value} toDate=${toDate.value}',
+    );
+    if (effectiveImei.isEmpty) return;
+    _activeImei = effectiveImei;
+    if (_pendingPlayRequest) {
+      debugPrint(
+        '[History] Playback: cleared pending play request on new fetch',
+      );
+    }
+    _pendingPlayRequest = false;
     isLoading.value = true;
-    debugPrint('[History] getHistory: imei=$imei fromDate=${fromDate.value} toDate=${toDate.value}');
+    debugPrint(
+      '[History] getHistory: imei=$imei fromDate=${fromDate.value} toDate=${toDate.value}',
+    );
     try {
       final token = DioClient().dio.options.headers['Authorization']
           ?.toString();
@@ -819,7 +1201,7 @@ class HistoryController extends GetxController {
         'baseUrl': ApiConfig.baseUrl,
         'path': ApiEndPoints.vehicleHistory,
         'query': <String, String>{
-          'imei': imei.trim(),
+          'imei': effectiveImei,
           'from_date': fromDate.value == '-:-'
               ? _apiDateFormat.format(DateTime.now())
               : _apiDateFormat.format(_parseDisplayDate(fromDate.value)),
@@ -829,7 +1211,9 @@ class HistoryController extends GetxController {
         },
         'token': token,
       };
-      debugPrint('[History] getHistory: fetching backend ${params['path']} query=${params['query']}');
+      debugPrint(
+        '[History] getHistory: fetching backend ${params['path']} query=${params['query']}',
+      );
       final result = await compute(_getHistoryInIsolate, params);
       if (result.containsKey('error')) {
         debugPrint('[History] getHistory: backend error ${result['error']}');
@@ -841,37 +1225,65 @@ class HistoryController extends GetxController {
       debugPrint('[History] getHistory: backend statusCode=$statusCode');
       final responseBody = result['data'] as Map<String, dynamic>?;
       if (responseBody != null) {
-        debugPrint('[History] getHistory: parsing lat/lng from response');
-        final rawPoints = await compute(_buildPolylinePointsInIsolate, responseBody);
-        debugPrint('[History] getHistory: rawPoints from isolate = ${rawPoints.length}');
-        // Pipeline: Sort by devicetime → Remove speed < 5 → Remove distance < 8 m → Mapbox → Draw
+        final dataMap = responseBody['data'];
+        final vehicleInfoJson = dataMap is Map<String, dynamic>
+            ? dataMap['vehicle_info']
+            : null;
+        // Keep model lightweight: avoid parsing full location_history into HistoryModel.
+        historyModel = HistoryModel(
+          status: responseBody['status'] is bool
+              ? responseBody['status'] as bool
+              : null,
+          data: HistoryData(
+            vehicleInfo: vehicleInfoJson is Map<String, dynamic>
+                ? VehicleInfo.fromJson(vehicleInfoJson)
+                : null,
+            locationHistory: const [],
+          ),
+        );
+        historyPreviewItems.assignAll(_buildHistoryPreview(responseBody));
+        debugPrint(
+          '[History] getHistory: history preview items = ${historyPreviewItems.length}',
+        );
+        debugPrint(
+          '[History] getHistory: parsing lat/lng from response (capped in isolate to avoid crash)',
+        );
+        final rawPoints = await compute(
+          _buildPolylinePointsInIsolate,
+          <String, dynamic>{'responseBody': responseBody},
+        );
+        debugPrint(
+          '[History] getHistory: rawPoints from isolate = ${rawPoints.length}',
+        );
+        _buildPlaybackSpeedSeries(rawPoints);
         final cleanList = _applyPolylinePipeline(rawPoints);
-        debugPrint('[History] getHistory: pipeline cleanList = ${cleanList.length} points');
-        historyModel = HistoryModel.fromJson(responseBody);
+        debugPrint(
+          '[History] getHistory: pipeline cleanList = ${cleanList.length} points',
+        );
         resetMovingMarker();
         if (cleanList.length >= 2) {
           // Do not draw raw points: only draw after Mapbox returns snapped geometry.
           _cachedPolylinePoints = [];
-          debugPrint('[History] getHistory: no raw draw; starting Mapbox matching (cleanList=${cleanList.length})');
-          final info = historyModel.data?.vehicleInfo;
-          if (info != null) {
-            currentSpeed.value = '${info.speed ?? 0} Kmph';
-          }
+          _isPolylineFullyDrawn = false;
+          debugPrint(
+            '[History] getHistory: no raw draw; starting Mapbox matching (cleanList=${cleanList.length})',
+          );
+          _syncCurrentSpeedWithProgress(0.0);
           update();
           isLoading.value = false;
           _runProgressiveSnapInBackground(cleanList);
         } else {
           debugPrint('[History] getHistory: cleanList < 2, no polyline');
           _cachedPolylinePoints = [];
-          final info = historyModel.data?.vehicleInfo;
-          if (info != null) {
-            currentSpeed.value = '${info.speed ?? 0} Kmph';
-          }
+          _isPolylineFullyDrawn = false;
+          _syncCurrentSpeedWithProgress(0.0);
           update();
           isLoading.value = false;
         }
       } else {
         debugPrint('[History] getHistory: responseBody null');
+        historyPreviewItems.clear();
+        _playbackSpeedSeries = <double>[];
         isLoading.value = false;
       }
     } catch (e, st) {

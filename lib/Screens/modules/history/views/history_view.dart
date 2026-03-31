@@ -103,9 +103,15 @@ class HistoryView extends GetView<HistoryController> {
         ),
         body: GetBuilder<HistoryController>(
           didChangeDependencies: (state) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              state.controller?.getHistoryOnce(imei);
-            });
+            final routeImei = (Get.parameters['imei'] ?? '').trim();
+            final widgetImei = imei.trim();
+            final resolvedImei = widgetImei.isNotEmpty ? widgetImei : routeImei;
+            final routeVehicleId = Get.parameters['vehicleId'];
+            controller.syncRouteParams(
+              imei: resolvedImei,
+              vehicleNameOrId: routeVehicleId,
+            );
+            debugPrint('The emi number is: $resolvedImei');
           },
           builder: (controller) => LayoutBuilder(
             builder: (context, constraints) {
@@ -123,8 +129,13 @@ class HistoryView extends GetView<HistoryController> {
                       initialZoom: controller.initialMapZoom,
                       polylinePoints: controller.polylinePoints,
                       markerPoints: controller.mapMarkerPoints,
-                      movingMarkerPosition: controller.movingMarkerPosition.value,
+                      movingMarkerPosition:
+                          controller.movingMarkerPosition.value,
                       movingMarkerBearing: controller.movingMarkerBearing.value,
+                      isFollowCameraEnabled:
+                          controller.isFollowCameraEnabled.value,
+                      isPlaybackActive: controller.isPlaying.value,
+                      onManualFollowDisable: controller.disableFollowCamera,
                     ),
                   ),
                   Positioned(
@@ -139,14 +150,23 @@ class HistoryView extends GetView<HistoryController> {
                     right: horizontalPadding,
                     child: Column(
                       children: [
-                        HistorySideButton(
-                          assetPath: 'lib/Asset/Icons/Locations.png',
+                        GestureDetector(
+                          onTap: controller.enableFollowCamera,
+                          child: HistorySideButton(
+                            assetPath: 'lib/Asset/Icons/Locations.png',
+                          ),
                         ),
                         SizedBox(height: sideBtnSpacing),
                         HistorySideButton(text: "P", textColor: Colors.green),
                         SizedBox(height: sideBtnSpacing),
-                        HistorySideButton(
-                          assetPath: 'lib/Asset/Icons/Arrows.png',
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            Get.find<HistoryController>().startMovingMarker();
+                          },
+                          child: HistorySideButton(
+                            assetPath: 'lib/Asset/Icons/Arrows.png',
+                          ),
                         ),
                         SizedBox(height: sideBtnSpacing),
                         HistorySideButton(

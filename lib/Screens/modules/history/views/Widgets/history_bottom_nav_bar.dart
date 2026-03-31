@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import '../../../../routes/app_routes.dart';
 import 'package:get/get.dart';
+import '../../controllers/history_controller.dart';
 
 class HistoryBottomNavBar extends StatelessWidget {
   const HistoryBottomNavBar({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final historyController = Get.find<HistoryController>();
+    final imei = historyController.activeImei;
+    final vehicle = historyController.vehicleId.value;
     return Container(
       height: 84,
       decoration: BoxDecoration(
@@ -26,13 +30,27 @@ class HistoryBottomNavBar extends StatelessWidget {
             assetPath: 'lib/Asset/Icons/Location.png',
             label: "Track",
             isSelected: false,
-            onTap: () => Get.toNamed(Routes.TRACK),
+            onTap: () => Get.toNamed(
+              Routes.TRACK,
+              parameters: {
+                'imei': imei,
+                'vehicleId': vehicle,
+              },
+            ),
           ),
           HistoryNavItem(
             assetPath: 'lib/Asset/Icons/history.png',
             label: "History",
             isSelected: true,
-            onTap: () {},
+            onTap: () {
+              Get.toNamed(
+                Routes.HISTORY,
+                parameters: {
+                  'imei': imei,
+                  'vehicleId': vehicle,
+                },
+              );
+            },
           ),
           HistoryNavItem(
             assetPath: 'lib/Asset/Icons/notification.png',

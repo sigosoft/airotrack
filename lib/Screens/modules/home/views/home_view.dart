@@ -612,7 +612,7 @@ class HomeView extends GetView<HomeController> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Container(
-            width: 357,
+            width: 380,
             height: 250,
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -633,9 +633,11 @@ class HomeView extends GetView<HomeController> {
                 const SizedBox(height: 8),
                 _buildDialogRow("Voltage:", "13.78 V"),
                 const Spacer(),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                     // Cancel Button
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
@@ -666,38 +668,38 @@ class HomeView extends GetView<HomeController> {
                         ),
                       ),
                     ),
-                    // History Button
-                    // GestureDetector(
-                    //   onTap: () {
-                    //     Navigator.pop(context);
-                    //     Get.toNamed(
-                    //       Routes.HISTORY,
-                    //       parameters: {
-                    //         'imei': vehicle.deviceId,
-                    //         'vehicleId': vehicle.plateNumber,
-                    //       },
-                    //     );
-                    //   },
-                    //   child: Container(
-                    //     width: 100,
-                    //     height: 35,
-                    //     decoration: BoxDecoration(
-                    //       color: const Color(0xFF009FE3),
-                    //       borderRadius: BorderRadius.circular(7),
-                    //     ),
-                    //     child: const Center(
-                    //       child: Text(
-                    //         "History",
-                    //         style: TextStyle(
-                    //           color: Colors.white,
-                    //           fontWeight: FontWeight.bold,
-                    //           fontSize: 14,
-                    //         ),
-                    //       ),
-                    //     ),
-                    //   ),
-                    // ),
-                    // Track Button
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        Get.toNamed(
+                          Routes.HISTORY,
+                          parameters: {
+                            'imei': vehicle.deviceId,
+                            'vehicleId': vehicle.plateNumber,
+                          },
+                        );
+                      },
+                      child: Container(
+                        width: 100,
+                        height: 35,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF009FE3),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            "History",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     GestureDetector(
                       onTap: () {
                         Navigator.pop(context);
@@ -729,6 +731,7 @@ class HomeView extends GetView<HomeController> {
                       ),
                     ),
                   ],
+                ),
                 ),
               ],
             ),

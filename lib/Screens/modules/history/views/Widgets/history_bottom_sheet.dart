@@ -50,123 +50,143 @@ class HistoryBottomSheet extends StatelessWidget {
             child: CircularProgressIndicator(color: AppColors.primaryBlue),
           );
         }
-        final history = controller.historyModel.data?.locationHistory ?? [];
-        return ListView(
+        final history = controller.historyPreviewItems;
+        return CustomScrollView(
           controller: scrollController,
-          padding: EdgeInsets.zero,
-          children: [
-            SizedBox(height: height * 0.015),
-            Center(
-              child: Container(
-                width: handleWidth,
-                height: handleHeight,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(width * 0.005),
-                ),
-              ),
-            ),
-            SizedBox(height: height * 0.018),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Column(
                 children: [
-                  GestureDetector(
-                    onTap: () => controller.pickFromDate(context),
-                    behavior: HitTestBehavior.opaque,
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'lib/Asset/Icons/Calender.png',
-                          width: iconSize,
-                          height: iconSize,
-                          color: Colors.red,
-                        ),
-                        SizedBox(width: smallSpacing),
-                        Obx(
-                          () => Text(
-                            "From: ${controller.fromDate.value}",
-                            style: TextStyle(
-                              fontSize: width * 0.028,
-                              color: Colors.black,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Obx(
-                    () => Text(
-                      controller.vehicleId.value,
-                      style: TextStyle(
-                        color: const Color(0xFF009FE3),
-                        fontWeight: FontWeight.bold,
-                        fontSize: width * 0.022,
+                  SizedBox(height: height * 0.015),
+                  Center(
+                    child: Container(
+                      width: handleWidth,
+                      height: handleHeight,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(width * 0.005),
                       ),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () => controller.pickToDate(context),
-                    behavior: HitTestBehavior.opaque,
+                  SizedBox(height: height * 0.018),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Image.asset(
-                          'lib/Asset/Icons/Calender.png',
-                          width: iconSize,
-                          height: iconSize,
-                          color: Colors.red,
+                        GestureDetector(
+                          onTap: () => controller.pickFromDate(context),
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            children: [
+                              Image.asset(
+                                'lib/Asset/Icons/Calender.png',
+                                width: iconSize,
+                                height: iconSize,
+                                color: Colors.red,
+                              ),
+                              SizedBox(width: smallSpacing),
+                              Obx(
+                                () => Text(
+                                  "From: ${controller.fromDate.value}",
+                                  style: TextStyle(
+                                    fontSize: width * 0.028,
+                                    color: Colors.black,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        SizedBox(width: smallSpacing),
                         Obx(
                           () => Text(
-                            "To: ${controller.toDate.value}",
+                            controller.vehicleId.value,
                             style: TextStyle(
-                              fontSize: width * 0.028,
-                              color: Colors.black,
+                              color: const Color(0xFF009FE3),
                               fontWeight: FontWeight.bold,
+                              fontSize: width * 0.022,
                             ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => controller.pickToDate(context),
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            children: [
+                              Image.asset(
+                                'lib/Asset/Icons/Calender.png',
+                                width: iconSize,
+                                height: iconSize,
+                                color: Colors.red,
+                              ),
+                              SizedBox(width: smallSpacing),
+                              Obx(
+                                () => Text(
+                                  "To: ${controller.toDate.value}",
+                                  style: TextStyle(
+                                    fontSize: width * 0.028,
+                                    color: Colors.black,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
+                  SizedBox(height: verticalSpacing),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        HistoryIconStat(
+                          assetPath: 'lib/Asset/Icons/KmPh.png',
+                          value: controller.currentSpeed,
+                          iconColor: Colors.red,
+                        ),
+                        HistoryIconStat(
+                          assetPath: 'lib/Asset/Icons/time duration.png',
+                          value: controller.duration,
+                          iconColor: Colors.red,
+                        ),
+                        HistoryIconStat(
+                          assetPath: 'lib/Asset/Icons/Distance.png',
+                          value: controller.totalDistance,
+                          iconColor: Colors.red,
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: verticalSpacing),
+                  HistoryPlaybackControls(controller: controller),
+                  SizedBox(height: verticalSpacing),
                 ],
               ),
             ),
-            SizedBox(height: verticalSpacing),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  HistoryIconStat(
-                    assetPath: 'lib/Asset/Icons/KmPh.png',
-                    value: controller.currentSpeed,
-                    iconColor: Colors.red,
+            if (history.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: height * 0.03),
+                  child: Text(
+                    "No history for selected dates",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: width * 0.035,
+                      color: Colors.grey,
+                    ),
                   ),
-                  HistoryIconStat(
-                    assetPath: 'lib/Asset/Icons/time duration.png',
-                    value: controller.duration,
-                    iconColor: Colors.red,
-                  ),
-                  HistoryIconStat(
-                    assetPath: 'lib/Asset/Icons/Distance.png',
-                    value: controller.totalDistance,
-                    iconColor: Colors.red,
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: verticalSpacing),
-            HistoryPlaybackControls(controller: controller),
-            SizedBox(height: verticalSpacing),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              child: Column(
-                children: [
-                  ...history.map((item) {
+                ),
+              )
+            else
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final item = history[index];
                     final isStop = item.isStopped == true;
                     return Padding(
                       padding: EdgeInsets.only(bottom: height * 0.018),
@@ -183,22 +203,10 @@ class HistoryBottomSheet extends StatelessWidget {
                         end: item.deviceTime ?? "-",
                       ),
                     );
-                  }),
-                  if (history.isEmpty)
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: height * 0.03),
-                      child: Text(
-                        "No history for selected dates",
-                        style: TextStyle(
-                          fontSize: width * 0.035,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ),
-                  SizedBox(height: height * 0.12),
-                ],
+                  }, childCount: history.length),
+                ),
               ),
-            ),
+            SliverToBoxAdapter(child: SizedBox(height: height * 0.12)),
           ],
         );
       }),

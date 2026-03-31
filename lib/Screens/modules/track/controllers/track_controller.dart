@@ -587,9 +587,9 @@ class TrackController extends GetxController {
       double smoothedLat = target.latitude;
       double smoothedLng = target.longitude;
       if (animatedLat.value != 0.0) {
-        // Weighted average for smoother road tracking (70% new, 30% current)
-        smoothedLat = (target.latitude * 0.7) + (animatedLat.value * 0.3);
-        smoothedLng = (target.longitude * 0.7) + (animatedLng.value * 0.3);
+        // Weighted average for smoother road tracking (80% new, 20% current)
+        smoothedLat = (target.latitude * 0.8) + (animatedLat.value * 0.2);
+        smoothedLng = (target.longitude * 0.8) + (animatedLng.value * 0.2);
       }
       final smoothedTarget = LatLng(smoothedLat, smoothedLng);
 
@@ -600,7 +600,7 @@ class TrackController extends GetxController {
       }
 
       // Smooth interpolation over the dynamically calculated duration
-      _animateTo(smoothedTarget, Duration(milliseconds: durationMs));
+      _animateTo(smoothedTarget, target, Duration(milliseconds: durationMs));
 
       if (_previousLatLng != null && _previousLatLng != target) {
         _animateRotation(_getBearing(_previousLatLng!, target));
@@ -646,14 +646,19 @@ class TrackController extends GetxController {
     });
   }
 
-  void _animateTo(LatLng target, Duration duration) {
+  void _animateTo(LatLng smoothedTarget, LatLng rawTarget, Duration duration) {
     if (_disposed) return;
     _interpolationTimer?.cancel();
 
     final startLat = animatedLat.value;
     final startLng = animatedLng.value;
-    final destLat = target.latitude;
-    final destLng = target.longitude;
+    final destLat = smoothedTarget.latitude;
+    final destLng = smoothedTarget.longitude;
+
+    // Per-step drift delta to avoid stopping after target is reached. 
+    // Synchronized to 25ms (40fps) refresh.
+    final double driftLat = (destLat - startLat) / (duration.inMilliseconds / 25);
+    final double driftLng = (destLng - startLng) / (duration.inMilliseconds / 25);
 
     // No change? Just ensure markers up to date
     if (startLat == destLat && startLng == destLng) {
@@ -663,7 +668,7 @@ class TrackController extends GetxController {
     }
 
     final int totalMs = duration.inMilliseconds;
-    final int stepMs = 40; // 25fps for total smoothness
+    final int stepMs = 25; // Professional-grade 40fps refresh rate
     final int steps = (totalMs / stepMs).floor();
     int currentStep = 0;
 
@@ -676,19 +681,16 @@ class TrackController extends GetxController {
       }
       currentStep++;
       if (currentStep >= steps) {
-        animatedLat.value = destLat;
-        animatedLng.value = destLng;
+        // Continuous Drift: Keep moving in the same direction until next update arrives
+        animatedLat.value += driftLat;
+        animatedLng.value += driftLng;
         _updateMarkers();
         moveMapToVehicle();
-        timer.cancel();
       } else {
+        // Constant Velocity (Zomato-style): use Linear interpolation 
         double t = currentStep / steps;
-        // Cubic ease for smoother start/stop feel
-        double easeT = t < 0.5
-            ? 4 * t * t * t
-            : 1 - math.pow(-2 * t + 2, 3) / 2;
-        animatedLat.value = startLat + (destLat - startLat) * easeT;
-        animatedLng.value = startLng + (destLng - startLng) * easeT;
+        animatedLat.value = startLat + (destLat - startLat) * t;
+        animatedLng.value = startLng + (destLng - startLng) * t;
         _updateMarkers();
         moveMapToVehicle(); // Follow the animated car
       }

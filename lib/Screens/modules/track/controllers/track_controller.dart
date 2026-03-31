@@ -655,10 +655,12 @@ class TrackController extends GetxController {
     final destLat = smoothedTarget.latitude;
     final destLng = smoothedTarget.longitude;
 
-    // Per-step drift delta to avoid stopping after target is reached. 
+    // Per-step drift delta to avoid stopping after target is reached.
     // Synchronized to 25ms (40fps) refresh.
-    final double driftLat = (destLat - startLat) / (duration.inMilliseconds / 25);
-    final double driftLng = (destLng - startLng) / (duration.inMilliseconds / 25);
+    final double driftLat =
+        (destLat - startLat) / (duration.inMilliseconds / 25);
+    final double driftLng =
+        (destLng - startLng) / (duration.inMilliseconds / 25);
 
     // No change? Just ensure markers up to date
     if (startLat == destLat && startLng == destLng) {
@@ -687,7 +689,7 @@ class TrackController extends GetxController {
         _updateMarkers();
         moveMapToVehicle();
       } else {
-        // Constant Velocity (Zomato-style): use Linear interpolation 
+        // Constant Velocity (Zomato-style): use Linear interpolation
         double t = currentStep / steps;
         animatedLat.value = startLat + (destLat - startLat) * t;
         animatedLng.value = startLng + (destLng - startLng) * t;

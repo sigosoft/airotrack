@@ -4,7 +4,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
@@ -30,20 +30,49 @@ class TrackController extends GetxController {
     final lat = double.tryParse(displayLatitude);
     final lng = double.tryParse(displayLongitude);
     if (lat != null && lng != null) {
-      double zoom = mapController.camera.zoom;
+      try {
+        double zoom = 15.0;
+        try {
+          zoom = mapController.camera.zoom;
+        } catch (_) {}
 
-      final now = DateTime.now();
-      final isFirst = isFirstPosition.value;
+        final now = DateTime.now();
+        final isFirst = isFirstPosition.value;
 
-      // Throttle map moves to once every 1 second to avoid Signal 3 (ANR)
-      if (isFirst ||
-          now.difference(_lastMapUpdate) > const Duration(seconds: 1)) {
-        if (isFirst) {
-          zoom = 15.0; // Zoom in on first load
+        // Throttle map moves to once every 1 second to avoid Signal 3 (ANR)
+        if (isFirst ||
+            now.difference(_lastMapUpdate) > const Duration(seconds: 1)) {
+          if (isFirst) {
+            zoom = 15.0; // Zoom in on first load
+          }
+          // Wrap in post frame callback to avoid "setState() or markNeedsBuild() called during build"
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!_disposed) {
+              try {
+                mapController.move(LatLng(lat, lng), zoom);
+              } catch (_) {}
+            }
+          });
           isFirstPosition.value = false;
+          _lastMapUpdate = now;
         }
-        mapController.move(LatLng(lat, lng), zoom);
-        _lastMapUpdate = now;
+      } catch (e) {
+        // Map might not be fully built/ready yet. Retry shortly once rendered.
+        Future.delayed(const Duration(milliseconds: 300), () {
+          try {
+            if (isFirstPosition.value) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!_disposed) {
+                  try {
+                    mapController.move(LatLng(lat, lng), 15.0);
+                  } catch (_) {}
+                }
+              });
+              isFirstPosition.value = false;
+              _lastMapUpdate = DateTime.now();
+            }
+          } catch (_) {}
+        });
       }
     }
   }
@@ -79,6 +108,7 @@ class TrackController extends GetxController {
   /// Full parsed response from live_track API.
   final liveTrackData = Rxn<LiveTrackData>();
   final vehicleRotation = 0.0.obs;
+  final reactiveMarkers = <Marker>[].obs;
   LatLng? _previousLatLng;
 
   // ─── Convenience getters ──────────────────────────────────────────────────
@@ -151,6 +181,70 @@ class TrackController extends GetxController {
         return const Color(0xFFDC3545);
     }
   }
+
+  void _updateMarkers() {
+    final lat = double.tryParse(displayLatitude);
+    final lng = double.tryParse(displayLongitude);
+    if (lat == null || lng == null) {
+      reactiveMarkers.clear();
+      return;
+    }
+
+    reactiveMarkers.value = [
+      Marker(
+        point: LatLng(lat, lng),
+        width: 100,
+        height: 100,
+        child: GestureDetector(
+          onTap: () => toggleBottomSheet(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Obx(
+                () => Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: displayStatusColor,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    displayPlate,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.arrow_drop_down,
+                size: 12,
+                color: Colors.black54,
+              ),
+              Obx(
+                () => Transform.rotate(
+                  angle: (vehicleRotation.value - 45) * (math.pi / 180),
+                  child: Image.asset(
+                    'lib/Asset/Icons/Track Vehicle.png',
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// Optimized marker builder to avoid full map rebuilds on every WebSocket update.
+  RxList<Marker> get mapMarkers => reactiveMarkers;
 
   /// Total km today from today_statistics.
   String get displayTodayKm =>
@@ -415,7 +509,7 @@ class TrackController extends GetxController {
     }
 
     moveMapToVehicle();
-    update();
+    _updateMarkers(); // Update the reactive marker list
   }
 
   // ─── Fetch helpers ────────────────────────────────────────────────────────────

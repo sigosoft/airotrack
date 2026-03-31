@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
-import 'package:latlong2/latlong.dart';
 import 'dart:math' as math;
 import '../../../../widgets/map_widget.dart';
 import '../controllers/track_controller.dart';
@@ -13,6 +11,8 @@ class TrackView extends GetView<TrackController> {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final height = MediaQuery.of(context).size.height;
     return SafeArea(
       top: false,
       child: Scaffold(
@@ -20,69 +20,10 @@ class TrackView extends GetView<TrackController> {
         body: Stack(
           children: [
             // 1. Map Background
-            Obx(
-              () => MapWidget(
-                mapController: controller.mapController,
-                onTap: () => controller.showBottomSheet.value = false,
-                markers: [
-                  if (double.tryParse(controller.displayLatitude) != null &&
-                      double.tryParse(controller.displayLongitude) != null)
-                    Marker(
-                      point: LatLng(
-                        double.parse(controller.displayLatitude),
-                        double.parse(controller.displayLongitude),
-                      ),
-                      width: 100,
-                      height: 100,
-                      child: GestureDetector(
-                        onTap: () => controller.toggleBottomSheet(),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Obx(
-                              () => Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: controller.displayStatusColor,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  controller.displayPlate,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.arrow_drop_down,
-                              size: 12,
-                              color: Colors.black54,
-                            ),
-                            Obx(
-                              () => Transform.rotate(
-                                angle:
-                                    (controller.vehicleRotation.value - 45) *
-                                    (math.pi / 180),
-                                child: Image.asset(
-                                  'lib/Asset/Icons/Track Vehicle.png',
-                                  width: 50,
-                                  height: 50,
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+            MapWidget(
+              mapController: controller.mapController,
+              onTap: () => controller.showBottomSheet.value = false,
+              markers: controller.mapMarkers, // Use optimized markers logic
             ),
 
             // 2. Control Layout
@@ -90,13 +31,13 @@ class TrackView extends GetView<TrackController> {
               children: [
                 // Top Left: Back Button
                 Positioned(
-                  top: 45,
-                  left: 15,
+                  top: height * 0.053,
+                  left: width * 0.04,
                   child: GestureDetector(
-                    onTap: () => Get.toNamed(Routes.HOME),
-                    child: const Icon(
+                    onTap: () => Get.back(),
+                    child: Icon(
                       Icons.arrow_back_ios_new,
-                      size: 22,
+                      size: width * 0.055,
                       color: Colors.black87,
                     ),
                   ),
@@ -104,21 +45,29 @@ class TrackView extends GetView<TrackController> {
 
                 // Left Control Group
                 Positioned(
-                  top: 180,
-                  left: 15,
+                  top: height * 0.21,
+                  left: width * 0.04,
                   child: Column(
                     children: [
-                      _buildMapControl('lib/Asset/Icons/routes detail.png'),
-                      const SizedBox(height: 10),
+                      _buildMapControl(
+                        'lib/Asset/Icons/routes detail.png',
+                        context,
+                      ),
+                      SizedBox(height: height * 0.012),
                       _buildMapControl(
                         'lib/Asset/Icons/Focus.png',
+                        context,
                         onTap: () => controller.moveMapToVehicle(),
                       ),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/Customer service.png'),
-                      const SizedBox(height: 10),
+                      SizedBox(height: height * 0.012),
+                      _buildMapControl(
+                        'lib/Asset/Icons/Customer service.png',
+                        context,
+                      ),
+                      SizedBox(height: height * 0.012),
                       _buildMapControl(
                         'lib/Asset/Icons/zoomin.png',
+                        context,
                         onTap: () {
                           controller.mapController.move(
                             controller.mapController.camera.center,
@@ -132,27 +81,39 @@ class TrackView extends GetView<TrackController> {
 
                 // Top Right: Control Group
                 Positioned(
-                  top: 45,
-                  right: 15,
+                  top: height * 0.053,
+                  right: width * 0.04,
                   child: Column(
                     children: [
-                      _buildMapControl('lib/Asset/Icons/map.png'),
-                      const SizedBox(height: 10),
+                      _buildMapControl('lib/Asset/Icons/map.png', context),
+                      SizedBox(height: height * 0.012),
                       GestureDetector(
                         onTap: () => Get.to(() => const LockCommandView()),
-                        child: _buildMapControl('lib/Asset/Icons/Lock.png'),
+                        child: _buildMapControl(
+                          'lib/Asset/Icons/Lock.png',
+                          context,
+                        ),
                       ),
-                      const SizedBox(height: 10),
-                      _buildMapControl(null, text: 'P', textColor: Colors.red),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/Video.png'),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/profile.png'),
-                      const SizedBox(height: 10),
-                      _buildMapControl('lib/Asset/Icons/Locations.png'),
-                      const SizedBox(height: 10),
+                      SizedBox(height: height * 0.012),
+                      _buildMapControl(
+                        null,
+                        context,
+                        text: 'P',
+                        textColor: Colors.red,
+                      ),
+                      SizedBox(height: height * 0.012),
+                      _buildMapControl('lib/Asset/Icons/Video.png', context),
+                      SizedBox(height: height * 0.012),
+                      _buildMapControl('lib/Asset/Icons/profile.png', context),
+                      SizedBox(height: height * 0.012),
+                      _buildMapControl(
+                        'lib/Asset/Icons/Locations.png',
+                        context,
+                      ),
+                      SizedBox(height: height * 0.012),
                       _buildMapControl(
                         'lib/Asset/Icons/zoomin.png',
+                        context,
                         onTap: () {
                           controller.mapController.move(
                             controller.mapController.camera.center,
@@ -160,9 +121,10 @@ class TrackView extends GetView<TrackController> {
                           );
                         },
                       ),
-                      const SizedBox(height: 10),
+                      SizedBox(height: height * 0.012),
                       _buildMapControl(
                         'lib/Asset/Icons/zoomout.png',
+                        context,
                         onTap: () {
                           controller.mapController.move(
                             controller.mapController.camera.center,
@@ -197,21 +159,23 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildMapControl(
-    String? imagePath, {
+    String? imagePath,
+    BuildContext context, {
     IconData? iconData,
     Color? color,
     String? text,
     Color? textColor,
     VoidCallback? onTap,
   }) {
+    final width = MediaQuery.of(context).size.width;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 35,
-        height: 35,
+        width: width * 0.085,
+        height: width * 0.085,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(width * 0.025),
           boxShadow: const [
             BoxShadow(
               color: Colors.black12,
@@ -222,17 +186,25 @@ class TrackView extends GetView<TrackController> {
         ),
         child: Center(
           child: imagePath != null
-              ? Image.asset(imagePath, width: 20, height: 20)
+              ? Image.asset(
+                  imagePath,
+                  width: width * 0.05,
+                  height: width * 0.05,
+                )
               : text != null
               ? Text(
                   text,
                   style: TextStyle(
                     color: textColor ?? Colors.black,
                     fontWeight: FontWeight.bold,
-                    fontSize: 18,
+                    fontSize: width * 0.045,
                   ),
                 )
-              : Icon(iconData, color: color ?? Colors.black, size: 24),
+              : Icon(
+                  iconData,
+                  color: color ?? Colors.black,
+                  size: width * 0.06,
+                ),
         ),
       ),
     );
@@ -275,9 +247,10 @@ class TrackView extends GetView<TrackController> {
       // 0 speed should be at 0.75pi. 140 speed at 2.25pi.
       final targetAngle = (speed / 140) * 1.5 * math.pi - (0.75 * math.pi);
 
+      final width = MediaQuery.of(Get.context!).size.width;
       return Container(
-        width: 140,
-        height: 130,
+        width: width * 0.35,
+        height: width * 0.32,
         decoration: const BoxDecoration(
           color: Colors.white,
           shape: BoxShape.circle,
@@ -286,21 +259,27 @@ class TrackView extends GetView<TrackController> {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            CustomPaint(size: const Size(120, 120), painter: GaugePainter()),
+            CustomPaint(
+              size: Size(width * 0.28, width * 0.28),
+              painter: GaugePainter(),
+            ),
             Positioned(
-              bottom: 20,
+              bottom: width * 0.05,
               child: Column(
                 children: [
                   Text(
                     speedStr,
-                    style: const TextStyle(
-                      fontSize: 24,
+                    style: TextStyle(
+                      fontSize: width * 0.06,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const Text(
+                  Text(
                     "Km/h",
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: width * 0.03,
+                      color: Colors.grey,
+                    ),
                   ),
                 ],
               ),
@@ -309,13 +288,13 @@ class TrackView extends GetView<TrackController> {
             Transform.rotate(
               angle: targetAngle,
               child: Container(
-                width: 3,
-                height: 45,
+                width: width * 0.007,
+                height: width * 0.11,
                 decoration: BoxDecoration(
                   color: Colors.red,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(width * 0.005),
                 ),
-                margin: const EdgeInsets.only(bottom: 45),
+                margin: EdgeInsets.only(bottom: width * 0.11),
               ),
             ),
           ],
@@ -330,6 +309,8 @@ class TrackView extends GetView<TrackController> {
       minChildSize: 0.45,
       maxChildSize: 0.98,
       builder: (context, scrollController) {
+        final height = MediaQuery.of(context).size.height;
+        final width = MediaQuery.of(context).size.width;
         return Stack(
           clipBehavior: Clip.none,
           children: [
@@ -349,18 +330,18 @@ class TrackView extends GetView<TrackController> {
                 controller: scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
-                  const SizedBox(height: 10),
+                  SizedBox(height: height * 0.012),
                   Center(
                     child: Container(
-                      width: 45,
-                      height: 4,
+                      width: width * 0.11,
+                      height: height * 0.005,
                       decoration: BoxDecoration(
                         color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2),
+                        borderRadius: BorderRadius.circular(width * 0.005),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 15),
+                  SizedBox(height: height * 0.018),
 
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -372,14 +353,14 @@ class TrackView extends GetView<TrackController> {
                             Obx(
                               () => Text(
                                 controller.displayPlate,
-                                style: const TextStyle(
-                                  fontSize: 19,
+                                style: TextStyle(
+                                  fontSize: width * 0.046,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.black,
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            SizedBox(height: height * 0.01),
                             Obx(() {
                               final imei = controller.vehicleImei.value;
                               // Show last 8 digits of IMEI to fit design
@@ -397,14 +378,14 @@ class TrackView extends GetView<TrackController> {
                             Obx(
                               () => Text(
                                 controller.displayDeviceTime,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Colors.black,
-                                  fontSize: 13,
+                                  fontSize: width * 0.032,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 10),
+                            SizedBox(height: height * 0.012),
                             Row(
                               children: [
                                 Image.asset(
@@ -431,8 +412,8 @@ class TrackView extends GetView<TrackController> {
                       ),
                       // Green Car Visualization
                       Container(
-                        width: 175,
-                        height: 110,
+                        width: width * 0.42,
+                        height: height * 0.13,
                         alignment: Alignment.centerRight,
                         child: Image.asset(
                           'lib/Asset/Images/Green Car.png',
@@ -446,45 +427,45 @@ class TrackView extends GetView<TrackController> {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: width * 0.03,
+                          vertical: height * 0.012,
                         ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF7F8FA),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(width * 0.02),
                         ),
                         child: Obx(
                           () => Text(
                             "${controller.displayLatitude} ${controller.displayLongitude}",
-                            style: const TextStyle(
-                              color: Color(0xFF009FE3),
-                              fontSize: 12,
+                            style: TextStyle(
+                              color: const Color(0xFF009FE3),
+                              fontSize: width * 0.029,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      SizedBox(width: width * 0.03),
                       Expanded(
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Image.asset(
                               'lib/Asset/Icons/Location.png',
-                              width: 22,
-                              height: 22,
+                              width: width * 0.053,
+                              height: width * 0.053,
                               color: Colors.black54,
                             ),
-                            const SizedBox(width: 6),
+                            SizedBox(width: width * 0.015),
                             Expanded(
                               child: Obx(
                                 () => Text(
                                   controller.displayLatitude != '–'
                                       ? "Coordinates: ${controller.displayLatitude}, ${controller.displayLongitude}"
                                       : "Address information unavailable",
-                                  style: const TextStyle(
-                                    fontSize: 11,
+                                  style: TextStyle(
+                                    fontSize: width * 0.027,
                                     color: Colors.black,
                                     height: 1.3,
                                   ),
@@ -501,10 +482,10 @@ class TrackView extends GetView<TrackController> {
 
                   // Status Icons Box
                   Container(
-                    height: 48,
+                    height: height * 0.057,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(width * 0.025),
                       border: Border.all(
                         color: Colors.grey.shade100,
                         width: 1.5,
@@ -515,26 +496,26 @@ class TrackView extends GetView<TrackController> {
                       children: [
                         Image.asset(
                           'lib/Asset/Icons/Mask.png',
-                          width: 22,
-                          height: 22,
+                          width: width * 0.053,
+                          height: width * 0.053,
                           color: const Color(0xFF03A9F4),
                         ),
                         Image.asset(
                           'lib/Asset/Icons/Key start.png',
-                          width: 22,
-                          height: 22,
+                          width: width * 0.053,
+                          height: width * 0.053,
                           color: const Color.fromARGB(255, 3, 145, 62),
                         ),
                         Image.asset(
                           'lib/Asset/Icons/power.png',
-                          width: 22,
-                          height: 22,
+                          width: width * 0.053,
+                          height: width * 0.053,
                           color: const Color.fromARGB(255, 3, 145, 62),
                         ),
                         Image.asset(
                           'lib/Asset/Icons/Network.png',
-                          width: 22,
-                          height: 22,
+                          width: width * 0.053,
+                          height: width * 0.053,
                           color: const Color.fromARGB(255, 3, 145, 62),
                         ),
                       ],
@@ -764,7 +745,7 @@ class TrackView extends GetView<TrackController> {
             ),
             // Speedometer floating above
             Positioned(
-              top: -85,
+              top: -height * 0.1,
               left: 0,
               right: 0,
               child: Center(child: _buildSpeedometerIndicator()),
@@ -776,10 +757,12 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildIdBox(String text) {
+    final width = MediaQuery.of(Get.context!).size.width;
+    final height = MediaQuery.of(Get.context!).size.height;
     return Container(
-      width: 15,
-      height: 20,
-      margin: const EdgeInsets.only(right: 6),
+      width: width * 0.038,
+      height: height * 0.024,
+      margin: EdgeInsets.only(right: width * 0.015),
       decoration: BoxDecoration(
         color: const Color(0xFFF0F2F5),
         borderRadius: BorderRadius.circular(5),
@@ -799,16 +782,21 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildTimeBox(String label, String time) {
+    final width = MediaQuery.of(Get.context!).size.width;
+    final height = MediaQuery.of(Get.context!).size.height;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      padding: EdgeInsets.symmetric(
+        vertical: height * 0.018,
+        horizontal: width * 0.025,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: const [
+        borderRadius: BorderRadius.circular(width * 0.04),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
+            color: const Color(0x12000000),
+            blurRadius: width * 0.025,
+            offset: Offset(0, height * 0.005),
           ),
         ],
       ),
@@ -837,14 +825,16 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildDurationStatusCard(String label, String time, Color color) {
+    final width = MediaQuery.of(Get.context!).size.width;
+    final height = MediaQuery.of(Get.context!).size.height;
     return Column(
       children: [
         Container(
-          width: 70,
-          height: 32,
+          width: width * 0.18,
+          height: height * 0.038,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(width * 0.04),
           ),
           alignment: Alignment.center,
           child: Text(
@@ -876,17 +866,19 @@ class TrackView extends GetView<TrackController> {
     String iconPath,
     Color color,
   ) {
+    final width = MediaQuery.of(Get.context!).size.width;
+    final height = MediaQuery.of(Get.context!).size.height;
     return Container(
-      width: 82.28,
-      height: 100,
+      width: width * 0.2,
+      height: height * 0.12,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: const [
+        borderRadius: BorderRadius.circular(width * 0.04),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 8,
-            offset: Offset(0, 3),
+            color: const Color(0x10000000),
+            blurRadius: width * 0.02,
+            offset: Offset(0, height * 0.003),
           ),
         ],
       ),
@@ -934,17 +926,18 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildSmallGridItem(String label, String value, String iconPath) {
+    final width = MediaQuery.of(Get.context!).size.width;
     return Container(
-      width: 65,
-      height: 65,
+      width: width * 0.16,
+      height: width * 0.16,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(width * 0.03),
         boxShadow: [
           BoxShadow(
             color: const Color(0x08000000).withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 4),
+            blurRadius: width * 0.01,
+            offset: Offset(0, width * 0.01),
           ),
         ],
         border: Border.all(color: Colors.grey.shade50, width: 1),
@@ -977,17 +970,19 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildActionButton(String label, String iconPath) {
+    final width = MediaQuery.of(Get.context!).size.width;
+    final height = MediaQuery.of(Get.context!).size.height;
     return Container(
-      width: 75,
-      height: 85,
+      width: width * 0.19,
+      height: height * 0.105,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(width * 0.03),
         boxShadow: [
           BoxShadow(
             color: const Color(0x10000000).withOpacity(0.1),
-            blurRadius: 6,
-            offset: const Offset(0, 4),
+            blurRadius: width * 0.015,
+            offset: Offset(0, height * 0.005),
           ),
         ],
       ),
@@ -1021,10 +1016,12 @@ class TrackView extends GetView<TrackController> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
+        final height = MediaQuery.of(context).size.height;
+        final width = MediaQuery.of(context).size.width;
         return Container(
-          width: 391.41,
-          height: 533.9,
-          margin: const EdgeInsets.only(top: 18.9),
+          width: width,
+          height: height * 0.63,
+          margin: EdgeInsets.only(top: height * 0.02),
           decoration: const BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.only(
@@ -1102,14 +1099,16 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildShareOption(String title) {
+    final width = MediaQuery.of(Get.context!).size.width;
+    final height = MediaQuery.of(Get.context!).size.height;
     return Obx(() {
       final isSelected = controller.selectedShareOption.value == title;
       return GestureDetector(
         onTap: () => controller.updateShareOption(title),
         child: Container(
-          width: 342.26,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
+          width: width * 0.88,
+          height: height * 0.047,
+          padding: EdgeInsets.symmetric(horizontal: width * 0.04),
           decoration: BoxDecoration(
             color: isSelected ? Colors.transparent : const Color(0xFFF5F5F5),
             borderRadius: BorderRadius.circular(16),
@@ -1162,18 +1161,23 @@ class TrackView extends GetView<TrackController> {
     String label, {
     required bool isSelected,
     required VoidCallback onTap,
-    double width = 140,
+    double? width,
   }) {
+    final width_ = MediaQuery.of(Get.context!).size.width;
+    final height_ = MediaQuery.of(Get.context!).size.height;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: width,
-        height: 40,
+        width: width ?? width_ * 0.35,
+        height: height_ * 0.047,
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 30),
+        padding: EdgeInsets.symmetric(
+          vertical: height_ * 0.008,
+          horizontal: width_ * 0.07,
+        ),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF009FE3) : Colors.white,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(width_ * 0.015),
           border: isSelected ? null : Border.all(color: Colors.grey[300]!),
         ),
         child: Text(
@@ -1181,7 +1185,7 @@ class TrackView extends GetView<TrackController> {
           style: TextStyle(
             color: isSelected ? Colors.white : Colors.black,
             fontWeight: FontWeight.bold,
-            fontSize: 14,
+            fontSize: width_ * 0.035,
           ),
         ),
       ),
@@ -1192,27 +1196,29 @@ class TrackView extends GetView<TrackController> {
     showDialog(
       context: context,
       builder: (context) {
+        final width = MediaQuery.of(context).size.width;
+        final height = MediaQuery.of(context).size.height;
         return Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 11.14),
+          insetPadding: EdgeInsets.symmetric(horizontal: width * 0.028),
           child: Container(
-            width: 370.08,
-            height: 175.38,
+            width: width * 0.95,
+            height: height * 0.2,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(width * 0.035),
             ),
             child: Stack(
               children: [
-                const Positioned(
-                  top: 15,
+                Positioned(
+                  top: height * 0.018,
                   left: 0,
                   right: 0,
                   child: Center(
                     child: Text(
                       "Update Odometer",
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: width * 0.04,
                         fontWeight: FontWeight.bold,
                         color: Colors.black,
                       ),
@@ -1220,30 +1226,31 @@ class TrackView extends GetView<TrackController> {
                   ),
                 ),
                 Positioned(
-                  top: 57.47,
-                  left: 24.09,
+                  top: height * 0.068,
+                  left: width * 0.06,
                   child: Container(
-                    width: 343,
-                    height: 40,
+                    width: width * 0.82,
+                    height: height * 0.047,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF5F5F5),
-                      borderRadius: BorderRadius.circular(3),
+                      borderRadius: BorderRadius.circular(width * 0.008),
                     ),
-                    child: const TextField(
+                    child: TextField(
+                      style: TextStyle(fontSize: width * 0.035),
                       decoration: InputDecoration(
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
+                          horizontal: width * 0.025,
+                          vertical: height * 0.01,
                         ),
                       ),
                     ),
                   ),
                 ),
                 Positioned(
-                  bottom: 15,
-                  left: 24.09,
-                  right: 24.09,
+                  bottom: height * 0.018,
+                  left: width * 0.06,
+                  right: width * 0.06,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1256,7 +1263,6 @@ class TrackView extends GetView<TrackController> {
                         "Update",
                         isSelected: true,
                         onTap: () {
-                          // Update logic
                           Navigator.pop(context);
                         },
                       ),
@@ -1275,27 +1281,29 @@ class TrackView extends GetView<TrackController> {
     showDialog(
       context: context,
       builder: (context) {
+        final width = MediaQuery.of(context).size.width;
+        final height = MediaQuery.of(context).size.height;
         return Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 10),
+          insetPadding: EdgeInsets.symmetric(horizontal: width * 0.025),
           child: Container(
-            width: 370,
-            height: 175,
+            width: width * 0.95,
+            height: height * 0.2,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(width * 0.035),
             ),
             child: Stack(
               children: [
-                const Positioned(
-                  top: 15,
+                Positioned(
+                  top: height * 0.018,
                   left: 0,
                   right: 0,
                   child: Center(
                     child: Text(
                       "Update Speed Limit",
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: width * 0.04,
                         fontWeight: FontWeight.bold,
                         color: Colors.black,
                       ),
@@ -1303,45 +1311,45 @@ class TrackView extends GetView<TrackController> {
                   ),
                 ),
                 Positioned(
-                  top: 57.47,
-                  left: 13.5,
+                  top: height * 0.068,
+                  left: width * 0.035,
                   child: Container(
-                    width: 343,
-                    height: 40,
+                    width: width * 0.88,
+                    height: height * 0.047,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF5F5F5),
-                      borderRadius: BorderRadius.circular(3),
+                      borderRadius: BorderRadius.circular(width * 0.008),
                     ),
-                    child: const TextField(
+                    child: TextField(
+                      style: TextStyle(fontSize: width * 0.035),
                       decoration: InputDecoration(
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
+                          horizontal: width * 0.025,
+                          vertical: height * 0.01,
                         ),
                       ),
                     ),
                   ),
                 ),
                 Positioned(
-                  bottom: 15,
-                  left: 20,
-                  right: 20,
+                  bottom: height * 0.018,
+                  left: width * 0.05,
+                  right: width * 0.05,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _buildShareActionButton(
                         "Cancel",
                         isSelected: false,
-                        width: 160,
+                        width: width * 0.4,
                         onTap: () => Navigator.pop(context),
                       ),
                       _buildShareActionButton(
                         "Update",
                         isSelected: true,
-                        width: 160,
+                        width: width * 0.4,
                         onTap: () {
-                          // Update logic
                           Navigator.pop(context);
                         },
                       ),
@@ -1360,21 +1368,28 @@ class TrackView extends GetView<TrackController> {
     showDialog(
       context: context,
       builder: (context) {
+        final width = MediaQuery.of(context).size.width;
+        final height = MediaQuery.of(context).size.height;
         return Dialog(
           backgroundColor: Colors.transparent,
           elevation: 0,
           child: Container(
-            width: 235,
-            height: 112,
-            padding: const EdgeInsets.fromLTRB(17, 9, 17, 9),
+            width: width * 0.6,
+            height: height * 0.13,
+            padding: EdgeInsets.fromLTRB(
+              width * 0.04,
+              height * 0.01,
+              width * 0.04,
+              height * 0.01,
+            ),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(17),
+              borderRadius: BorderRadius.circular(width * 0.04),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+                  blurRadius: width * 0.025,
+                  offset: Offset(0, height * 0.005),
                 ),
               ],
             ),
@@ -1385,33 +1400,36 @@ class TrackView extends GetView<TrackController> {
                   "Arrival Time:",
                   "08 Oct 2025 11:00 AM",
                 ),
-                const SizedBox(height: 5),
+                SizedBox(height: height * 0.006),
                 _buildStreetViewDetailRow(
                   "Departure Time:",
                   "08 Oct 2025 12:30 PM",
                 ),
-                const SizedBox(height: 5),
+                SizedBox(height: height * 0.006),
                 _buildStreetViewDetailRow("Duration:", "01h 30m"),
-                const SizedBox(height: 5),
+                SizedBox(height: height * 0.006),
                 Expanded(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(
-                        width: 75,
+                      SizedBox(
+                        width: width * 0.19,
                         child: Text(
                           "Address:",
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: width * 0.025,
                             fontWeight: FontWeight.bold,
                             color: Colors.black87,
                           ),
                         ),
                       ),
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           "Puthiyakavu Junction, Karunagappalli, Kerala 690539, India",
-                          style: TextStyle(fontSize: 10, color: Colors.black87),
+                          style: TextStyle(
+                            fontSize: width * 0.025,
+                            color: Colors.black87,
+                          ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1428,14 +1446,15 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildStreetViewDetailRow(String label, String value) {
+    final width = MediaQuery.of(Get.context!).size.width;
     return Row(
       children: [
         SizedBox(
-          width: 75,
+          width: width * 0.19,
           child: Text(
             label,
-            style: const TextStyle(
-              fontSize: 10,
+            style: TextStyle(
+              fontSize: width * 0.025,
               fontWeight: FontWeight.bold,
               color: Colors.black87,
             ),
@@ -1443,16 +1462,20 @@ class TrackView extends GetView<TrackController> {
         ),
         Text(
           value,
-          style: const TextStyle(fontSize: 10, color: Colors.black87),
+          style: TextStyle(
+            fontSize: width * 0.025,
+            color: Colors.black87,
+          ),
         ),
       ],
     );
   }
 
   Widget _buildBottomNavBar() {
+    final height = MediaQuery.of(Get.context!).size.height;
     return Container(
-      height: 85,
-      padding: const EdgeInsets.only(bottom: 15),
+      height: height * 0.1,
+      padding: EdgeInsets.only(bottom: height * 0.015),
       decoration: const BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -1470,13 +1493,18 @@ class TrackView extends GetView<TrackController> {
             "Track",
             'lib/Asset/Icons/Location.png',
             true,
-            onTap: () => Get.toNamed(Routes.HOME),
+            onTap: () {
+              controller.startTrackingForImei(
+                controller.vehicleImei.value,
+                plate: controller.displayPlate,
+              );
+            },
           ),
           _buildBottomNavItem(
             "History",
             'lib/Asset/Icons/history.png',
             false,
-            onTap: () => Get.toNamed(
+            onTap: () => Get.offNamed(
               Routes.HISTORY,
               parameters: {
                 'imei': controller.vehicleImei.value,
@@ -1486,9 +1514,9 @@ class TrackView extends GetView<TrackController> {
           ),
           _buildBottomNavItem(
             "Alerts",
-            'lib/Asset/Icons/Bells.png',
+            'lib/Asset/Icons/notification.png',
             false,
-            onTap: () => Get.toNamed(Routes.ALERTS),
+            onTap: () => Get.offNamed(Routes.ALERTS),
           ),
           _buildBottomNavItem(
             "Statistics",
@@ -1507,6 +1535,7 @@ class TrackView extends GetView<TrackController> {
     bool isSelected, {
     VoidCallback? onTap,
   }) {
+    final width = MediaQuery.of(Get.context!).size.width;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -1516,16 +1545,16 @@ class TrackView extends GetView<TrackController> {
         children: [
           Image.asset(
             iconPath,
-            width: 25,
-            height: 25,
-            color: isSelected ? const Color(0xFF009FE3) : Colors.black87,
+            width: width * 0.063,
+            height: width * 0.063,
+            color: isSelected ? const Color(0xFF009FE3) : Colors.black,
           ),
-          const SizedBox(height: 7),
+          SizedBox(height: width * 0.015),
           Text(
             label,
             style: TextStyle(
-              color: isSelected ? const Color(0xFF009FE3) : Colors.black87,
-              fontSize: 13,
+              color: isSelected ? const Color(0xFF009FE3) : Colors.black,
+              fontSize: width * 0.032,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),

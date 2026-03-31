@@ -8,11 +8,12 @@ class HistoryBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final height = MediaQuery.of(context).size.height;
     final historyController = Get.find<HistoryController>();
     final imei = historyController.activeImei;
     final vehicle = historyController.vehicleId.value;
     return Container(
-      height: 84,
+      height: height * 0.1,
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -30,7 +31,7 @@ class HistoryBottomNavBar extends StatelessWidget {
             assetPath: 'lib/Asset/Icons/Location.png',
             label: "Track",
             isSelected: false,
-            onTap: () => Get.toNamed(
+            onTap: () => Get.offNamed(
               Routes.TRACK,
               parameters: {
                 'imei': imei,
@@ -43,20 +44,14 @@ class HistoryBottomNavBar extends StatelessWidget {
             label: "History",
             isSelected: true,
             onTap: () {
-              Get.toNamed(
-                Routes.HISTORY,
-                parameters: {
-                  'imei': imei,
-                  'vehicleId': vehicle,
-                },
-              );
+              // Current page, already active
             },
           ),
           HistoryNavItem(
             assetPath: 'lib/Asset/Icons/notification.png',
             label: "Alerts",
             isSelected: false,
-            onTap: () => Get.toNamed(Routes.ALERTS),
+            onTap: () => Get.offNamed(Routes.ALERTS),
           ),
           HistoryNavItem(
             assetPath: 'lib/Asset/Icons/statistics.png',

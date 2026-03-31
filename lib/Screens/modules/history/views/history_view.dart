@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/history_controller.dart';
-import '../../../routes/app_routes.dart';
 import 'Widgets/history_map_layer.dart';
 import 'Widgets/history_side_button.dart';
 import 'Widgets/history_bottom_sheet.dart';
@@ -34,7 +33,7 @@ class HistoryView extends GetView<HistoryController> {
               color: Colors.black,
               size: width * 0.055,
             ),
-            onPressed: () => Get.toNamed(Routes.TRACK),
+            onPressed: () => Get.back(),
           ),
           title: Obx(
             () => Text(

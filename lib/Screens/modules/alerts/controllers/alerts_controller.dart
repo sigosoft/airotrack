@@ -90,9 +90,8 @@ class AlertsController extends GetxController {
         ApiEndPoints.alerts,
         query: queryParams,
         options: Options(
-          headers: {"Content-Type": null, "Accept": "application/json"},
-          validateStatus: (status) =>
-              true, // Capture all status codes for debugging
+          headers: {"Accept": "application/json"},
+          validateStatus: (status) => true,
         ),
       );
 

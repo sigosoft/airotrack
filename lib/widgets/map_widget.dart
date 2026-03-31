@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -6,7 +7,7 @@ class MapWidget extends StatelessWidget {
   final LatLng? initialCenter;
   final double initialZoom;
   final MapController? mapController;
-  final List<Marker>? markers;
+  final dynamic markers;
   final VoidCallback? onTap;
 
   const MapWidget({
@@ -32,8 +33,25 @@ class MapWidget extends StatelessWidget {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.airotrack.app',
         ),
-        if (markers != null && markers!.isNotEmpty)
-          MarkerLayer(markers: markers!),
+        // Reactively render markers to avoid full-map rebuilds
+        Builder(
+          builder: (context) {
+            final m = markers;
+            if (m is RxList<Marker> || m is RxList) {
+              return Obx(() {
+                final list = (m as dynamic).toList() as List<Marker>;
+                return list.isNotEmpty
+                    ? MarkerLayer(markers: list)
+                    : const SizedBox.shrink();
+              });
+            } else {
+              final list = m as List<Marker>? ?? [];
+              return list.isNotEmpty
+                  ? MarkerLayer(markers: list)
+                  : const SizedBox.shrink();
+            }
+          },
+        ),
       ],
     );
   }

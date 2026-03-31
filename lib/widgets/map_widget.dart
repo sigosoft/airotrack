@@ -33,23 +33,22 @@ class MapWidget extends StatelessWidget {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.airotrack.app',
         ),
-        // Reactively render markers to avoid full-map rebuilds
+        // Reactively render markers. Using a robust detection to avoid "Improper use of GetX"
         Builder(
           builder: (context) {
             final m = markers;
-            if (m is RxList<Marker> || m is RxList) {
+            if (m is RxList<Marker>) {
               return Obx(() {
-                final list = (m as dynamic).toList() as List<Marker>;
-                return list.isNotEmpty
-                    ? MarkerLayer(markers: list)
-                    : const SizedBox.shrink();
+                // Access .length to ensure GetX registers this Obx as active
+                if (m.length >= 0) {
+                  return MarkerLayer(markers: m.toList());
+                }
+                return const SizedBox.shrink();
               });
-            } else {
-              final list = m as List<Marker>? ?? [];
-              return list.isNotEmpty
-                  ? MarkerLayer(markers: list)
-                  : const SizedBox.shrink();
+            } else if (m is List<Marker>) {
+              return MarkerLayer(markers: m);
             }
+            return const SizedBox.shrink();
           },
         ),
       ],

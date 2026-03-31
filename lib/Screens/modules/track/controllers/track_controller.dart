@@ -109,6 +109,13 @@ class TrackController extends GetxController {
   final liveTrackData = Rxn<LiveTrackData>();
   final vehicleRotation = 0.0.obs;
   final reactiveMarkers = <Marker>[].obs;
+
+  // Animated position for smooth movement
+  final animatedLat = 0.0.obs;
+  final animatedLng = 0.0.obs;
+  Timer? _interpolationTimer;
+  Timer? _pollingTimer;
+
   LatLng? _previousLatLng;
 
   // ─── Convenience getters ──────────────────────────────────────────────────
@@ -183,9 +190,9 @@ class TrackController extends GetxController {
   }
 
   void _updateMarkers() {
-    final lat = double.tryParse(displayLatitude);
-    final lng = double.tryParse(displayLongitude);
-    if (lat == null || lng == null) {
+    final lat = animatedLat.value;
+    final lng = animatedLng.value;
+    if (lat == 0.0 || lng == 0.0) {
       reactiveMarkers.clear();
       return;
     }
@@ -322,6 +329,8 @@ class TrackController extends GetxController {
   void onClose() {
     log("TrackController onClose for IMEI: ${vehicleImei.value}");
     _disposed = true;
+    _interpolationTimer?.cancel();
+    _pollingTimer?.cancel();
     _stopLiveTracking();
     fenceNameController.dispose();
     super.onClose();
@@ -387,7 +396,21 @@ class TrackController extends GetxController {
     } catch (e) {
       log('WebSocket connection failed: $e');
       _reconnect(imei);
+      _ensurePolling(imei); // Fallback to REST polling if WS fails
     }
+  }
+
+  /// Ensures REST polling is active as a fallback.
+  void _ensurePolling(String imei) {
+    if (_disposed || imei.trim().isEmpty) return;
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (_disposed) {
+        timer.cancel();
+        return;
+      }
+      _fetchTcpPosition(imei);
+    });
   }
 
   void _reconnect(String imei) {
@@ -415,6 +438,8 @@ class TrackController extends GetxController {
       }
 
       if (event == 'device.update') {
+        _pollingTimer?.cancel(); // Reset polling timer as WS is working
+        _ensurePolling(imei); // Reschedule next fallback poll
         // Per API guide: 'data' is a JSON string.
         // Parsed outer shape: { "imei": "...", "data": { ...device fields... }, "timestamp": "..." }
         // The actual device fields are inside the nested 'data' key.
@@ -501,15 +526,68 @@ class TrackController extends GetxController {
     final lat = double.tryParse(displayLatitude);
     final lng = double.tryParse(displayLongitude);
     if (lat != null && lng != null) {
-      final current = LatLng(lat, lng);
-      if (_previousLatLng != null && _previousLatLng != current) {
-        vehicleRotation.value = _getBearing(_previousLatLng!, current);
+      final target = LatLng(lat, lng);
+
+      // Initialize animated pos if first load
+      if (animatedLat.value == 0.0) {
+        animatedLat.value = target.latitude;
+        animatedLng.value = target.longitude;
       }
-      _previousLatLng = current;
+
+      // Smooth interpolation to new target
+      _animateTo(target);
+
+      if (_previousLatLng != null && _previousLatLng != target) {
+        vehicleRotation.value = _getBearing(_previousLatLng!, target);
+      }
+      _previousLatLng = target;
     }
 
     moveMapToVehicle();
-    _updateMarkers(); // Update the reactive marker list
+  }
+
+  void _animateTo(LatLng target) {
+    if (_disposed) return;
+    _interpolationTimer?.cancel();
+
+    final startLat = animatedLat.value;
+    final startLng = animatedLng.value;
+    final destLat = target.latitude;
+    final destLng = target.longitude;
+
+    // No change? Just ensure markers up to date
+    if (startLat == destLat && startLng == destLng) {
+      _updateMarkers();
+      return;
+    }
+
+    const int steps = 25; // Smooth 40fps animation over ~1 second
+    int currentStep = 0;
+
+    _interpolationTimer = Timer.periodic(const Duration(milliseconds: 40), (
+      timer,
+    ) {
+      if (_disposed) {
+        timer.cancel();
+        return;
+      }
+      currentStep++;
+      if (currentStep >= steps) {
+        animatedLat.value = destLat;
+        animatedLng.value = destLng;
+        _updateMarkers();
+        timer.cancel();
+      } else {
+        double t = currentStep / steps;
+        // Cubic ease for smoother start/stop feel
+        double easeT = t < 0.5
+            ? 4 * t * t * t
+            : 1 - math.pow(-2 * t + 2, 3) / 2;
+        animatedLat.value = startLat + (destLat - startLat) * easeT;
+        animatedLng.value = startLng + (destLng - startLng) * easeT;
+        _updateMarkers();
+      }
+    });
   }
 
   // ─── Fetch helpers ────────────────────────────────────────────────────────────
@@ -582,6 +660,9 @@ class TrackController extends GetxController {
     vehicleImei.value = imei;
     if (plate.isNotEmpty) vehiclePlate.value = plate;
     liveTrackData.value = null;
+    animatedLat.value = 0.0;
+    animatedLng.value = 0.0;
+    _stopLiveTracking();
     _startLiveTracking(imei);
   }
 }

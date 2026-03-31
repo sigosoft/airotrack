@@ -71,7 +71,7 @@ class TrackController extends GetxController {
         }
       } catch (e) {
         // Map might not be fully built/ready yet. Retry shortly once rendered.
-        Future.delayed(const Duration(milliseconds: 300), () {
+        Future.delayed(const Duration(milliseconds: 100), () {
           try {
             if (isFirstPosition.value) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -130,6 +130,7 @@ class TrackController extends GetxController {
   Timer? _pollingTimer;
 
   LatLng? _previousLatLng;
+  DateTime? _lastDataTime;
 
   // ─── Convenience getters ──────────────────────────────────────────────────
   /// Vehicle number from vehicle_info, fallback to route param.
@@ -566,6 +567,19 @@ class TrackController extends GetxController {
 
     if (lat != null && lng != null) {
       final target = LatLng(lat, lng);
+      final now = DateTime.now();
+
+      // Continuous Movement (Zomato-style): stretch every movement over min 5s
+      // to fill the intervals between telemetry data captures.
+      int durationMs = 5000;
+      if (_lastDataTime != null) {
+        int intervalMs = now.difference(_lastDataTime!).inMilliseconds;
+        // Glide over 1.5x the actual interval to ensure it feels "Continuous"
+        durationMs = (intervalMs * 1.5).toInt();
+        if (durationMs < 5000) durationMs = 5000;
+        if (durationMs > 15000) durationMs = 15000;
+      }
+      _lastDataTime = now;
 
       // Initialize animated pos if first load
       if (animatedLat.value == 0.0) {
@@ -573,8 +587,8 @@ class TrackController extends GetxController {
         animatedLng.value = target.longitude;
       }
 
-      // Smooth interpolation to new target
-      _animateTo(target);
+      // Smooth interpolation over the dynamically calculated duration
+      _animateTo(target, Duration(milliseconds: durationMs));
 
       if (_previousLatLng != null && _previousLatLng != target) {
         vehicleRotation.value = _getBearing(_previousLatLng!, target);
@@ -583,7 +597,7 @@ class TrackController extends GetxController {
     }
   }
 
-  void _animateTo(LatLng target) {
+  void _animateTo(LatLng target, Duration duration) {
     if (_disposed) return;
     _interpolationTimer?.cancel();
 
@@ -599,10 +613,12 @@ class TrackController extends GetxController {
       return;
     }
 
-    const int steps = 40; // High-res 40fps animation over ~1 second
+    final int totalMs = duration.inMilliseconds;
+    final int stepMs = 40; // 25fps for total smoothness
+    final int steps = (totalMs / stepMs).floor();
     int currentStep = 0;
 
-    _interpolationTimer = Timer.periodic(const Duration(milliseconds: 25), (
+    _interpolationTimer = Timer.periodic(Duration(milliseconds: stepMs), (
       timer,
     ) {
       if (_disposed) {

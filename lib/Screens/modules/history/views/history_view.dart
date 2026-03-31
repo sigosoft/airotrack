@@ -8,9 +8,8 @@ import 'Widgets/history_expand_fab.dart';
 import 'Widgets/history_bottom_nav_bar.dart';
 
 class HistoryView extends GetView<HistoryController> {
-  const HistoryView({Key? key, String? imei})
-    : imei = imei ?? '',
-      super(key: key);
+  const HistoryView({super.key, String? imei})
+    : imei = imei ?? '';
   final String imei;
 
   @override

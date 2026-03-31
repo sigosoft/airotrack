@@ -126,15 +126,28 @@ class _HistoryMapLayerState extends State<HistoryMapLayer> {
     final points = widget.polylinePoints;
     if (points.length < 2 || !_isMapReady) return;
     final bounds = LatLngBounds.fromPoints(points);
+
+    // If the bounds are zero-area (e.g. all points same), fitCamera can crash on non-finite zoom calculation.
+    final isZeroArea = bounds.southWest.latitude == bounds.northEast.latitude &&
+        bounds.southWest.longitude == bounds.northEast.longitude;
+
     _isProgrammaticCameraMove = true;
-    _mapController.fitCamera(
-      CameraFit.bounds(
-        bounds: bounds,
-        padding: const EdgeInsets.all(_fitPadding),
-      ),
-    );
-    _isProgrammaticCameraMove = false;
-    debugPrint('[History] Camera: initial fit applied');
+    try {
+      if (isZeroArea) {
+        _mapController.move(bounds.center, _lastKnownZoom);
+        debugPrint('[History] Camera: zero-area move applied');
+      } else {
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: bounds,
+            padding: const EdgeInsets.all(_fitPadding),
+          ),
+        );
+        debugPrint('[History] Camera: initial fit applied');
+      }
+    } finally {
+      _isProgrammaticCameraMove = false;
+    }
   }
 
   @override
@@ -239,7 +252,9 @@ class _HistoryMapLayerState extends State<HistoryMapLayer> {
           }
         },
         onPositionChanged: (camera, hasGesture) {
-          _lastKnownZoom = camera.zoom;
+          if (camera.zoom.isFinite) {
+            _lastKnownZoom = camera.zoom;
+          }
           if (hasGesture &&
               !_isProgrammaticCameraMove &&
               widget.isPlaybackActive &&

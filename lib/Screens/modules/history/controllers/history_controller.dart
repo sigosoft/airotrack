@@ -164,6 +164,7 @@ class HistoryController extends GetxController {
     "Today",
     "Yesterday",
     "Week",
+    "Month",
     "Custom",
   ];
   var selectedDateRange = "Today".obs;
@@ -171,7 +172,40 @@ class HistoryController extends GetxController {
 
   void updateDateRange(String value) {
     selectedDateRange.value = value;
-    // Here you would typically also update fromDate and toDate based on the selection
+    DateTime now = DateTime.now();
+    DateTime from;
+    DateTime to = now;
+
+    switch (value) {
+      case "1 hour":
+        from = now.subtract(const Duration(hours: 1));
+        break;
+      case "Today":
+        from = DateTime(now.year, now.month, now.day);
+        to = DateTime(now.year, now.month, now.day, 23, 59, 59);
+        break;
+      case "Yesterday":
+        from = DateTime(now.year, now.month, now.day - 1);
+        to = DateTime(now.year, now.month, now.day - 1, 23, 59, 59);
+        break;
+      case "Week":
+        from = now.subtract(const Duration(days: 7));
+        break;
+      case "Month":
+        from = now.subtract(const Duration(days: 30));
+        break;
+      case "Custom":
+      default:
+        fromDate.value = "-:-";
+        toDate.value = "-:-";
+        return;
+    }
+
+    fromDate.value = _dateFormat.format(from);
+    toDate.value = _dateFormat.format(to);
+
+    final imei = _resolveImeiForHistoryCall();
+    getHistory(imei);
   }
 
   var fromDate = "-:-".obs;

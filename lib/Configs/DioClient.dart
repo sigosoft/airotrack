@@ -29,21 +29,42 @@ class DioClient {
   InterceptorsWrapper _loggingInterceptor() {
     return InterceptorsWrapper(
       onRequest: (options, handler) {
-        log("➡️ REQUEST: ${options.method} ${options.uri}");
-        log("Headers: ${options.headers}");
-        log("Data: ${options.data}");
+        print("\n========== API REQUEST ==========");
+        print("➡️ METHOD: ${options.method}");
+        print("➡️ URL: ${options.uri}");
+        print("➡️ HEADERS: ${options.headers}");
+        if (options.data is FormData) {
+          final formData = options.data as FormData;
+          print("➡️ DATA [FormData]:");
+          for (var field in formData.fields) {
+            print("   ${field.key}: ${field.value}");
+          }
+          for (var file in formData.files) {
+            print("   [File] ${file.key}: ${file.value.filename}");
+          }
+        } else {
+          print("➡️ DATA: ${options.data}");
+        }
+        print("=================================\n");
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        log("⬅️ RESPONSE: ${response.statusCode} ${response.data}");
+        print("\n========== API RESPONSE ==========");
+        print("⬅️ URL: ${response.requestOptions.uri}");
+        print("⬅️ STATUS: ${response.statusCode}");
+        print("⬅️ DATA: ${response.data}");
+        print("==================================\n");
         return handler.next(response);
       },
       onError: (DioException error, handler) {
-        log("❌ ERROR: ${error.error ?? error.message}");
+        print("\n========== API ERROR ==========");
+        print("❌ URL: ${error.requestOptions.uri}");
+        print("❌ ERROR: ${error.error ?? error.message}");
         if (error.response != null) {
-          log("Error Response Data: ${error.response?.data}");
-          log("Error Status Code: ${error.response?.statusCode}");
+          print("❌ STATUS: ${error.response?.statusCode}");
+          print("❌ DATA: ${error.response?.data}");
         }
+        print("===============================\n");
         return handler.next(error);
       },
     );

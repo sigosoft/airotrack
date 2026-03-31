@@ -126,7 +126,10 @@ class TrackController extends GetxController {
   // Animated position for smooth movement
   final animatedLat = 0.0.obs;
   final animatedLng = 0.0.obs;
+  final animatedRotation = 0.0.obs; // Smooth rotation to avoid snapping
+
   Timer? _interpolationTimer;
+  Timer? _rotationTimer;
   Timer? _pollingTimer;
 
   LatLng? _previousLatLng;
@@ -250,7 +253,7 @@ class TrackController extends GetxController {
               ),
               Obx(
                 () => Transform.rotate(
-                  angle: (vehicleRotation.value - 45) * (math.pi / 180),
+                  angle: (animatedRotation.value - 45) * (math.pi / 180),
                   child: Image.asset(
                     'lib/Asset/Icons/Track Vehicle.png',
                     width: 50,
@@ -569,17 +572,26 @@ class TrackController extends GetxController {
       final target = LatLng(lat, lng);
       final now = DateTime.now();
 
-      // Continuous Movement (Zomato-style): stretch every movement over min 5s
-      // to fill the intervals between telemetry data captures.
+      // Fully Continuous Glide (Zomato-style): use 5s baseline to fill intervals.
       int durationMs = 5000;
       if (_lastDataTime != null) {
         int intervalMs = now.difference(_lastDataTime!).inMilliseconds;
-        // Glide over 1.5x the actual interval to ensure it feels "Continuous"
-        durationMs = (intervalMs * 1.5).toInt();
+        // Stretch 1.1x to bridge the gap gracefully
+        durationMs = (intervalMs * 1.1).toInt();
         if (durationMs < 5000) durationMs = 5000;
-        if (durationMs > 15000) durationMs = 15000;
+        if (durationMs > 60000) durationMs = 60000;
       }
       _lastDataTime = now;
+
+      // Smoothed target: mix with current to avoid "offset road" jitter
+      double smoothedLat = target.latitude;
+      double smoothedLng = target.longitude;
+      if (animatedLat.value != 0.0) {
+        // Weighted average for smoother road tracking (70% new, 30% current)
+        smoothedLat = (target.latitude * 0.7) + (animatedLat.value * 0.3);
+        smoothedLng = (target.longitude * 0.7) + (animatedLng.value * 0.3);
+      }
+      final smoothedTarget = LatLng(smoothedLat, smoothedLng);
 
       // Initialize animated pos if first load
       if (animatedLat.value == 0.0) {
@@ -588,13 +600,50 @@ class TrackController extends GetxController {
       }
 
       // Smooth interpolation over the dynamically calculated duration
-      _animateTo(target, Duration(milliseconds: durationMs));
+      _animateTo(smoothedTarget, Duration(milliseconds: durationMs));
 
       if (_previousLatLng != null && _previousLatLng != target) {
-        vehicleRotation.value = _getBearing(_previousLatLng!, target);
+        _animateRotation(_getBearing(_previousLatLng!, target));
+      } else if (animatedRotation.value == 0.0) {
+        // Initial rotation
+        final bearing = _getBearing(
+          LatLng(target.latitude - 0.0001, target.longitude),
+          target,
+        );
+        animatedRotation.value = bearing;
       }
       _previousLatLng = target;
     }
+  }
+
+  void _animateRotation(double targetRotation) {
+    if (_disposed) return;
+    _rotationTimer?.cancel();
+
+    double start = animatedRotation.value;
+    double diff = targetRotation - start;
+
+    // Normalize rotation diff to shortest path
+    while (diff > 180) diff -= 360;
+    while (diff < -180) diff += 360;
+
+    const int steps = 20; // Fast rotation over 500ms
+    int currentStep = 0;
+
+    _rotationTimer = Timer.periodic(const Duration(milliseconds: 25), (timer) {
+      if (_disposed) {
+        timer.cancel();
+        return;
+      }
+      currentStep++;
+      if (currentStep >= steps) {
+        animatedRotation.value = targetRotation % 360;
+        timer.cancel();
+      } else {
+        double t = currentStep / steps;
+        animatedRotation.value = (start + diff * t) % 360;
+      }
+    });
   }
 
   void _animateTo(LatLng target, Duration duration) {

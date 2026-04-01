@@ -8,6 +8,7 @@ class MapWidget extends StatelessWidget {
   final double initialZoom;
   final MapController? mapController;
   final dynamic markers;
+  final dynamic polylines;
   final VoidCallback? onTap;
 
   const MapWidget({
@@ -16,6 +17,7 @@ class MapWidget extends StatelessWidget {
     this.initialZoom = 13.0,
     this.mapController,
     this.markers,
+    this.polylines,
     this.onTap,
   }) : super(key: key);
 
@@ -33,13 +35,29 @@ class MapWidget extends StatelessWidget {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.airotrack.app',
         ),
-        // Reactively render markers. Using a robust detection to avoid "Improper use of GetX"
+        // Reactively render polylines
+        Builder(
+          builder: (context) {
+            final p = polylines;
+            if (p is RxList<Polyline>) {
+              return Obx(() {
+                if (p.length >= 0) {
+                  return PolylineLayer(polylines: p.toList());
+                }
+                return const SizedBox.shrink();
+              });
+            } else if (p is List<Polyline>) {
+              return PolylineLayer(polylines: p);
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+        // Reactively render markers
         Builder(
           builder: (context) {
             final m = markers;
             if (m is RxList<Marker>) {
               return Obx(() {
-                // Access .length to ensure GetX registers this Obx as active
                 if (m.length >= 0) {
                   return MarkerLayer(markers: m.toList());
                 }

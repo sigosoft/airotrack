@@ -104,11 +104,11 @@ class AddGeofenceView extends GetView<TrackController> {
                       ),
                     ),
                     Obx(
-                      () => controller.fenceNameError.value.isNotEmpty
+                      () => (controller.fenceNameError.value ?? "").isNotEmpty
                           ? Padding(
                               padding: const EdgeInsets.only(top: 4, left: 4),
                               child: Text(
-                                controller.fenceNameError.value,
+                                controller.fenceNameError.value ?? "",
                                 style: const TextStyle(
                                   color: Colors.red,
                                   fontSize: 12,

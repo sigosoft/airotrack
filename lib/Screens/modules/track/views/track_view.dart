@@ -24,8 +24,10 @@ class TrackView extends GetView<TrackController> {
               key: ValueKey(controller.vehicleImei.value),
               mapController: controller.mapController,
               onTap: () => controller.showBottomSheet.value = false,
-              markers: controller.mapMarkers, // Use optimized markers logic
+              markers: controller.mapMarkers,
+              polylines: controller.mapPolylines,
             ),
+
 
             // 2. Control Layout
             Stack(
@@ -1463,10 +1465,7 @@ class TrackView extends GetView<TrackController> {
         ),
         Text(
           value,
-          style: TextStyle(
-            fontSize: width * 0.025,
-            color: Colors.black87,
-          ),
+          style: TextStyle(fontSize: width * 0.025, color: Colors.black87),
         ),
       ],
     );

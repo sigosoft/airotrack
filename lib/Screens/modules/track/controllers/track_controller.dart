@@ -30,27 +30,10 @@ class TrackController extends GetxController {
 
   // 🛰️ Route-Based Strategy (Adapted from Reference)
   final routePoints = <LatLng>[].obs;
-  int _currentRouteIndex = 0;
-  double _currentRouteProgress = 0.0;
-  bool _hasValidRoute = false;
-
-  // 🏎️ Momentum & Glide Strategy
-  double _momentumLat = 0.0;
-  double _momentumLng = 0.0;
-  double _destinationLat = 0.0;
-  double _destinationLng = 0.0;
-
-  double _lastValidHeading = 0.0;
+  // 🏎️ Vector Velocity Glide Strategy
   double _expectedDurationMs = 5000.0;
-  double _currentPosGlobal = 0.0;
-
-  double _lastTargetPos = -1.0;
-  double _polyStepPerTick = 0.0;
-
-  double _lastDestLat = -1.0;
-  double _lastDestLng = -1.0;
-  double _latStepPerTick = 0.0;
-  double _lngStepPerTick = 0.0;
+  double _latSpeedPerTick = 0.0;
+  double _lngSpeedPerTick = 0.0;
 
   // Polling Control
   String? _lastProcessedDeviceTime;
@@ -82,61 +65,37 @@ class TrackController extends GetxController {
   }
 
   void _updateTelemetry(LatLng target, double speedKmH) {
-    final now = DateTime.now();
-
-    // Snapping Logic: If GPS is within 50m of the road/history, stick it.
-    if (routePoints.isNotEmpty) {
-      final snap = getClosestPointOnPolyline(target, routePoints);
-      if (snap['distance'] < 50.0) {
-        _hasValidRoute = true;
-        // _destinationLat set below
-      } else {
-        _hasValidRoute = false;
-      }
-    }
-
-    if (_previousLatLng != null && _lastDataTime != null) {
-      double dist = _calculateDistance(_previousLatLng!, target);
-      if (dist > 0.5) {
-        _lastValidHeading = _getBearing(_previousLatLng!, target);
-        _animateRotation(_lastValidHeading);
-      }
-
-      double speedDegPerSec = speedKmH / (111111.0 * 3.6);
-      speedDegPerSec = speedDegPerSec.clamp(
-        0.0001,
-        0.002,
-      ); // Guard against insane leaps
-
-      _momentumLat =
-          math.cos(_lastValidHeading * (math.pi / 180.0)) * speedDegPerSec;
-      _momentumLng =
-          math.sin(_lastValidHeading * (math.pi / 180.0)) *
-          speedDegPerSec /
-          math.cos(target.latitude * (math.pi / 180.0));
-
-      if (_hasValidRoute) {
-        final snapDest = getClosestPointOnPolyline(target, routePoints);
-        _destinationLat = snapDest['point'].latitude;
-        _destinationLng = snapDest['point'].longitude;
-      } else {
-        _destinationLat = target.latitude + (_momentumLat * 5.0);
-        _destinationLng = target.longitude + (_momentumLng * 5.0);
-      }
-    } else {
-      _destinationLat = target.latitude;
-      _destinationLng = target.longitude;
+    if (animatedLat.value == 0.0 || animatedLng.value == 0.0) {
       animatedLat.value = target.latitude;
       animatedLng.value = target.longitude;
     }
 
+    final now = DateTime.now();
+
     if (_lastDataTime != null) {
       int intervalMs = now.difference(_lastDataTime!).inMilliseconds;
-      _expectedDurationMs = (intervalMs * 1.1).toDouble(); // stretch slightly
-      if (_expectedDurationMs < 3000) _expectedDurationMs = 3000;
+      _expectedDurationMs = (intervalMs * 1.05)
+          .toDouble(); // stretch slightly to maintain momentum
+      if (_expectedDurationMs < 2000) _expectedDurationMs = 2000;
       if (_expectedDurationMs > 30000) _expectedDurationMs = 30000;
     } else {
       _expectedDurationMs = 5000;
+    }
+
+    // Determine the precise velocity to intercept the exact target over expected duration
+    double totalTicks = _expectedDurationMs / 16.0;
+    if (totalTicks < 1.0) totalTicks = 1.0;
+
+    _latSpeedPerTick = (target.latitude - animatedLat.value) / totalTicks;
+    _lngSpeedPerTick = (target.longitude - animatedLng.value) / totalTicks;
+
+    // Handle idle states
+    if (speedKmH < 1.0 && _previousLatLng != null) {
+      double dist = _calculateDistance(_previousLatLng!, target);
+      if (dist < 2.0) {
+        _latSpeedPerTick = 0.0;
+        _lngSpeedPerTick = 0.0;
+      }
     }
 
     _lastDataTime = now;
@@ -335,110 +294,27 @@ class TrackController extends GetxController {
   }
 
   void _glideMarker() {
-    if (animatedLat.value == 0.0 || _destinationLat == 0.0) return;
+    if (animatedLat.value == 0.0 || animatedLng.value == 0.0) return;
 
-    if (routePoints.isNotEmpty) {
-      // 🏎️ SEGMENT-BASED GLIDE: Move along the road polyline
-      final targetResult = getClosestPointOnPolyline(
-        LatLng(_destinationLat, _destinationLng),
-        routePoints,
+    // Apply continuous, unstoppable velocity directly toward the latest API vector.
+    // Completely bypass Mapbox snapping issues!
+    animatedLat.value += _latSpeedPerTick;
+    animatedLng.value += _lngSpeedPerTick;
+
+    // Smooth tangent bearing
+    if (_latSpeedPerTick.abs() > 0.0000001 ||
+        _lngSpeedPerTick.abs() > 0.0000001) {
+      double targetHeading = _getBearing(
+        LatLng(animatedLat.value, animatedLng.value),
+        LatLng(
+          animatedLat.value + _latSpeedPerTick,
+          animatedLng.value + _lngSpeedPerTick,
+        ),
       );
-      final int targetIdx = targetResult['idx'] as int;
-      final double targetT = targetResult['t'] as double;
-
-      if (_currentPosGlobal == 0.0) {
-        _currentPosGlobal = _currentRouteIndex + _currentRouteProgress;
-      }
-
-      double currentPos = _currentPosGlobal;
-      double targetPos = targetIdx + targetT;
-
-      // When the target updates, calculate the required constant velocity
-      if ((targetPos - _lastTargetPos).abs() > 0.0001) {
-        double newDiff = targetPos - currentPos;
-        double totalTicks = _expectedDurationMs / 16.0;
-        if (totalTicks < 1.0) totalTicks = 1.0;
-
-        _polyStepPerTick = newDiff / totalTicks;
-        _lastTargetPos = targetPos;
-      }
-
-      // Apply authentic constant velocity forward interpolation
-      if (_polyStepPerTick > 0) {
-        // Enforce a minimum speed so it doesn't freeze
-        if (_polyStepPerTick < 0.002) _polyStepPerTick = 0.002;
-        currentPos += _polyStepPerTick;
-
-        // Extrapolate past the point slightly if waiting for a ping, but cap to prevent flying off map
-        if (currentPos > targetPos + 1.0) currentPos = targetPos + 1.0;
-      } else if (_polyStepPerTick < 0) {
-        // If API sent a correction behind us, drift backward
-        currentPos += _polyStepPerTick;
-        if (currentPos < targetPos) currentPos = targetPos;
-      }
-
-      // Safeguard bounds
-      if (currentPos < 0) currentPos = 0;
-      if (currentPos >= routePoints.length - 1)
-        currentPos = (routePoints.length - 1.001);
-
-      _currentPosGlobal = currentPos;
-      _currentRouteIndex = currentPos.floor();
-      _currentRouteProgress = currentPos - _currentRouteIndex;
-
-      // Calculate new position based on indices
-      if (_currentRouteIndex >= 0 &&
-          _currentRouteIndex < routePoints.length - 1) {
-        final p1 = routePoints[_currentRouteIndex];
-        final p2 = routePoints[_currentRouteIndex + 1];
-
-        double oldLat = animatedLat.value;
-        double oldLng = animatedLng.value;
-
-        animatedLat.value =
-            p1.latitude + (p2.latitude - p1.latitude) * _currentRouteProgress;
-        animatedLng.value =
-            p1.longitude +
-            (p2.longitude - p1.longitude) * _currentRouteProgress;
-
-        // Perfect tangent rotation along the polyline path
-        if (oldLat != animatedLat.value || oldLng != animatedLng.value) {
-          double targetHeading = _getBearing(
-            LatLng(oldLat, oldLng),
-            LatLng(animatedLat.value, animatedLng.value),
-          );
-          double rDiff = targetHeading - animatedRotation.value;
-          if (rDiff > 180) rDiff -= 360;
-          if (rDiff < -180) rDiff += 360;
-          animatedRotation.value =
-              (animatedRotation.value + (rDiff * 0.15)) % 360;
-        }
-      } else if (routePoints.isNotEmpty) {
-        // Fallback for safety
-        animatedLat.value = routePoints.last.latitude;
-        animatedLng.value = routePoints.last.longitude;
-      }
-    } else {
-      // 🌪️ MOMENTUM-BASED GLIDE: Direct constant linear lerp
-      if (_destinationLat != _lastDestLat || _destinationLng != _lastDestLng) {
-        double totalTicks = _expectedDurationMs / 16.0;
-        if (totalTicks < 1.0) totalTicks = 1.0;
-
-        _latStepPerTick = (_destinationLat - animatedLat.value) / totalTicks;
-        _lngStepPerTick = (_destinationLng - animatedLng.value) / totalTicks;
-
-        _lastDestLat = _destinationLat;
-        _lastDestLng = _destinationLng;
-      }
-
-      animatedLat.value += _latStepPerTick;
-      animatedLng.value += _lngStepPerTick;
-
-      // Smooth rotate fallback
-      double rDiff = _lastValidHeading - animatedRotation.value;
+      double rDiff = targetHeading - animatedRotation.value;
       if (rDiff > 180) rDiff -= 360;
       if (rDiff < -180) rDiff += 360;
-      animatedRotation.value = (animatedRotation.value + (rDiff * 0.1)) % 360;
+      animatedRotation.value = (animatedRotation.value + (rDiff * 0.15)) % 360;
     }
 
     _updateMarkers();
@@ -485,55 +361,41 @@ class TrackController extends GetxController {
     }
   }
 
-  void _handleLocationUpdate(LatLng newLocation) async {
-    // 1. Validation: Ensure point is not noise
+  void _handleLocationUpdate(LatLng newLocation) {
+    // 1. Validation: Ensure point is not extreme GPS noise
     if (animatedLat.value != 0.0) {
       double dist = _calculateDistance(
         LatLng(animatedLat.value, animatedLng.value),
         newLocation,
       );
-      if (dist > 1000)
-        return; // Ignore jumps > 1km (unlikely for 100ms updates)
+      if (dist > 2000) return; // Ignore impossible physical leaps
     }
 
-    // 2. Fetch new route if needed (to keep snap path accurate)
-    if (routePoints.isNotEmpty) {
+    // Unify all tracking data into the constant-velocity engine
+    double estimatedSpeed =
+        liveTrackData.value?.currentPosition?.speed?.toDouble() ?? 10.0;
+    _updateTelemetry(newLocation, estimatedSpeed);
+
+    // Maintain visual polyline independently
+    if (routePoints.isEmpty) {
+      _fetchNewRoute(newLocation);
+    } else {
       final snap = getClosestPointOnPolyline(newLocation, routePoints);
-      if (snap['distance'] > 20.0) {
-        // Driver moved off the current polyline, recalculate
+      if (snap['distance'] > 50.0) {
         _fetchNewRoute(newLocation);
       }
-    }
-
-    // 3. Set the new destination for the animation engine
-    _destinationLat = newLocation.latitude;
-    _destinationLng = newLocation.longitude;
-
-    // Update bearing
-    if (animatedLat.value != 0.0) {
-      double bearing = _getBearing(
-        LatLng(animatedLat.value, animatedLng.value),
-        newLocation,
-      );
-      _animateRotation(bearing);
     }
   }
 
   Future<void> _fetchNewRoute(LatLng currentPos) async {
-    // Fetch road-snapped route points from the current position forward.
-    // Use the current GPS position as both origin; Mapbox returns the nearest
-    // road segment so the polyline stays road-stuck.
     final dest = LatLng(
-      currentPos.latitude +
-          0.001, // tiny look-ahead so the API returns a valid segment
+      currentPos.latitude + 0.001,
       currentPos.longitude + 0.001,
     );
 
     final points = await _directionsService.getRoute(currentPos, dest);
     if (points.isNotEmpty) {
       routePoints.assignAll(points);
-      _currentRouteIndex = 0;
-      _currentRouteProgress = 0.0;
       _updateMapPolylines();
     }
   }
@@ -579,7 +441,6 @@ class TrackController extends GetxController {
     _disposed = true;
     _animationTimer?.cancel();
     _pollingTimer?.cancel();
-    _rotationTimer?.cancel();
     _pusher?.disconnect();
     _pusher?.unsubscribe(channelName: PusherConfig.getTrackingChannel(0));
     fenceNameController.dispose();
@@ -685,24 +546,6 @@ class TrackController extends GetxController {
         math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
-
-  void _animateRotation(double target) {
-    _rotationTimer?.cancel();
-    final start = animatedRotation.value;
-    double diff = target - start;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-
-    int step = 0;
-    const steps = 20;
-    _rotationTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      step++;
-      animatedRotation.value = start + (diff * (step / steps));
-      if (step >= steps) timer.cancel();
-    });
-  }
-
-  Timer? _rotationTimer;
 
   double _calculateDistance(LatLng p1, LatLng p2) {
     const double radius = 6371000;

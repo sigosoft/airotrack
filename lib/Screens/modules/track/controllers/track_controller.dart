@@ -68,33 +68,70 @@ class TrackController extends GetxController {
     if (animatedLat.value == 0.0 || animatedLng.value == 0.0) {
       animatedLat.value = target.latitude;
       animatedLng.value = target.longitude;
+      _previousLatLng = target;
+      _lastDataTime = DateTime.now();
+      return;
     }
 
     final now = DateTime.now();
 
+    // 1. Calculate dynamic interval with a small buffer for network jitter.
     if (_lastDataTime != null) {
       int intervalMs = now.difference(_lastDataTime!).inMilliseconds;
-      _expectedDurationMs = (intervalMs * 1.05)
-          .toDouble(); // stretch slightly to maintain momentum
-      if (_expectedDurationMs < 2000) _expectedDurationMs = 2000;
+      // We expect the next update in intervalMs. We stretch it by 15% to maintain
+      // visual momentum if the next network packet is slightly late.
+      _expectedDurationMs = (intervalMs * 1.15).toDouble();
+      if (_expectedDurationMs < 1500) _expectedDurationMs = 1500;
       if (_expectedDurationMs > 30000) _expectedDurationMs = 30000;
     } else {
       _expectedDurationMs = 5000;
     }
 
-    // Determine the precise velocity to intercept the exact target over expected duration
     double totalTicks = _expectedDurationMs / 16.0;
     if (totalTicks < 1.0) totalTicks = 1.0;
 
-    _latSpeedPerTick = (target.latitude - animatedLat.value) / totalTicks;
-    _lngSpeedPerTick = (target.longitude - animatedLng.value) / totalTicks;
+    // 2. Determine raw desired velocity to intercept the latest GPS target.
+    double desiredLatSpeed = (target.latitude - animatedLat.value) / totalTicks;
+    double desiredLngSpeed =
+        (target.longitude - animatedLng.value) / totalTicks;
 
-    // Handle idle states
-    if (speedKmH < 1.0 && _previousLatLng != null) {
-      double dist = _calculateDistance(_previousLatLng!, target);
-      if (dist < 2.0) {
-        _latSpeedPerTick = 0.0;
-        _lngSpeedPerTick = 0.0;
+    // 3. Velocity Smoothing (Bypass Jumps)
+    // Instead of snapping to the new speed, we blend it with current velocity (Momentum).
+    double blendFactor = 0.35;
+
+    // Safety check for impossible jumps (teleportation)
+    double distToTarget = _calculateDistance(
+      LatLng(animatedLat.value, animatedLng.value),
+      target,
+    );
+    if (distToTarget > 200)
+      blendFactor = 1.0; // Responsive jump for large distances
+
+    // If the coordinates are identical but speed is > 0, we are in a 'heartbeat' update.
+    // We ignore the stop-command from identical coords and keep 90% of current momentum.
+    if (speedKmH > 1.0 &&
+        _previousLatLng != null &&
+        _calculateDistance(_previousLatLng!, target) < 0.2) {
+      _latSpeedPerTick *= 0.95;
+      _lngSpeedPerTick *= 0.95;
+    } else {
+      _latSpeedPerTick =
+          (_latSpeedPerTick * (1.0 - blendFactor)) +
+          (desiredLatSpeed * blendFactor);
+      _lngSpeedPerTick =
+          (_lngSpeedPerTick * (1.0 - blendFactor)) +
+          (desiredLngSpeed * blendFactor);
+    }
+
+    // 4. Smooth Deceleration (Settling to target)
+    if (speedKmH < 1.0) {
+      if (distToTarget < 10.0) {
+        _latSpeedPerTick *= 0.7; // Drain energy
+        _lngSpeedPerTick *= 0.7;
+        if (distToTarget < 0.5) {
+          _latSpeedPerTick = 0;
+          _lngSpeedPerTick = 0;
+        }
       }
     }
 
@@ -296,14 +333,26 @@ class TrackController extends GetxController {
   void _glideMarker() {
     if (animatedLat.value == 0.0 || animatedLng.value == 0.0) return;
 
-    // Apply continuous, unstoppable velocity directly toward the latest API vector.
-    // Completely bypass Mapbox snapping issues!
+    // Continuous movement based on current calculated velocity vector
     animatedLat.value += _latSpeedPerTick;
     animatedLng.value += _lngSpeedPerTick;
 
-    // Smooth tangent bearing
-    if (_latSpeedPerTick.abs() > 0.0000001 ||
-        _lngSpeedPerTick.abs() > 0.0000001) {
+    // 🛰️ Prediction & Overshoot Protection
+    // If no data arrives for longer than expected, gently decelerate.
+    if (_lastDataTime != null) {
+      int elapsedMs = DateTime.now().difference(_lastDataTime!).inMilliseconds;
+      if (elapsedMs > _expectedDurationMs) {
+        double decay = 0.985; // Gently lose momentum
+        _latSpeedPerTick *= decay;
+        _lngSpeedPerTick *= decay;
+      }
+    }
+
+    // Smooth tangent bearing for natural vehicle rotation
+    double velSq =
+        (_latSpeedPerTick * _latSpeedPerTick) +
+        (_lngSpeedPerTick * _lngSpeedPerTick);
+    if (velSq > 1e-12) {
       double targetHeading = _getBearing(
         LatLng(animatedLat.value, animatedLng.value),
         LatLng(
@@ -312,8 +361,10 @@ class TrackController extends GetxController {
         ),
       );
       double rDiff = targetHeading - animatedRotation.value;
-      if (rDiff > 180) rDiff -= 360;
-      if (rDiff < -180) rDiff += 360;
+      while (rDiff > 180) rDiff -= 360;
+      while (rDiff < -180) rDiff += 360;
+
+      // Interpolate rotation (15% towards target per pulse)
       animatedRotation.value = (animatedRotation.value + (rDiff * 0.15)) % 360;
     }
 

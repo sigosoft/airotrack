@@ -30,10 +30,6 @@ class TrackController extends GetxController {
 
   // 🛰️ Route-Based Strategy (Adapted from Reference)
   final routePoints = <LatLng>[].obs;
-  // 🏎️ Vector Velocity Glide Strategy
-  double _expectedDurationMs = 5000.0;
-  double _latSpeedPerTick = 0.0;
-  double _lngSpeedPerTick = 0.0;
 
   // Polling Control
   String? _lastProcessedDeviceTime;
@@ -44,6 +40,12 @@ class TrackController extends GetxController {
   final DirectionsService _directionsService = DirectionsService();
   PusherChannelsFlutter? _pusher;
   Timer? _animationTimer;
+
+  // --- High-Fidelity Road-Following Engine ---
+  final List<LatLng> _waypointQueue = [];
+  double _currentSpeedMs = 0.0;
+  LatLng? _lastTargetPos;
+  DateTime? _lastDataTime;
 
   final animatedDriverLocation = Rxn<LatLng>();
   final destinationLocation = Rxn<LatLng>();
@@ -68,75 +70,47 @@ class TrackController extends GetxController {
     if (animatedLat.value == 0.0 || animatedLng.value == 0.0) {
       animatedLat.value = target.latitude;
       animatedLng.value = target.longitude;
-      _previousLatLng = target;
       _lastDataTime = DateTime.now();
       return;
     }
 
     final now = DateTime.now();
-
-    // 1. Calculate dynamic interval with a small buffer for network jitter.
-    if (_lastDataTime != null) {
-      int intervalMs = now.difference(_lastDataTime!).inMilliseconds;
-      // We expect the next update in intervalMs. We stretch it by 15% to maintain
-      // visual momentum if the next network packet is slightly late.
-      _expectedDurationMs = (intervalMs * 1.15).toDouble();
-      if (_expectedDurationMs < 1500) _expectedDurationMs = 1500;
-      if (_expectedDurationMs > 30000) _expectedDurationMs = 30000;
-    } else {
-      _expectedDurationMs = 5000;
-    }
-
-    double totalTicks = _expectedDurationMs / 16.0;
-    if (totalTicks < 1.0) totalTicks = 1.0;
-
-    // 2. Determine raw desired velocity to intercept the latest GPS target.
-    double desiredLatSpeed = (target.latitude - animatedLat.value) / totalTicks;
-    double desiredLngSpeed =
-        (target.longitude - animatedLng.value) / totalTicks;
-
-    // 3. Velocity Smoothing (Bypass Jumps)
-    // Instead of snapping to the new speed, we blend it with current velocity (Momentum).
-    double blendFactor = 0.35;
-
-    // Safety check for impossible jumps (teleportation)
-    double distToTarget = _calculateDistance(
-      LatLng(animatedLat.value, animatedLng.value),
-      target,
-    );
-    if (distToTarget > 200)
-      blendFactor = 1.0; // Responsive jump for large distances
-
-    // If the coordinates are identical but speed is > 0, we are in a 'heartbeat' update.
-    // We ignore the stop-command from identical coords and keep 90% of current momentum.
-    if (speedKmH > 1.0 &&
-        _previousLatLng != null &&
-        _calculateDistance(_previousLatLng!, target) < 0.2) {
-      _latSpeedPerTick *= 0.95;
-      _lngSpeedPerTick *= 0.95;
-    } else {
-      _latSpeedPerTick =
-          (_latSpeedPerTick * (1.0 - blendFactor)) +
-          (desiredLatSpeed * blendFactor);
-      _lngSpeedPerTick =
-          (_lngSpeedPerTick * (1.0 - blendFactor)) +
-          (desiredLngSpeed * blendFactor);
-    }
-
-    // 4. Smooth Deceleration (Settling to target)
-    if (speedKmH < 1.0) {
-      if (distToTarget < 10.0) {
-        _latSpeedPerTick *= 0.7; // Drain energy
-        _lngSpeedPerTick *= 0.7;
-        if (distToTarget < 0.5) {
-          _latSpeedPerTick = 0;
-          _lngSpeedPerTick = 0;
-        }
-      }
-    }
-
     _lastDataTime = now;
-    _previousLatLng = target;
+
+    // Convert km/h to m/s for internal physics
+    _currentSpeedMs = speedKmH / 3.6;
+    if (_currentSpeedMs < 0.5 && speedKmH > 0)
+      _currentSpeedMs = 2.0; // Min glide
+
+    // If target is same as last one, we don't need a new route
+    if (_lastTargetPos != null &&
+        _calculateDistance(_lastTargetPos!, target) < 1.0) {
+      return;
+    }
+
+    // Fetch road segment to new target
+    _fetchAndQueueRoute(target);
+  }
+
+  Future<void> _fetchAndQueueRoute(LatLng target) async {
+    // Start from the end of the current queue or current vehicle position
+    final LatLng start = _waypointQueue.isNotEmpty
+        ? _waypointQueue.last
+        : LatLng(animatedLat.value, animatedLng.value);
+
+    // Don't fetch if distance is negligible
+    if (_calculateDistance(start, target) < 5.0) return;
+
+    _lastTargetPos = target;
+    final points = await _directionsService.getRoute(start, target);
+
+    if (points.isNotEmpty) {
+      // Add to the animation queue only, do not update UI/Polylines
+      _waypointQueue.addAll(points);
+    } else {
+      // Fallback: straight line if Mapbox fails
+      _waypointQueue.add(target);
+    }
   }
 
   void _onDataUpdated() {
@@ -333,43 +307,72 @@ class TrackController extends GetxController {
   void _glideMarker() {
     if (animatedLat.value == 0.0 || animatedLng.value == 0.0) return;
 
-    // Continuous movement based on current calculated velocity vector
-    animatedLat.value += _latSpeedPerTick;
-    animatedLng.value += _lngSpeedPerTick;
+    double stepDistMs = _currentSpeedMs * 0.016; // meters covered in 16ms
 
-    // 🛰️ Prediction & Overshoot Protection
-    // If no data arrives for longer than expected, gently decelerate.
-    if (_lastDataTime != null) {
-      int elapsedMs = DateTime.now().difference(_lastDataTime!).inMilliseconds;
-      if (elapsedMs > _expectedDurationMs) {
-        double decay = 0.985; // Gently lose momentum
-        _latSpeedPerTick *= decay;
-        _lngSpeedPerTick *= decay;
-      }
-    }
-
-    // Smooth tangent bearing for natural vehicle rotation
-    double velSq =
-        (_latSpeedPerTick * _latSpeedPerTick) +
-        (_lngSpeedPerTick * _lngSpeedPerTick);
-    if (velSq > 1e-12) {
-      double targetHeading = _getBearing(
+    if (_waypointQueue.isNotEmpty) {
+      // 1. Move along the waypoints (Follow the Rail)
+      LatLng next = _waypointQueue.first;
+      double dist = _calculateDistance(
         LatLng(animatedLat.value, animatedLng.value),
-        LatLng(
-          animatedLat.value + _latSpeedPerTick,
-          animatedLng.value + _lngSpeedPerTick,
-        ),
+        next,
       );
-      double rDiff = targetHeading - animatedRotation.value;
-      while (rDiff > 180) rDiff -= 360;
-      while (rDiff < -180) rDiff += 360;
 
-      // Interpolate rotation (15% towards target per pulse)
-      animatedRotation.value = (animatedRotation.value + (rDiff * 0.15)) % 360;
+      // If we are way behind the queue, speed up slightly to catch up
+      if (_waypointQueue.length > 5) {
+        stepDistMs *= 1.25;
+      }
+
+      if (dist < stepDistMs) {
+        // Point reached - snap and move to next
+        animatedLat.value = next.latitude;
+        animatedLng.value = next.longitude;
+        _waypointQueue.removeAt(0);
+      } else {
+        // Calculate bearing and move
+        double bearing = _getBearing(
+          LatLng(animatedLat.value, animatedLng.value),
+          next,
+        );
+        _moveVehicleTowards(bearing, stepDistMs);
+      }
+    } else {
+      // 2. Extrapolation (Maintain momentum if no data)
+      if (_currentSpeedMs > 0.5) {
+        // Decay speed if no data for a while
+        if (_lastDataTime != null) {
+          int elapsed = DateTime.now()
+              .difference(_lastDataTime!)
+              .inMilliseconds;
+          if (elapsed > 10000) {
+            _currentSpeedMs *= 0.985;
+          }
+        }
+        _moveVehicleTowards(animatedRotation.value, stepDistMs);
+      }
     }
 
     _updateMarkers();
     moveMapToVehicle();
+  }
+
+  void _moveVehicleTowards(double bearing, double distanceMeters) {
+    const double metersPerLat = 111320.0;
+    double latRad = animatedLat.value * math.pi / 180;
+    double metersPerLng = 111320.0 * math.cos(latRad);
+
+    double dLat =
+        (distanceMeters * math.cos(bearing * math.pi / 180)) / metersPerLat;
+    double dLng =
+        (distanceMeters * math.sin(bearing * math.pi / 180)) / metersPerLng;
+
+    animatedLat.value += dLat;
+    animatedLng.value += dLng;
+
+    // Smooth rotation update (15% towards target heading)
+    double rDiff = bearing - animatedRotation.value;
+    while (rDiff > 180) rDiff -= 360;
+    while (rDiff < -180) rDiff += 360;
+    animatedRotation.value = (animatedRotation.value + (rDiff * 0.15)) % 360;
   }
 
   void updateCameraToFitBounds() {
@@ -419,47 +422,24 @@ class TrackController extends GetxController {
         LatLng(animatedLat.value, animatedLng.value),
         newLocation,
       );
-      if (dist > 2000) return; // Ignore impossible physical leaps
+      if (dist > 5000) return; // Ignore impossible physical leaps (>5km)
     }
 
-    // Unify all tracking data into the constant-velocity engine
-    double estimatedSpeed =
-        liveTrackData.value?.currentPosition?.speed?.toDouble() ?? 10.0;
-    _updateTelemetry(newLocation, estimatedSpeed);
+    // 2. Continuous Speed Calculation
+    double speedKmH =
+        liveTrackData.value?.currentPosition?.speed?.toDouble() ?? 0.0;
+    String status = liveTrackData.value?.currentStatus ?? 'Stopped';
 
-    // Maintain visual polyline independently
-    if (routePoints.isEmpty) {
-      _fetchNewRoute(newLocation);
-    } else {
-      final snap = getClosestPointOnPolyline(newLocation, routePoints);
-      if (snap['distance'] > 50.0) {
-        _fetchNewRoute(newLocation);
-      }
+    // If business logic says stopped but speed is reported, trust speed slightly.
+    if (status == 'Stopped' && speedKmH < 1.0) {
+      _currentSpeedMs = 0.0;
     }
+
+    // Update telemetry (this triggers road segments fetching)
+    _updateTelemetry(newLocation, speedKmH);
   }
 
-  Future<void> _fetchNewRoute(LatLng currentPos) async {
-    final dest = LatLng(
-      currentPos.latitude + 0.001,
-      currentPos.longitude + 0.001,
-    );
-
-    final points = await _directionsService.getRoute(currentPos, dest);
-    if (points.isNotEmpty) {
-      routePoints.assignAll(points);
-      _updateMapPolylines();
-    }
-  }
-
-  void _updateMapPolylines() {
-    mapPolylines.assignAll([
-      Polyline(
-        points: routePoints.toList(),
-        color: const Color(0xFF009FE3),
-        strokeWidth: 4.0,
-      ),
-    ]);
-  }
+  // Helper removed as its logic is integrated into _fetchAndQueueRoute
 
   Future<void> _initAndStartTracking(String imei) async {
     final token = await getSavedObject('token');
@@ -582,8 +562,6 @@ class TrackController extends GetxController {
   }
 
   // --- Geometry Helpers ---
-  LatLng? _previousLatLng;
-  DateTime? _lastDataTime;
 
   double _getBearing(LatLng start, LatLng end) {
     final lat1 = start.latitude * math.pi / 180;

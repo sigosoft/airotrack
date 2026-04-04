@@ -253,10 +253,9 @@ class HistoryController extends GetxController {
   var duration = "00:00:00".obs;
   var totalDistance = "12.5 Km".obs;
 
-  var playbackSpeed = "1X".obs;
-
   /// Playback speed multiplier: 1.0, 1.5, or 2.0. Used for smooth movement animation.
   final playbackSpeedMultiplier = 1.0.obs;
+  var playbackSpeed = "1X".obs;
 
   /// Camera follows moving marker during playback when enabled.
   final isFollowCameraEnabled = true.obs;
@@ -435,7 +434,6 @@ class HistoryController extends GetxController {
   Timer? _movingMarkerTimer;
   int _movingSegmentIndex = 0;
   double _movingSegmentFraction = 0.0;
-  bool _isHoldingForZeroSpeed = false;
 
   /// Whether the marker is currently animating along the route.
   bool get isMovingMarkerActive => _movingMarkerTimer?.isActive ?? false;
@@ -497,23 +495,8 @@ class HistoryController extends GetxController {
         // Fallback when backend speed series is unavailable.
         effectiveMps = _basePlaybackSpeedMps * playbackSpeedMultiplier.value;
       } else {
-        final effectiveKmph = backendKmph * playbackSpeedMultiplier.value;
-        if (effectiveKmph <= _zeroMovementSpeedThresholdKmph) {
-          if (!_isHoldingForZeroSpeed) {
-            debugPrint(
-              '[History] Playback: holding movement at low speed (${effectiveKmph.toStringAsFixed(1)} kmph)',
-            );
-            _isHoldingForZeroSpeed = true;
-          }
-          _syncCurrentSpeedWithProgress(currentProgress);
-          return;
-        }
-        if (_isHoldingForZeroSpeed) {
-          _isHoldingForZeroSpeed = false;
-          debugPrint(
-            '[History] Playback: resuming movement as speed increased',
-          );
-        }
+        final effectiveKmph = math.max(_minPlaybackSpeedKmph, backendKmph) *
+            playbackSpeedMultiplier.value;
         effectiveMps = effectiveKmph / 3.6;
       }
       double distanceBudgetMeters = effectiveMps * tickSeconds;
@@ -591,7 +574,6 @@ class HistoryController extends GetxController {
   void stopMovingMarker() {
     _movingMarkerTimer?.cancel();
     _movingMarkerTimer = null;
-    _isHoldingForZeroSpeed = false;
     isPlaying.value = false;
   }
 
@@ -735,8 +717,10 @@ class HistoryController extends GetxController {
   static const int _progressiveChunkSize = 50;
 
   /// Base playback velocity in meters/second. Effective speed = base * playbackSpeedMultiplier.
-  static const double _basePlaybackSpeedMps = 12.0;
-  static const double _zeroMovementSpeedThresholdKmph = 0.5;
+  static const double _basePlaybackSpeedMps = 85.0;
+
+  /// Minimum speed for playback (even if recorded speed was 0). This keeps the car moving extremely fast.
+  static const double _minPlaybackSpeedKmph = 300.0;
 
   /// Mapbox chunk size kept conservative for faster first response and smoother perceived start.
   static const int _mapboxChunkSize = 25;

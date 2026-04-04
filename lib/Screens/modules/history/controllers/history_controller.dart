@@ -397,8 +397,9 @@ class HistoryController extends GetxController {
   /// Initial map center: center of polyline bounds when 2+ points, else first point or default.
   LatLng get initialMapCenter {
     final points = polylinePoints;
-    if (points.length < 2)
+    if (points.length < 2) {
       return points.isNotEmpty ? points.first : _defaultMapCenter;
+    }
     double south = points.first.latitude, north = south;
     double west = points.first.longitude, east = west;
     for (final p in points) {

@@ -11,6 +11,9 @@ class TrackView extends GetView<TrackController> {
 
   @override
   Widget build(BuildContext context) {
+    // Ensure keyboard is dismissed when entering track page
+    FocusManager.instance.primaryFocus?.unfocus();
+
     final width = MediaQuery.of(context).size.width;
     final height = MediaQuery.of(context).size.height;
     return SafeArea(
@@ -329,22 +332,26 @@ class TrackView extends GetView<TrackController> {
                   ),
                 ],
               ),
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  SizedBox(height: height * 0.012),
-                  Center(
-                    child: Container(
-                      width: width * 0.11,
-                      height: height * 0.005,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(width * 0.005),
+              child: RefreshIndicator(
+                onRefresh: () => controller.refreshData(),
+                color: const Color(0xFF009FE3),
+                child: ListView(
+                  controller: scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: [
+                    SizedBox(height: height * 0.012),
+                    Center(
+                      child: Container(
+                        width: width * 0.11,
+                        height: height * 0.005,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(width * 0.005),
+                        ),
                       ),
                     ),
-                  ),
-                  SizedBox(height: height * 0.018),
+                    SizedBox(height: height * 0.018),
 
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -746,18 +753,19 @@ class TrackView extends GetView<TrackController> {
                 ],
               ),
             ),
-            // Speedometer floating above
-            Positioned(
-              top: -height * 0.1,
-              left: 0,
-              right: 0,
-              child: Center(child: _buildSpeedometerIndicator()),
-            ),
-          ],
-        );
-      },
-    );
-  }
+          ),
+          // Speedometer floating above
+          Positioned(
+            top: -height * 0.1,
+            left: 0,
+            right: 0,
+            child: Center(child: _buildSpeedometerIndicator()),
+          ),
+        ],
+      );
+    },
+  );
+}
 
   Widget _buildIdBox(String text) {
     final width = MediaQuery.of(Get.context!).size.width;

@@ -367,12 +367,6 @@ class TrackController extends GetxController {
 
     animatedLat.value += dLat;
     animatedLng.value += dLng;
-
-    // Smooth rotation update (15% towards target heading)
-    double rDiff = bearing - animatedRotation.value;
-    while (rDiff > 180) rDiff -= 360;
-    while (rDiff < -180) rDiff += 360;
-    animatedRotation.value = (animatedRotation.value + (rDiff * 0.15)) % 360;
   }
 
   void updateCameraToFitBounds() {
@@ -640,6 +634,12 @@ class TrackController extends GetxController {
     int h = hours.toInt();
     int m = ((hours - h) * 60).toInt();
     return "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} hrs";
+  }
+
+  Future<void> refreshData() async {
+    if (vehicleImei.value.isNotEmpty) {
+      await _fetchLiveTrack(vehicleImei.value);
+    }
   }
 
   void startTrackingForImei(String imei, {String? plate}) {

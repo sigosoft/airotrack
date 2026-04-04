@@ -205,33 +205,39 @@ class HomeView extends GetView<HomeController> {
             final showLoadMore =
                 controller.searchQuery.value.trim().isEmpty &&
                 controller.isMoreLoading.value;
-            return ListView.separated(
-              controller: controller.scrollController,
-              padding: const EdgeInsets.only(
-                left: 15.61,
-                right: 15.61,
-                bottom: 120,
-              ),
-              itemCount: list.length + (showLoadMore ? 1 : 0),
-              separatorBuilder: (_, __) => const SizedBox(height: 11),
-              itemBuilder: (context, index) {
-                if (index < list.length) {
-                  final vehicle = list[index];
-                  return _buildVehicleCard(context, vehicle);
-                } else {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Color(0xFF009FE3),
+            return RefreshIndicator(
+              onRefresh: () =>
+                  controller.fetchVehicles(type: controller.selectedType.value),
+              color: const Color(0xFF009FE3),
+              child: ListView.separated(
+                controller: controller.scrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(
+                  left: 15.61,
+                  right: 15.61,
+                  bottom: 120,
+                ),
+                itemCount: list.length + (showLoadMore ? 1 : 0),
+                separatorBuilder: (_, __) => const SizedBox(height: 11),
+                itemBuilder: (context, index) {
+                  if (index < list.length) {
+                    final vehicle = list[index];
+                    return _buildVehicleCard(context, vehicle);
+                  } else {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFF009FE3),
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                }
-              },
+                    );
+                  }
+                },
+              ),
             );
           }),
         ),
@@ -638,100 +644,104 @@ class HomeView extends GetView<HomeController> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                    // Cancel Button
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        width: 120,
-                        height: 35,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(7),
-                          border: Border.all(color: Colors.grey.shade200),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: const Center(
-                          child: Text(
-                            "Cancel",
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontWeight: FontWeight.w500,
-                              fontSize: 14,
+                      // Cancel Button
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 120,
+                          height: 35,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: Colors.grey.shade200),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Center(
+                            child: Text(
+                              "Cancel",
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(context);
-                        Get.toNamed(
-                          Routes.HISTORY,
-                          parameters: {
-                            'imei': vehicle.deviceId,
-                            'vehicleId': vehicle.plateNumber,
-                          },
-                        );
-                      },
-                      child: Container(
-                        width: 100,
-                        height: 35,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF009FE3),
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            "History",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(context);
+                          Get.toNamed(
+                            Routes.HISTORY,
+                            parameters: {
+                              'imei': vehicle.deviceId,
+                              'vehicleId': vehicle.plateNumber,
+                            },
+                          );
+                        },
+                        child: Container(
+                          width: 100,
+                          height: 35,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF009FE3),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              "History",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(context);
-                        Get.toNamed(
-                          Routes.TRACK,
-                          parameters: {
-                            'imei': vehicle.deviceId,
-                            'vehicleId': vehicle.plateNumber,
-                          },
-                        );
-                      },
-                      child: Container(
-                        width: 120,
-                        height: 35,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF009FE3),
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            "Track",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () {
+                          // Dismiss keyboard before navigating
+                          if (FocusManager.instance.primaryFocus != null) {
+                            FocusManager.instance.primaryFocus!.unfocus();
+                          }
+                          Navigator.pop(context);
+                          Get.toNamed(
+                            Routes.TRACK,
+                            parameters: {
+                              'imei': vehicle.deviceId,
+                              'vehicleId': vehicle.plateNumber,
+                            },
+                          );
+                        },
+                        child: Container(
+                          width: 120,
+                          height: 35,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF009FE3),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              "Track",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 ),
               ],
             ),

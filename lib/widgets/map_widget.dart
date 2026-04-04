@@ -3,16 +3,20 @@ import 'package:get/get.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
-class MapWidget extends StatelessWidget {
+class AiroMapWidget extends StatelessWidget {
   final LatLng? initialCenter;
   final double initialZoom;
   final MapController? mapController;
   final dynamic markers;
   final dynamic polylines;
   final VoidCallback? onTap;
+  final void Function(MapEvent)? onMapEvent;
+  final void Function(MapCamera, bool)? onPositionChanged;
 
-  const MapWidget({
+  AiroMapWidget({
     Key? key,
+    this.onPositionChanged,
+    this.onMapEvent,
     this.initialCenter,
     this.initialZoom = 13.0,
     this.mapController,
@@ -29,6 +33,8 @@ class MapWidget extends StatelessWidget {
         initialCenter: initialCenter ?? const LatLng(11.8745, 75.3704),
         initialZoom: initialZoom,
         onTap: (tapPosition, point) => onTap?.call(),
+        onMapEvent: onMapEvent,
+        onPositionChanged: onPositionChanged,
       ),
       children: [
         TileLayer(

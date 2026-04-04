@@ -23,14 +23,18 @@ class TrackView extends GetView<TrackController> {
         body: Stack(
           children: [
             // 1. Map Background
-            MapWidget(
+            AiroMapWidget(
               key: ValueKey(controller.vehicleImei.value),
               mapController: controller.mapController,
               onTap: () => controller.showBottomSheet.value = false,
               markers: controller.mapMarkers,
               polylines: controller.mapPolylines,
+              onPositionChanged: (position, hasGesture) {
+                if (hasGesture) {
+                  controller.isLocked.value = false;
+                }
+              },
             ),
-
 
             // 2. Control Layout
             Stack(
@@ -311,9 +315,9 @@ class TrackView extends GetView<TrackController> {
 
   Widget _buildDraggableBottomSheet() {
     return DraggableScrollableSheet(
-      initialChildSize: 0.65,
-      minChildSize: 0.45,
-      maxChildSize: 0.98,
+      initialChildSize: 0.43,
+      minChildSize: 0.43,
+      maxChildSize: 1.0,
       builder: (context, scrollController) {
         final height = MediaQuery.of(context).size.height;
         final width = MediaQuery.of(context).size.width;
@@ -353,419 +357,421 @@ class TrackView extends GetView<TrackController> {
                     ),
                     SizedBox(height: height * 0.018),
 
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Obx(
-                              () => Text(
-                                controller.displayPlate,
-                                style: TextStyle(
-                                  fontSize: width * 0.046,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Obx(
+                                () => Text(
+                                  controller.displayPlate,
+                                  style: TextStyle(
+                                    fontSize: width * 0.046,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
                                 ),
                               ),
-                            ),
-                            SizedBox(height: height * 0.01),
-                            Obx(() {
-                              final imei = controller.vehicleImei.value;
-                              // Show last 8 digits of IMEI to fit design
-                              final displayImei = imei.length > 8
-                                  ? imei.substring(imei.length - 8)
-                                  : imei;
-                              return Row(
-                                children: List.generate(
-                                  displayImei.length,
-                                  (index) => _buildIdBox(displayImei[index]),
-                                ),
-                              );
-                            }),
-                            const SizedBox(height: 15),
-                            Obx(
-                              () => Text(
-                                controller.displayDeviceTime,
-                                style: TextStyle(
-                                  color: Colors.black,
-                                  fontSize: width * 0.032,
-                                  fontWeight: FontWeight.w500,
+                              SizedBox(height: height * 0.01),
+                              Obx(() {
+                                final imei = controller.vehicleImei.value;
+                                // Show last 8 digits of IMEI to fit design
+                                final displayImei = imei.length > 8
+                                    ? imei.substring(imei.length - 8)
+                                    : imei;
+                                return Row(
+                                  children: List.generate(
+                                    displayImei.length,
+                                    (index) => _buildIdBox(displayImei[index]),
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 15),
+                              Obx(
+                                () => Text(
+                                  controller.displayDeviceTime,
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: width * 0.032,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ),
-                            ),
-                            SizedBox(height: height * 0.012),
-                            Row(
-                              children: [
-                                Image.asset(
-                                  'lib/Asset/Icons/Speed.png',
-                                  width: 18,
-                                  height: 18,
-                                  color: Colors.grey.shade600,
-                                ),
-                                const SizedBox(width: 8),
-                                Obx(
-                                  () => Text(
-                                    "${controller.displayTodayKm} Km",
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
+                              SizedBox(height: height * 0.012),
+                              Row(
+                                children: [
+                                  Image.asset(
+                                    'lib/Asset/Icons/Speed.png',
+                                    width: 18,
+                                    height: 18,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Obx(
+                                    () => Text(
+                                      "${controller.displayTodayKm} Km",
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      // Green Car Visualization
-                      Container(
-                        width: width * 0.42,
-                        height: height * 0.13,
-                        alignment: Alignment.centerRight,
-                        child: Image.asset(
-                          'lib/Asset/Images/Green Car.png',
-                          fit: BoxFit.contain,
+                        // Green Car Visualization
+                        Container(
+                          width: width * 0.42,
+                          height: height * 0.13,
+                          alignment: Alignment.centerRight,
+                          child: Image.asset(
+                            'lib/Asset/Images/Green Car.png',
+                            fit: BoxFit.contain,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
 
-                  Row(
-                    children: [
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: width * 0.03,
-                          vertical: height * 0.012,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF7F8FA),
-                          borderRadius: BorderRadius.circular(width * 0.02),
-                        ),
-                        child: Obx(
-                          () => Text(
-                            "${controller.displayLatitude} ${controller.displayLongitude}",
-                            style: TextStyle(
-                              color: const Color(0xFF009FE3),
-                              fontSize: width * 0.029,
-                              fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: width * 0.03,
+                            vertical: height * 0.012,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF7F8FA),
+                            borderRadius: BorderRadius.circular(width * 0.02),
+                          ),
+                          child: Obx(
+                            () => Text(
+                              "${controller.displayLatitude} ${controller.displayLongitude}",
+                              style: TextStyle(
+                                color: const Color(0xFF009FE3),
+                                fontSize: width * 0.029,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      SizedBox(width: width * 0.03),
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Image.asset(
-                              'lib/Asset/Icons/Location.png',
-                              width: width * 0.053,
-                              height: width * 0.053,
-                              color: Colors.black54,
-                            ),
-                            SizedBox(width: width * 0.015),
-                            Expanded(
-                              child: Obx(
-                                () => Text(
-                                  controller.displayLatitude != '–'
-                                      ? "Coordinates: ${controller.displayLatitude}, ${controller.displayLongitude}"
-                                      : "Address information unavailable",
-                                  style: TextStyle(
-                                    fontSize: width * 0.027,
-                                    color: Colors.black,
-                                    height: 1.3,
+                        SizedBox(width: width * 0.03),
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Image.asset(
+                                'lib/Asset/Icons/Location.png',
+                                width: width * 0.053,
+                                height: width * 0.053,
+                                color: Colors.black54,
+                              ),
+                              SizedBox(width: width * 0.015),
+                              Expanded(
+                                child: Obx(
+                                  () => Text(
+                                    controller.displayLatitude != '–'
+                                        ? "Coordinates: ${controller.displayLatitude}, ${controller.displayLongitude}"
+                                        : "Address information unavailable",
+                                    style: TextStyle(
+                                      fontSize: width * 0.027,
+                                      color: Colors.black,
+                                      height: 1.3,
+                                    ),
+                                    maxLines: 2,
                                   ),
-                                  maxLines: 2,
                                 ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 25),
+
+                    // Status Icons Box
+                    Container(
+                      height: height * 0.057,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(width * 0.025),
+                        border: Border.all(
+                          color: Colors.grey.shade100,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          Image.asset(
+                            'lib/Asset/Icons/Mask.png',
+                            width: width * 0.053,
+                            height: width * 0.053,
+                            color: const Color(0xFF03A9F4),
+                          ),
+                          Image.asset(
+                            'lib/Asset/Icons/Key start.png',
+                            width: width * 0.053,
+                            height: width * 0.053,
+                            color: const Color.fromARGB(255, 3, 145, 62),
+                          ),
+                          Image.asset(
+                            'lib/Asset/Icons/power.png',
+                            width: width * 0.053,
+                            height: width * 0.053,
+                            color: const Color.fromARGB(255, 3, 145, 62),
+                          ),
+                          Image.asset(
+                            'lib/Asset/Icons/Network.png',
+                            width: width * 0.053,
+                            height: width * 0.053,
+                            color: const Color.fromARGB(255, 3, 145, 62),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 25),
+
+                    // Time boxes
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Obx(
+                            () => _buildTimeBox(
+                              "Device Time",
+                              controller.displayDeviceTime,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          child: Obx(
+                            () => _buildTimeBox(
+                              "Server Time",
+                              controller.displayLastUpdate,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 25),
+
+                    // Status Capsules
+                    Obx(
+                      () => Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildDurationStatusCard(
+                            "Running",
+                            controller.displayRunningDuration,
+                            const Color.fromARGB(255, 3, 145, 62),
+                          ),
+                          _buildDurationStatusCard(
+                            "Idle",
+                            controller.displayIdleDuration,
+                            const Color(0xFFFFB300),
+                          ),
+                          _buildDurationStatusCard(
+                            "Stopped",
+                            controller.displayStoppedDuration,
+                            const Color(0xFFFF4B2B),
+                          ),
+                          _buildDurationStatusCard(
+                            "Inactive",
+                            controller.displayInactiveDuration,
+                            const Color(0xFF00BCD4),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 25),
+
+                    // Metric Cards section
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEDF8FF),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Obx(
+                        () => Row(
+                          children: [
+                            Expanded(
+                              child: _buildMetricCard(
+                                "Avg Speed",
+                                "–", // Placeholder
+                                "Kmph",
+                                'lib/Asset/Icons/AVG speed.png',
+                                const Color(0xFF009FE3),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildMetricCard(
+                                "Max Speed",
+                                "–", // Placeholder
+                                "Kmph",
+                                'lib/Asset/Icons/Max Distance.png',
+                                const Color(0xFFFF5252),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildMetricCard(
+                                "Today Km",
+                                controller.displayTodayKm,
+                                "Km",
+                                'lib/Asset/Icons/location outlined.png',
+                                Colors.black,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 25),
+                    ),
+                    const SizedBox(height: 25),
 
-                  // Status Icons Box
-                  Container(
-                    height: height * 0.057,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(width * 0.025),
-                      border: Border.all(
-                        color: Colors.grey.shade100,
-                        width: 1.5,
+                    // Small Grid Items
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      child: Obx(
+                        () => Row(
+                          children: [
+                            _buildSmallGridItem(
+                              "Battery",
+                              controller.isPowerOn ? "ON" : "OFF",
+                              'lib/Asset/Icons/Battery.png',
+                            ),
+                            const SizedBox(width: 12),
+                            _buildSmallGridItem(
+                              "GSM Signal",
+                              controller.displayGsmSignal,
+                              'lib/Asset/Icons/Network.png',
+                            ),
+                            const SizedBox(width: 12),
+                            _buildSmallGridItem(
+                              "Ignition",
+                              controller.isIgnitionOn ? "ON" : "OFF",
+                              'lib/Asset/Icons/Key start.png',
+                            ),
+                            const SizedBox(width: 12),
+                            _buildSmallGridItem(
+                              "Network",
+                              controller.displayNetwork,
+                              'lib/Asset/Icons/Network.png',
+                            ),
+                            const SizedBox(width: 12),
+                            _buildSmallGridItem(
+                              "Altitude",
+                              controller.displayAltitude,
+                              'lib/Asset/Icons/Distance.png',
+                            ),
+                            const SizedBox(width: 12),
+                            _buildSmallGridItem(
+                              "Fuel",
+                              "N/A",
+                              'lib/Asset/Icons/Fuel.png',
+                            ),
+                            const SizedBox(width: 12),
+                            _buildSmallGridItem(
+                              "Temperature",
+                              "N/A",
+                              'lib/Asset/Icons/temperature.png',
+                            ),
+                            const SizedBox(width: 12),
+                            _buildSmallGridItem(
+                              "Movement",
+                              controller.displaySpeed != "0.0"
+                                  ? "True"
+                                  : "False",
+                              'lib/Asset/Icons/Movement.png',
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        Image.asset(
-                          'lib/Asset/Icons/Mask.png',
-                          width: width * 0.053,
-                          height: width * 0.053,
-                          color: const Color(0xFF03A9F4),
-                        ),
-                        Image.asset(
-                          'lib/Asset/Icons/Key start.png',
-                          width: width * 0.053,
-                          height: width * 0.053,
-                          color: const Color.fromARGB(255, 3, 145, 62),
-                        ),
-                        Image.asset(
-                          'lib/Asset/Icons/power.png',
-                          width: width * 0.053,
-                          height: width * 0.053,
-                          color: const Color.fromARGB(255, 3, 145, 62),
-                        ),
-                        Image.asset(
-                          'lib/Asset/Icons/Network.png',
-                          width: width * 0.053,
-                          height: width * 0.053,
-                          color: const Color.fromARGB(255, 3, 145, 62),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 25),
+                    const SizedBox(height: 35),
 
-                  // Time boxes
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Obx(
-                          () => _buildTimeBox(
-                            "Device Time",
-                            controller.displayDeviceTime,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 15),
-                      Expanded(
-                        child: Obx(
-                          () => _buildTimeBox(
-                            "Server Time",
-                            controller.displayLastUpdate,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 25),
-
-                  // Status Capsules
-                  Obx(
-                    () => Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildDurationStatusCard(
-                          "Running",
-                          controller.displayRunningDuration,
-                          const Color.fromARGB(255, 3, 145, 62),
-                        ),
-                        _buildDurationStatusCard(
-                          "Idle",
-                          controller.displayIdleDuration,
-                          const Color(0xFFFFB300),
-                        ),
-                        _buildDurationStatusCard(
-                          "Stopped",
-                          controller.displayStoppedDuration,
-                          const Color(0xFFFF4B2B),
-                        ),
-                        _buildDurationStatusCard(
-                          "Inactive",
-                          controller.displayInactiveDuration,
-                          const Color(0xFF00BCD4),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 25),
-
-                  // Metric Cards section
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEDF8FF),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Obx(
-                      () => Row(
+                    // Action Buttons
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      child: Row(
                         children: [
-                          Expanded(
-                            child: _buildMetricCard(
-                              "Avg Speed",
-                              "–", // Placeholder
-                              "Kmph",
-                              'lib/Asset/Icons/AVG speed.png',
-                              const Color(0xFF009FE3),
+                          GestureDetector(
+                            onTap: () => _showShareLocationBottomSheet(context),
+                            child: _buildActionButton(
+                              "Share Location",
+                              'lib/Asset/Icons/Share Location.png',
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildMetricCard(
-                              "Max Speed",
-                              "–", // Placeholder
-                              "Kmph",
-                              'lib/Asset/Icons/Max Distance.png',
-                              const Color(0xFFFF5252),
+                          const SizedBox(width: 18),
+                          GestureDetector(
+                            onTap: () => Get.toNamed(Routes.ADD_GEOFENCE),
+                            child: _buildActionButton(
+                              "Add \n Geofence",
+                              'lib/Asset/Icons/Add geofence.png',
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildMetricCard(
-                              "Today Km",
-                              controller.displayTodayKm,
-                              "Km",
-                              'lib/Asset/Icons/location outlined.png',
-                              Colors.black,
+                          const SizedBox(width: 18),
+                          GestureDetector(
+                            onTap: () => _showStreetViewDetailsDialog(context),
+                            child: _buildActionButton(
+                              "Street \n View",
+                              'lib/Asset/Icons/Street View.png',
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          GestureDetector(
+                            onTap: () => _showUpdateOdometerDialog(context),
+                            child: _buildActionButton(
+                              "Update \n Odometer",
+                              'lib/Asset/Icons/Update Odometer.png',
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          GestureDetector(
+                            onTap: () => Get.toNamed(Routes.ADD_REMINDER),
+                            child: _buildActionButton(
+                              "Add \n Reminder",
+                              'lib/Asset/Icons/Bells.png',
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          GestureDetector(
+                            onTap: () => _showOverspeedLimitDialog(context),
+                            child: _buildActionButton(
+                              "Overspeed \n Limit",
+                              'lib/Asset/Icons/Top speed.png',
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 25),
 
-                  // Small Grid Items
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Obx(
-                      () => Row(
-                        children: [
-                          _buildSmallGridItem(
-                            "Battery",
-                            controller.isPowerOn ? "ON" : "OFF",
-                            'lib/Asset/Icons/Battery.png',
-                          ),
-                          const SizedBox(width: 12),
-                          _buildSmallGridItem(
-                            "GSM Signal",
-                            controller.displayGsmSignal,
-                            'lib/Asset/Icons/Network.png',
-                          ),
-                          const SizedBox(width: 12),
-                          _buildSmallGridItem(
-                            "Ignition",
-                            controller.isIgnitionOn ? "ON" : "OFF",
-                            'lib/Asset/Icons/Key start.png',
-                          ),
-                          const SizedBox(width: 12),
-                          _buildSmallGridItem(
-                            "Network",
-                            controller.displayNetwork,
-                            'lib/Asset/Icons/Network.png',
-                          ),
-                          const SizedBox(width: 12),
-                          _buildSmallGridItem(
-                            "Altitude",
-                            controller.displayAltitude,
-                            'lib/Asset/Icons/Distance.png',
-                          ),
-                          const SizedBox(width: 12),
-                          _buildSmallGridItem(
-                            "Fuel",
-                            "N/A",
-                            'lib/Asset/Icons/Fuel.png',
-                          ),
-                          const SizedBox(width: 12),
-                          _buildSmallGridItem(
-                            "Temperature",
-                            "N/A",
-                            'lib/Asset/Icons/temperature.png',
-                          ),
-                          const SizedBox(width: 12),
-                          _buildSmallGridItem(
-                            "Movement",
-                            controller.displaySpeed != "0.0" ? "True" : "False",
-                            'lib/Asset/Icons/Movement.png',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 35),
-
-                  // Action Buttons
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () => _showShareLocationBottomSheet(context),
-                          child: _buildActionButton(
-                            "Share Location",
-                            'lib/Asset/Icons/Share Location.png',
-                          ),
-                        ),
-                        const SizedBox(width: 18),
-                        GestureDetector(
-                          onTap: () => Get.toNamed(Routes.ADD_GEOFENCE),
-                          child: _buildActionButton(
-                            "Add \n Geofence",
-                            'lib/Asset/Icons/Add geofence.png',
-                          ),
-                        ),
-                        const SizedBox(width: 18),
-                        GestureDetector(
-                          onTap: () => _showStreetViewDetailsDialog(context),
-                          child: _buildActionButton(
-                            "Street \n View",
-                            'lib/Asset/Icons/Street View.png',
-                          ),
-                        ),
-                        const SizedBox(width: 18),
-                        GestureDetector(
-                          onTap: () => _showUpdateOdometerDialog(context),
-                          child: _buildActionButton(
-                            "Update \n Odometer",
-                            'lib/Asset/Icons/Update Odometer.png',
-                          ),
-                        ),
-                        const SizedBox(width: 18),
-                        GestureDetector(
-                          onTap: () => Get.toNamed(Routes.ADD_REMINDER),
-                          child: _buildActionButton(
-                            "Add \n Reminder",
-                            'lib/Asset/Icons/Bells.png',
-                          ),
-                        ),
-                        const SizedBox(width: 18),
-                        GestureDetector(
-                          onTap: () => _showOverspeedLimitDialog(context),
-                          child: _buildActionButton(
-                            "Overspeed \n Limit",
-                            'lib/Asset/Icons/Top speed.png',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 120),
-                ],
+                    const SizedBox(height: 120),
+                  ],
+                ),
               ),
             ),
-          ),
-          // Speedometer floating above
-          Positioned(
-            top: -height * 0.1,
-            left: 0,
-            right: 0,
-            child: Center(child: _buildSpeedometerIndicator()),
-          ),
-        ],
-      );
-    },
-  );
-}
+            // Speedometer floating above
+            Positioned(
+              top: -height * 0.1,
+              left: 0,
+              right: 0,
+              child: Center(child: _buildSpeedometerIndicator()),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Widget _buildIdBox(String text) {
     final width = MediaQuery.of(Get.context!).size.width;
@@ -953,29 +959,32 @@ class TrackView extends GetView<TrackController> {
         ],
         border: Border.all(color: Colors.grey.shade50, width: 1),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset(iconPath, width: 22, height: 22),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Colors.grey,
-              fontWeight: FontWeight.bold,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(iconPath, width: 22, height: 22),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.grey,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -997,26 +1006,29 @@ class TrackView extends GetView<TrackController> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset(iconPath, width: 28, height: 28),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(iconPath, width: 28, height: 28),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -11,7 +11,7 @@ class LocationView extends GetView<LocationController> {
     return Scaffold(
       body: Stack(
         children: [
-          const MapWidget(),
+          AiroMapWidget(),
           Positioned(
             top: 45,
             left: 15,

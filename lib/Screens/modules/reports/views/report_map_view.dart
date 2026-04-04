@@ -27,7 +27,7 @@ class ReportMapView extends StatelessWidget {
         ),
         centerTitle: false,
       ),
-      body: const MapWidget(),
+      body: AiroMapWidget(),
     );
   }
 }

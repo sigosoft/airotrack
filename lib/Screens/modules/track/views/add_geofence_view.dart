@@ -14,7 +14,7 @@ class AddGeofenceView extends GetView<TrackController> {
       body: Stack(
         children: [
           // 1. Map Background
-          const MapWidget(),
+          AiroMapWidget(),
           Stack(
             children: [
               // Top Left: Back Button

@@ -27,6 +27,7 @@ class TrackController extends GetxController {
 
   final MapController mapController = MapController();
   final showBottomSheet = true.obs;
+  final isLocked = true.obs;
 
   // 🛰️ Route-Based Strategy (Adapted from Reference)
   final routePoints = <LatLng>[].obs;
@@ -139,6 +140,7 @@ class TrackController extends GetxController {
   }
 
   void moveMapToVehicle() {
+    isLocked.value = true;
     final lat = animatedLat.value;
     final lng = animatedLng.value;
     if (lat != 0.0 && lng != 0.0) {
@@ -146,8 +148,17 @@ class TrackController extends GetxController {
       try {
         zoom = mapController.camera.zoom;
       } catch (_) {}
+
+      LatLng center = LatLng(lat, lng);
+      if (showBottomSheet.value) {
+        // Shift map center DOWN (lower latitude) so the vehicle appears HIGHER on screen.
+        // At zoom 15, ~0.006 degrees is roughly 22% of screen height.
+        double latOffset = 0.006 * math.pow(2, 15.0 - zoom);
+        center = LatLng(lat - latOffset, lng);
+      }
+
       try {
-        mapController.move(LatLng(lat, lng), zoom);
+        mapController.move(center, zoom);
       } catch (_) {}
     }
   }
@@ -352,7 +363,9 @@ class TrackController extends GetxController {
     }
 
     _updateMarkers();
-    moveMapToVehicle();
+    if (isLocked.value) {
+      moveMapToVehicle();
+    }
   }
 
   void _moveVehicleTowards(double bearing, double distanceMeters) {

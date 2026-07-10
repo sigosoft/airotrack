@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -9,10 +8,21 @@ import '../../../../Configs/ApiConfigs.dart';
 import '../../../../Models/LiveTrackModel.dart';
 import '../../../../Configs/DioClient.dart';
 import '../../../../Utils/Utils.dart';
-import '../../../../Configs/PusherConfig.dart';
+import '../../../../Services/LiveTrackWebSocketService.dart';
 import '../../../../Services/DirectionsService.dart';
-import 'package:pusher_channels_flutter/pusher_channels_flutter.dart';
 
+/// Live tracking flow (snapshot once + WebSocket only):
+/// 1. User selects vehicle on live track screen (IMEI from route).
+/// 2. GET /website/live_track_snapshot?imei= once (Bearer via DioClient).
+/// 3. Parse position.lat/lng, websocket.channel/event,
+///    websocket_config.websocket_url + app_key.
+/// 4. Show map immediately from snapshot position.
+/// 5. Connect WebSocket using websocket_config (no Bearer).
+/// 6. Subscribe pusher channel (e.g. device.<imei>).
+/// 7. Listen for device.update on that channel.
+/// 8. On each device.update → update marker (no position API polling).
+/// 9. On socket drop → reconnect, resubscribe, optional snapshot catch-up.
+/// 10. onClose → disconnect WebSocket.
 class TrackController extends GetxController {
   final vehicleImei = ''.obs;
   final vehiclePlate = ''.obs;
@@ -29,28 +39,65 @@ class TrackController extends GetxController {
   final showBottomSheet = true.obs;
   final isLocked = true.obs;
 
-  // 🛰️ Route-Based Strategy (Adapted from Reference)
-  final routePoints = <LatLng>[].obs;
+  static const double _followZoom = 16.0;
+  bool _userAdjustedZoom = false;
+  bool _hasInitialCameraFocus = false;
+  double _smoothCameraLat = 0.0;
+  double _smoothCameraLng = 0.0;
 
-  // Polling Control
-  String? _lastProcessedDeviceTime;
-  bool _isFetchingStatus = false;
-  Timer? _pollingTimer;
+  bool _isFetchingSnapshot = false;
   bool _disposed = false;
 
-  final DirectionsService _directionsService = DirectionsService();
-  PusherChannelsFlutter? _pusher;
+  final LiveTrackWebSocketService _webSocketService = LiveTrackWebSocketService();
+  LiveWebsocketConfig? _wsConfig;
+  LiveWebsocketInfo? _wsInfo;
+
   Timer? _animationTimer;
+  LatLng? _liveTarget;
+  LatLng? _lastAcceptedGps;
 
-  // --- High-Fidelity Road-Following Engine ---
-  final List<LatLng> _waypointQueue = [];
+  static const double _maxBackwardBearingDeg = 95.0;
+  static const double _snapBackMinLagMeters = 4.0;
+  static const double _reverseGpsStepMeters = 4.0;
+  static const double _maxGlideSpeedMs = 45.0;
+  static const double _catchUpMinLagMeters = 6.0;
+  static const double _catchUpWindowSec = 3.5;
+  static const double _reconnectSnapMeters = 150.0;
+
+  double _expectedPingSec = 6.0;
+  double _roadSpeedFactor = 1.0;
+  double _targetRoadSpeedFactor = 1.0;
+  double _smoothedGlideSpeedMs = 0.0;
+  int _routeRequestId = 0;
+
+  final DirectionsService _directionsService = DirectionsService();
+
   double _currentSpeedMs = 0.0;
-  LatLng? _lastTargetPos;
-  DateTime? _lastDataTime;
+  double _smoothedSpeedMs = 0.0;
+  DateTime? _lastMovingTime;
+  String _movementMode = '';
+  double _lockedBearing = 0.0;
+  bool _hasHeading = false;
+  DateTime? _lastGlideTime;
+  DateTime? _lastGpsTime;
+  DateTime? _lastCameraMove;
+  static const int _cameraMoveIntervalMs = 50;
+  static const double _gpsJitterMeters = 2.0;
+  static const double _minRotationChangeDeg = 22.0;
+  static const double _minGpsBearingMoveM = 5.0;
+  static const double _frameSeconds = 0.016;
+  /// Minimum roll speed between WS pings (~1.8 km/h).
+  static const double _wsWaitCreepMinMs = 0.5;
+  static const double _movingGpsDeltaM = 0.4;
 
-  final animatedDriverLocation = Rxn<LatLng>();
-  final destinationLocation = Rxn<LatLng>();
-  final mapPolylines = <Polyline>[].obs;
+  /// Device-reported speed (km/h) from latest WS ping. Stop only when 0.
+  double _lastReportedSpeedKmh = 0.0;
+  /// GPS-inferred speed (km/h) — keeps roll rate realistic between pings.
+  double _lastInferredSpeedKmh = 0.0;
+  /// GPS movement on latest ping (m).
+  double _lastGpsDeltaM = 0.0;
+  /// Latched on each ping — keeps rolling between WS updates until next ping.
+  bool _isMovingVehicle = false;
 
   final fenceNameController = TextEditingController();
   final fenceNameError = RxnString();
@@ -64,110 +111,740 @@ class TrackController extends GetxController {
       return;
     }
     debugPrint("Submitting geofence: ${fenceNameController.text}");
-    // Fence logic persists
   }
 
-  void _updateTelemetry(LatLng target, double speedKmH) {
-    if (animatedLat.value == 0.0 || animatedLng.value == 0.0) {
-      animatedLat.value = target.latitude;
-      animatedLng.value = target.longitude;
-      _lastDataTime = DateTime.now();
+  @override
+  void onInit() {
+    super.onInit();
+    _disposed = false;
+    final imei = Get.parameters['imei'] ?? '';
+    final plate = Get.parameters['vehicleId'] ?? '';
+    vehicleImei.value = imei;
+    vehiclePlate.value = plate;
+
+    if (imei.isNotEmpty) {
+      _initAndStartTracking(imei);
+    }
+    _startAnimationLoop();
+  }
+
+  Future<void> _initAndStartTracking(String imei) async {
+    final token = await getSavedObject('token');
+    if (token != null) DioClient().updateToken(token.toString());
+    if (_disposed) return;
+    await _fetchLiveTrackSnapshot(imei);
+  }
+
+  /// Snapshot once on entry; reconnectOnly skips WebSocket re-setup.
+  Future<void> _fetchLiveTrackSnapshot(
+    String imei, {
+    bool reconnectOnly = false,
+  }) async {
+    if (_disposed) return;
+    if (_isFetchingSnapshot && !reconnectOnly) return;
+
+    try {
+      _isFetchingSnapshot = true;
+      if (!reconnectOnly) isLiveLoading.value = true;
+
+      final response = await DioClient().get(
+        ApiEndPoints.liveTrackSnapshot,
+        query: {'imei': imei.trim()},
+      );
+
+      final rawBody = response.data;
+      if (rawBody is! Map) {
+        debugPrint('❌ LiveTrack: invalid snapshot response');
+        return;
+      }
+      final body = Map<String, dynamic>.from(rawBody);
+
+      final snapshot = LiveTrackSnapshotModel.fromJson(body);
+      final data = snapshot.data;
+      if (data == null) {
+        debugPrint('❌ LiveTrack: snapshot missing data');
+        return;
+      }
+
+      _wsConfig = data.websocketConfig;
+      _wsInfo = data.websocket;
+
+      liveTrackData.value = data.toLiveTrackData();
+      if (reconnectOnly) {
+        final pos = liveTrackData.value?.currentPosition;
+        final lat = double.tryParse(pos?.latitude ?? '');
+        final lng = double.tryParse(pos?.longitude ?? '');
+        if (lat != null && lng != null && animatedLat.value != 0.0) {
+          final snap = LatLng(lat, lng);
+          final current = LatLng(animatedLat.value, animatedLng.value);
+          final lag = _calculateDistance(current, snap);
+          if (lag > _reconnectSnapMeters && _isForwardOf(snap, current)) {
+            _snapMarkerTo(
+              snap,
+              pos?.speed?.toDouble() ?? 0.0,
+              status: pos?.derivedStatus,
+              mode: pos?.mode,
+            );
+          } else if (lag > 1.0) {
+            _onDevicePosition(
+              snap,
+              pos?.speed?.toDouble() ?? 0.0,
+              status: pos?.derivedStatus,
+              mode: pos?.mode,
+            );
+          }
+        }
+      } else {
+        _applyPositionFromData(isInitial: true);
+      }
+
+      if (!reconnectOnly) {
+        await _webSocketService.disconnect();
+        await _connectWebSocket(imei);
+      }
+    } catch (e) {
+      debugPrint('❌ Live track snapshot error: $e');
+    } finally {
+      _isFetchingSnapshot = false;
+      if (!reconnectOnly) isLiveLoading.value = false;
+    }
+  }
+
+  void _applyPositionFromData({required bool isInitial}) {
+    final pos = liveTrackData.value?.currentPosition;
+    final lat = double.tryParse(pos?.latitude ?? '');
+    final lng = double.tryParse(pos?.longitude ?? '');
+    if (lat == null || lng == null || (lat == 0.0 && lng == 0.0)) return;
+
+    final location = LatLng(lat, lng);
+    final speed = pos?.speed?.toDouble() ?? 0.0;
+
+    if (isInitial || animatedLat.value == 0.0 || animatedLng.value == 0.0) {
+      animatedLat.value = lat;
+      animatedLng.value = lng;
+      _liveTarget = location;
+      _lastAcceptedGps = location;
+      _lastGpsTime = DateTime.now();
+      _lastReportedSpeedKmh = speed;
+      _lastInferredSpeedKmh = speed;
+      _lastGpsDeltaM = 0;
+      _isMovingVehicle = speed > 0;
+      _smoothedGlideSpeedMs = speed > 0
+          ? (speed / 3.6).clamp(_wsWaitCreepMinMs, _maxGlideSpeedMs)
+          : 0.0;
+      _updateMovementSpeed(speed, pos?.derivedStatus ?? 'Stopped', mode: pos?.mode);
+      _updateMarkers();
+      if (!_hasInitialCameraFocus && isLocked.value) {
+        _hasInitialCameraFocus = true;
+        moveMapToVehicle(snap: true, resetZoom: true);
+      }
       return;
     }
 
+    _onDevicePosition(location, speed, status: pos?.derivedStatus, mode: pos?.mode);
+  }
+
+  /// Step 4–5: connect using API websocket_config only (Option A).
+  Future<void> _connectWebSocket(String imei) async {
+    if (_wsConfig == null) {
+      debugPrint('❌ LiveTrack: websocket_config missing from API');
+      return;
+    }
+
+    final snapshot = LiveTrackSnapshotData(
+      websocket: _wsInfo,
+      websocketConfig: _wsConfig,
+    );
+
+    if (!snapshot.hasWebSocketConnectionConfig) {
+      debugPrint('❌ LiveTrack: websocket_config.websocket_url or app_key missing');
+      return;
+    }
+    if (snapshot.channelFor(imei) == null) {
+      debugPrint(
+        '❌ LiveTrack: channel missing (websocket.channel or channel_prefix)',
+      );
+      return;
+    }
+    if (snapshot.eventNameFor() == null) {
+      debugPrint(
+        '❌ LiveTrack: event missing (websocket.event or event_name)',
+      );
+      return;
+    }
+
+    final connected = await _webSocketService.connect(
+      imei: imei,
+      websocketConfig: _wsConfig,
+      websocket: _wsInfo,
+      onDeviceUpdate: _handleDeviceUpdate,
+      onReconnected: () {
+        if (_disposed || vehicleImei.value.isEmpty) return;
+        debugPrint('[LiveTrack] WS reconnected — refreshing snapshot');
+        _fetchLiveTrackSnapshot(vehicleImei.value, reconnectOnly: true);
+      },
+    );
+
+    if (!connected) {
+      debugPrint('❌ LiveTrack: WebSocket connection setup failed');
+    }
+  }
+
+  void _handleDeviceUpdate(Map<String, dynamic> data) {
+    if (_disposed) return;
+
+    try {
+      final coords = _readLatLngFromMap(data);
+      if (coords == null) {
+        debugPrint('⚠️ LiveTrack: device.update missing lat/lng: $data');
+        return;
+      }
+
+      final lat = coords.$1;
+      final lng = coords.$2;
+      final speed = _readSpeedFromMap(data)?.toDouble() ?? 0.0;
+      final course = _readCourseFromMap(data);
+
+      final existing = liveTrackData.value;
+      final pos = LiveCurrentPosition(
+        imei: data['imei']?.toString() ?? vehicleImei.value,
+        latitude: lat.toString(),
+        longitude: lng.toString(),
+        speed: speed,
+        deviceTime:
+            data['devicetime']?.toString() ?? data['device_time']?.toString(),
+        ignition: data['ignition'] is int
+            ? data['ignition'] as int
+            : int.tryParse(data['ignition']?.toString() ?? ''),
+        power: data['power'] is int
+            ? data['power'] as int
+            : int.tryParse(data['power']?.toString() ?? ''),
+        mode: data['mode']?.toString(),
+      );
+
+      liveTrackData.value = LiveTrackData(
+        vehicleInfo: existing?.vehicleInfo,
+        currentPosition: pos,
+        currentStatus: pos.derivedStatus,
+        todayStatistics: existing?.todayStatistics,
+        currentPositionApi: existing?.currentPositionApi,
+      );
+
+      _onDevicePosition(
+        LatLng(lat, lng),
+        speed,
+        status: pos.derivedStatus,
+        courseDeg: course,
+        mode: pos.mode,
+      );
+    } catch (e, st) {
+      debugPrint('⚠️ LiveTrack device update error: $e\n$st');
+    }
+  }
+
+  void _onDevicePosition(
+    LatLng location,
+    double speedKmH, {
+    String? status,
+    double? courseDeg,
+    String? mode,
+  }) {
     final now = DateTime.now();
-    _lastDataTime = now;
+    final previousGps = _lastAcceptedGps;
+    final previousGpsTime = _lastGpsTime;
 
-    // Convert km/h to m/s for internal physics
-    _currentSpeedMs = speedKmH / 3.6;
-    if (_currentSpeedMs < 0.5 && speedKmH > 0)
-      _currentSpeedMs = 2.0; // Min glide
+    final reportedKmH = speedKmH;
+    speedKmH = _inferSpeedKmh(location, speedKmH, now);
+    _lastReportedSpeedKmh = reportedKmH;
+    _lastInferredSpeedKmh = speedKmH;
+    if (mode != null) _movementMode = mode;
 
-    // If target is same as last one, we don't need a new route
-    if (_lastTargetPos != null &&
-        _calculateDistance(_lastTargetPos!, target) < 1.0) {
-      return;
+    var gpsDeltaM = 0.0;
+    if (previousGps != null) {
+      gpsDeltaM = _calculateDistance(previousGps, location);
     }
+    _lastGpsDeltaM = gpsDeltaM;
 
-    // Fetch road segment to new target
-    _fetchAndQueueRoute(target);
-  }
+    _isMovingVehicle = reportedKmH > 0 ||
+        speedKmH >= 1.5 ||
+        gpsDeltaM >= _movingGpsDeltaM;
 
-  Future<void> _fetchAndQueueRoute(LatLng target) async {
-    // Start from the end of the current queue or current vehicle position
-    final LatLng start = _waypointQueue.isNotEmpty
-        ? _waypointQueue.last
-        : LatLng(animatedLat.value, animatedLng.value);
+    _updateMovementSpeed(
+      _isMovingVehicle ? math.max(speedKmH, reportedKmH) : 0,
+      status ?? 'Stopped',
+      mode: mode,
+    );
 
-    // Don't fetch if distance is negligible
-    if (_calculateDistance(start, target) < 5.0) return;
-
-    _lastTargetPos = target;
-    final points = await _directionsService.getRoute(start, target);
-
-    if (points.isNotEmpty) {
-      // Add to the animation queue only, do not update UI/Polylines
-      _waypointQueue.addAll(points);
-    } else {
-      // Fallback: straight line if Mapbox fails
-      _waypointQueue.add(target);
-    }
-  }
-
-  void _onDataUpdated() {
-    final data = liveTrackData.value;
-    if (data == null) return;
-
-    final latStr = data.currentPosition?.latitude;
-    final lngStr = data.currentPosition?.longitude;
-    final speed = data.currentPosition?.speed?.toDouble() ?? 0.0;
-
-    if (latStr != null && lngStr != null) {
-      final lat = double.tryParse(latStr) ?? 0.0;
-      final lng = double.tryParse(lngStr) ?? 0.0;
-      if (lat != 0.0 && lng != 0.0) {
-        _updateTelemetry(LatLng(lat, lng), speed);
+    if (previousGps != null) {
+      final delta = gpsDeltaM;
+      if (delta < _gpsJitterMeters && !_isMovingVehicle) {
+        _lastGpsTime = now;
+        return;
+      }
+      if (previousGpsTime != null) {
+        final interval =
+            now.difference(previousGpsTime).inMilliseconds / 1000.0;
+        if (interval >= 0.8 && interval < 60.0) {
+          _expectedPingSec = _expectedPingSec * 0.65 + interval * 0.35;
+        }
+      }
+      // Stale/lag GPS behind the animated marker — not a real reverse.
+      if (_isLikelySnapBack(location, previousGps)) {
+        _lastGpsTime = now;
+        return;
       }
     }
+
+    // Prefer GPS movement direction over device course — course can be stale
+    // or offset and would make the car face/dead-reckon the wrong way.
+    _updateHeadingFromMovement(
+      location,
+      previousGps: previousGps,
+      courseDeg: courseDeg,
+    );
+
+    _lastAcceptedGps = location;
+    _lastGpsTime = now;
+    _liveTarget = location;
+    if (_isMovingVehicle) {
+      _smoothedGlideSpeedMs = math.max(
+        _smoothedGlideSpeedMs,
+        _wsWaitCreepMinMs,
+      );
+    }
+
+    if (previousGps != null) {
+      _requestRoadSpeedFactor(previousGps, location);
+    }
   }
 
-  bool _isNewerData(LiveTrackData data) {
-    final deviceTime = data.currentPosition?.deviceTime;
-    if (deviceTime == null) return true;
-    if (deviceTime == _lastProcessedDeviceTime) return false;
-    _lastProcessedDeviceTime = deviceTime;
-    return true;
+  void _snapMarkerTo(
+    LatLng location,
+    double speedKmH, {
+    String? status,
+    String? mode,
+  }) {
+    animatedLat.value = location.latitude;
+    animatedLng.value = location.longitude;
+    _liveTarget = location;
+    _lastAcceptedGps = location;
+    _lastGpsTime = DateTime.now();
+    _lastReportedSpeedKmh = speedKmH;
+    _lastInferredSpeedKmh = speedKmH;
+    _isMovingVehicle = speedKmH > 0;
+    _updateMovementSpeed(speedKmH, status ?? 'Stopped', mode: mode);
+    _syncMarkerPosition();
+    if (isLocked.value) _maybeMoveCameraToVehicle();
   }
 
-  void moveMapToVehicle() {
-    isLocked.value = true;
+  /// Mapbox route length vs straight GPS line — roads are longer, so boost glide speed.
+  void _requestRoadSpeedFactor(LatLng from, LatLng to) {
+    final straightM = _calculateDistance(from, to);
+    if (straightM < 8.0) {
+      _targetRoadSpeedFactor = 1.0;
+      return;
+    }
+
+    final requestId = ++_routeRequestId;
+    _directionsService.getRoute(from, to).then((route) {
+      if (_disposed || requestId != _routeRequestId) return;
+      if (route.length < 2) {
+        _targetRoadSpeedFactor = 1.0;
+        return;
+      }
+
+      var routeLenM = 0.0;
+      for (var i = 1; i < route.length; i++) {
+        routeLenM += _calculateDistance(route[i - 1], route[i]);
+      }
+      if (straightM > 1.0) {
+        _targetRoadSpeedFactor = (routeLenM / straightM).clamp(1.0, 1.35);
+      }
+    }).catchError((_) {
+      if (!_disposed && requestId == _routeRequestId) {
+        _targetRoadSpeedFactor = 1.0;
+      }
+    });
+  }
+
+  bool _shouldKeepMoving() => _isMovingVehicle;
+
+  double _distanceToLiveGps(LatLng current) {
+    if (_liveTarget == null) return double.infinity;
+    return _calculateDistance(current, _liveTarget!);
+  }
+
+  double _resolveTravelBearing(LatLng current) {
+    if (_hasHeading) return _lockedBearing;
+    if (_liveTarget != null) {
+      final bearing = _getBearing(current, _liveTarget!);
+      _lockedBearing = bearing;
+      _hasHeading = true;
+      return bearing;
+    }
+    return _lockedBearing;
+  }
+
+  /// Single continuous speed — catch-up when behind, roll when at GPS dot.
+  double _continuousSpeedMs(double distToGps) {
+    if (!_isMovingVehicle) return 0;
+
+    var ms = _effectiveSpeedMs();
+    if (ms < _wsWaitCreepMinMs) {
+      ms = math.max(
+        math.max(_lastReportedSpeedKmh, _lastInferredSpeedKmh),
+        3.0,
+      ) / 3.6;
+    }
+
+    if (distToGps > 0.3) {
+      ms = math.max(ms, distToGps / math.max(_expectedPingSec, 0.8));
+    }
+
+    if (_liveTarget != null &&
+        animatedLat.value != 0.0 &&
+        distToGps >= _catchUpMinLagMeters) {
+      final current = LatLng(animatedLat.value, animatedLng.value);
+      if (!_hasHeading || !_isBehind(current, _liveTarget!)) {
+        ms = math.max(ms, distToGps / _catchUpWindowSec);
+      }
+    }
+
+    return (ms * _roadSpeedFactor).clamp(_wsWaitCreepMinMs, _maxGlideSpeedMs);
+  }
+
+  void _advanceMarkerContinuously({
+    required LatLng current,
+    required LatLng gpsTarget,
+    required double bearing,
+    required double step,
+    required double distToGps,
+  }) {
+    if (step <= 0) return;
+
+    if (distToGps > 0.2) {
+      final before = LatLng(animatedLat.value, animatedLng.value);
+      _nudgeToward(gpsTarget, math.min(step, distToGps));
+      final after = LatLng(animatedLat.value, animatedLng.value);
+      if (_calculateDistance(before, after) >= 0.001) return;
+    }
+
+    final anchor = LatLng(animatedLat.value, animatedLng.value);
+    final next = _offsetMeters(anchor, bearing, step);
+    animatedLat.value = next.latitude;
+    animatedLng.value = next.longitude;
+  }
+
+  LatLng _offsetMeters(LatLng from, double bearingDeg, double meters) {
+    const metersPerLat = 111320.0;
+    final latRad = from.latitude * math.pi / 180;
+    final metersPerLng = 111320.0 * math.cos(latRad);
+    final rad = bearingDeg * math.pi / 180;
+    return LatLng(
+      from.latitude + (meters * math.cos(rad)) / metersPerLat,
+      from.longitude + (meters * math.sin(rad)) / metersPerLng,
+    );
+  }
+
+  void _updateHeadingFromMovement(
+    LatLng location, {
+    LatLng? previousGps,
+    double? courseDeg,
+  }) {
+    double? movementBearing;
+    if (previousGps != null) {
+      final moved = _calculateDistance(previousGps, location);
+      if (moved >= _minGpsBearingMoveM) {
+        movementBearing = _getBearing(previousGps, location);
+      }
+    }
+    if (movementBearing == null && animatedLat.value != 0.0) {
+      final current = LatLng(animatedLat.value, animatedLng.value);
+      final moved = _calculateDistance(current, location);
+      if (moved >= _minGpsBearingMoveM) {
+        movementBearing = _getBearing(current, location);
+      }
+    }
+
+    if (movementBearing != null) {
+      _setLockedBearing(movementBearing);
+      return;
+    }
+
+    if (!_hasHeading &&
+        courseDeg != null &&
+        courseDeg >= 0 &&
+        courseDeg <= 360) {
+      _setLockedBearing(courseDeg % 360);
+    }
+  }
+
+  void _setLockedBearing(double bearing) {
+    bearing = _normalizeBearing(bearing);
+    if (!_hasHeading) {
+      _lockedBearing = bearing;
+      animatedRotation.value = bearing;
+      _hasHeading = true;
+      return;
+    }
+
+    final diff = _shortestBearingDelta(_lockedBearing, bearing).abs();
+    if (diff >= _minRotationChangeDeg) {
+      _lockedBearing = bearing;
+      animatedRotation.value = bearing;
+    }
+  }
+
+  /// True when [point] is generally ahead of [origin] along travel heading.
+  bool _isForwardOf(LatLng point, LatLng origin) {
+    if (!_hasHeading) return true;
+    final bearing = _getBearing(origin, point);
+    final diff = _shortestBearingDelta(_lockedBearing, bearing);
+    return diff.abs() <= _maxBackwardBearingDeg;
+  }
+
+  bool _isBehind(LatLng current, LatLng point) {
+    if (!_hasHeading) return false;
+    final bearing = _getBearing(current, point);
+    final diff = _shortestBearingDelta(_lockedBearing, bearing);
+    return diff.abs() > _maxBackwardBearingDeg;
+  }
+
+  /// Stale GPS that would pull the marker backward after we've already glided ahead.
+  /// Does not block genuine reverse — only lag/jitter behind the animated position.
+  bool _isLikelySnapBack(LatLng location, LatLng previousGps) {
+    if (!_hasHeading || animatedLat.value == 0.0) return false;
+
+    final animated = LatLng(animatedLat.value, animatedLng.value);
+    if (!_isBehind(animated, location)) return false;
+
+    final lagM = _calculateDistance(animated, location);
+    if (lagM < _snapBackMinLagMeters) return false;
+
+    final gpsStepM = _calculateDistance(previousGps, location);
+    if (gpsStepM < 1.0) return true;
+
+    final gpsMovingBackward =
+        !_isForwardOf(location, previousGps) && gpsStepM >= _reverseGpsStepMeters;
+    return !gpsMovingBackward;
+  }
+
+  double _shortestBearingDelta(double from, double to) {
+    return ((to - from + 540) % 360) - 180;
+  }
+
+  double _inferSpeedKmh(LatLng location, double reportedKmh, DateTime now) {
+    if (_lastAcceptedGps == null || _lastGpsTime == null) return reportedKmh;
+
+    final deltaM = _calculateDistance(_lastAcceptedGps!, location);
+    if (deltaM < 1.0) return reportedKmh;
+
+    final seconds = now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
+    if (seconds <= 0) return reportedKmh;
+
+    final inferred = (deltaM / seconds) * 3.6;
+    return math.max(reportedKmh, inferred);
+  }
+
+  double _effectiveSpeedMs() {
+    if (_currentSpeedMs >= 0.3) return _currentSpeedMs;
+    if (_smoothedSpeedMs < 0.3 || _lastMovingTime == null) return _currentSpeedMs;
+
+    final since =
+        DateTime.now().difference(_lastMovingTime!).inMilliseconds / 1000.0;
+    if (since > 25.0) return _currentSpeedMs;
+
+    final decay = (1.0 - since / 15.0).clamp(0.0, 1.0);
+    return math.max(_currentSpeedMs, _smoothedSpeedMs * decay);
+  }
+
+  void _nudgeToward(LatLng target, double meters) {
     final lat = animatedLat.value;
     final lng = animatedLng.value;
-    if (lat != 0.0 && lng != 0.0) {
-      double zoom = 15.0;
+    if (lat == 0.0 && lng == 0.0) return;
+
+    final dist = _calculateDistance(LatLng(lat, lng), target);
+    if (dist < 0.01) return;
+
+    final step = math.min(meters, dist);
+    final fraction = step / dist;
+    animatedLat.value = lat + (target.latitude - lat) * fraction;
+    animatedLng.value = lng + (target.longitude - lng) * fraction;
+  }
+
+  void _glideTowardTarget() {
+    if (animatedLat.value == 0.0 && animatedLng.value == 0.0) return;
+
+    final now = DateTime.now();
+    final dtSec = _lastGlideTime == null
+        ? _frameSeconds
+        : now.difference(_lastGlideTime!).inMicroseconds / 1000000.0;
+    _lastGlideTime = now;
+    final dt = dtSec.clamp(0.008, 0.05);
+
+    _roadSpeedFactor +=
+        (_targetRoadSpeedFactor - _roadSpeedFactor) * 0.06;
+
+    final current = LatLng(animatedLat.value, animatedLng.value);
+
+    if (_liveTarget == null) return;
+
+    if (!_shouldKeepMoving()) {
+      final settleDist = _distanceToLiveGps(current);
+      if (settleDist > 0.05) {
+        _nudgeToward(_liveTarget!, math.min(0.6 * dt, settleDist));
+      }
+      _smoothedGlideSpeedMs = 0;
+      _syncMarkerPosition();
+      if (isLocked.value) _maybeMoveCameraToVehicle();
+      return;
+    }
+
+    final distToGps = _distanceToLiveGps(current);
+    final bearing = _resolveTravelBearing(current);
+    final targetSpeed = _continuousSpeedMs(distToGps);
+
+    _smoothedGlideSpeedMs += (targetSpeed - _smoothedGlideSpeedMs) * 0.2;
+    _smoothedGlideSpeedMs =
+        math.max(_smoothedGlideSpeedMs, _wsWaitCreepMinMs);
+
+    final step = math.max(
+      _smoothedGlideSpeedMs * dt,
+      _wsWaitCreepMinMs * dt * 0.5,
+    );
+
+    _advanceMarkerContinuously(
+      current: current,
+      gpsTarget: _liveTarget!,
+      bearing: bearing,
+      step: step,
+      distToGps: distToGps,
+    );
+
+    _syncMarkerPosition();
+    if (isLocked.value) _maybeMoveCameraToVehicle();
+  }
+
+  void _startAnimationLoop() {
+    _animationTimer?.cancel();
+    _animationTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (_disposed) return;
+      _glideTowardTarget();
+    });
+  }
+
+  void _maybeMoveCameraToVehicle() {
+    final now = DateTime.now();
+    if (_lastCameraMove != null &&
+        now.difference(_lastCameraMove!).inMilliseconds <
+            _cameraMoveIntervalMs) {
+      return;
+    }
+    _lastCameraMove = now;
+    moveMapToVehicle();
+  }
+
+  void _updateMovementSpeed(double speedKmH, String status, {String? mode}) {
+    if (mode != null) _movementMode = mode;
+
+    final speedMs = speedKmH.clamp(0.0, 200.0) / 3.6;
+
+    if (speedKmH <= 0) {
+      _currentSpeedMs = 0;
+      _smoothedSpeedMs = 0;
+      return;
+    }
+
+    if (speedMs >= 0.3) {
+      _currentSpeedMs = speedMs;
+      _smoothedSpeedMs = speedMs;
+      _lastMovingTime = DateTime.now();
+      return;
+    }
+
+    if (_smoothedSpeedMs >= 0.35) {
+      _currentSpeedMs = _smoothedSpeedMs;
+      return;
+    }
+    if (_lastMovingTime != null &&
+        DateTime.now().difference(_lastMovingTime!).inSeconds < 45) {
+      _currentSpeedMs = math.max(_currentSpeedMs, _smoothedSpeedMs * 0.85);
+    }
+  }
+
+  (double, double)? _readLatLngFromMap(Map<String, dynamic> data) {
+    final lat = double.tryParse(
+      (data['latitude'] ?? data['lat'])?.toString() ?? '',
+    );
+    final lng = double.tryParse(
+      (data['longitude'] ?? data['lng'] ?? data['lon'])?.toString() ?? '',
+    );
+    if (lat == null || lng == null || (lat == 0.0 && lng == 0.0)) return null;
+    return (lat, lng);
+  }
+
+  num? _readSpeedFromMap(Map<String, dynamic> data) {
+    final raw = data['speed'];
+    if (raw is num) return raw;
+    return num.tryParse(raw?.toString() ?? '');
+  }
+
+  double? _readCourseFromMap(Map<String, dynamic> data) {
+    final raw = data['course'] ??
+        data['angle'] ??
+        data['heading'] ??
+        data['direction'];
+    if (raw is num) return raw.toDouble();
+    return double.tryParse(raw?.toString() ?? '');
+  }
+
+  void onMapGesture() {
+    isLocked.value = false;
+    _userAdjustedZoom = true;
+  }
+
+  void moveMapToVehicle({bool snap = false, bool resetZoom = false}) {
+    isLocked.value = true;
+    if (resetZoom) _userAdjustedZoom = false;
+
+    final lat = animatedLat.value;
+    final lng = animatedLng.value;
+    if (lat == 0.0 || lng == 0.0) return;
+
+    double zoom = _followZoom;
+    if (_userAdjustedZoom) {
       try {
         zoom = mapController.camera.zoom;
       } catch (_) {}
-
-      LatLng center = LatLng(lat, lng);
-      if (showBottomSheet.value) {
-        // Shift map center DOWN (lower latitude) so the vehicle appears HIGHER on screen.
-        // At zoom 15, ~0.006 degrees is roughly 22% of screen height.
-        double latOffset = 0.006 * math.pow(2, 15.0 - zoom);
-        center = LatLng(lat - latOffset, lng);
-      }
-
-      try {
-        mapController.move(center, zoom);
-      } catch (_) {}
     }
+
+    var center = LatLng(lat, lng);
+    if (showBottomSheet.value) {
+      final latOffset = 0.006 * math.pow(2, 15.0 - zoom);
+      center = LatLng(lat - latOffset, lng);
+    }
+
+    if (snap || _smoothCameraLat == 0.0) {
+      _smoothCameraLat = center.latitude;
+      _smoothCameraLng = center.longitude;
+    } else {
+      const cameraAlpha = 0.55;
+      _smoothCameraLat +=
+          (center.latitude - _smoothCameraLat) * cameraAlpha;
+      _smoothCameraLng +=
+          (center.longitude - _smoothCameraLng) * cameraAlpha;
+    }
+
+    try {
+      mapController.move(
+        LatLng(_smoothCameraLat, _smoothCameraLng),
+        zoom,
+      );
+    } catch (_) {}
   }
 
-  void toggleBottomSheet() {
-    showBottomSheet.value = !showBottomSheet.value;
-  }
+  void toggleBottomSheet() => showBottomSheet.value = !showBottomSheet.value;
 
-  // --- Rx Getters for TrackView ---
   String get displayPlate =>
       liveTrackData.value?.vehicleInfo?.vehicleNumber ?? vehiclePlate.value;
   String get displayImei => vehicleImei.value;
@@ -229,346 +906,81 @@ class TrackController extends GetxController {
     }
   }
 
-  void _updateMarkers() {
+  void _syncMarkerPosition() {
     final lat = animatedLat.value;
     final lng = animatedLng.value;
-    if (lat == 0.0 || lng == 0.0) {
-      reactiveMarkers.clear();
+    if (lat == 0.0 && lng == 0.0) {
+      if (reactiveMarkers.isNotEmpty) reactiveMarkers.clear();
       return;
     }
 
-    reactiveMarkers.assignAll([
-      Marker(
-        point: LatLng(lat, lng),
-        width: 100,
-        height: 100,
-        child: GestureDetector(
-          onTap: () => toggleBottomSheet(),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Obx(
-                () => Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: displayStatusColor,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    displayPlate,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                    ),
+    final point = LatLng(lat, lng);
+    if (reactiveMarkers.isEmpty) {
+      reactiveMarkers.add(_buildVehicleMarker(point));
+      return;
+    }
+
+    reactiveMarkers[0] = _buildVehicleMarker(point);
+    reactiveMarkers.refresh();
+  }
+
+  Marker _buildVehicleMarker(LatLng point) {
+    return Marker(
+      point: point,
+      width: 100,
+      height: 100,
+      child: GestureDetector(
+        onTap: toggleBottomSheet,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Obx(
+              () => Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: displayStatusColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  displayPlate,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              const Icon(
-                Icons.arrow_drop_down,
-                size: 12,
-                color: Colors.black54,
-              ),
-              Obx(
-                () => Transform.rotate(
-                  angle: (animatedRotation.value - 45) * (math.pi / 180),
-                  child: Image.asset(
-                    'lib/Asset/Icons/Track Vehicle.png',
-                    width: 50,
-                    height: 50,
-                    fit: BoxFit.contain,
-                  ),
+            ),
+            const Icon(
+              Icons.arrow_drop_down,
+              size: 12,
+              color: Colors.black54,
+            ),
+            Obx(
+              () => Transform.rotate(
+                angle: (animatedRotation.value - 45) * (math.pi / 180),
+                child: Image.asset(
+                  'lib/Asset/Icons/Track Vehicle.png',
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.contain,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    ]);
+    );
   }
+
+  void _updateMarkers() => _syncMarkerPosition();
 
   RxList<Marker> get mapMarkers => reactiveMarkers;
 
-  @override
-  void onInit() {
-    super.onInit();
-    final imei = Get.parameters['imei'] ?? '';
-    final plate = Get.parameters['vehicleId'] ?? '';
-    vehicleImei.value = imei;
-    vehiclePlate.value = plate;
-
-    if (imei.isNotEmpty) {
-      _initAndStartTracking(imei);
-      _initializePusher(imei);
-    }
-    _startSmoothAnimationEngine();
-  }
-
-  void _startSmoothAnimationEngine() {
-    _animationTimer?.cancel();
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      if (_disposed) return;
-      _glideMarker();
-    });
-  }
-
-  void _glideMarker() {
-    if (animatedLat.value == 0.0 || animatedLng.value == 0.0) return;
-
-    double stepDistMs = _currentSpeedMs * 0.016; // meters covered in 16ms
-
-    if (_waypointQueue.isNotEmpty) {
-      // 1. Move along the waypoints (Follow the Rail)
-      LatLng next = _waypointQueue.first;
-      double dist = _calculateDistance(
-        LatLng(animatedLat.value, animatedLng.value),
-        next,
-      );
-
-      // If we are way behind the queue, speed up slightly to catch up
-      if (_waypointQueue.length > 5) {
-        stepDistMs *= 1.25;
-      }
-
-      if (dist < stepDistMs) {
-        // Point reached - snap and move to next
-        animatedLat.value = next.latitude;
-        animatedLng.value = next.longitude;
-        _waypointQueue.removeAt(0);
-      } else {
-        // Calculate bearing and move
-        double bearing = _getBearing(
-          LatLng(animatedLat.value, animatedLng.value),
-          next,
-        );
-        _moveVehicleTowards(bearing, stepDistMs);
-      }
-    } else {
-      // 2. Extrapolation (Maintain momentum if no data)
-      if (_currentSpeedMs > 0.5) {
-        // Decay speed if no data for a while
-        if (_lastDataTime != null) {
-          int elapsed = DateTime.now()
-              .difference(_lastDataTime!)
-              .inMilliseconds;
-          if (elapsed > 10000) {
-            _currentSpeedMs *= 0.985;
-          }
-        }
-        _moveVehicleTowards(animatedRotation.value, stepDistMs);
-      }
-    }
-
-    _updateMarkers();
-    if (isLocked.value) {
-      moveMapToVehicle();
-    }
-  }
-
-  void _moveVehicleTowards(double bearing, double distanceMeters) {
-    const double metersPerLat = 111320.0;
-    double latRad = animatedLat.value * math.pi / 180;
-    double metersPerLng = 111320.0 * math.cos(latRad);
-
-    double dLat =
-        (distanceMeters * math.cos(bearing * math.pi / 180)) / metersPerLat;
-    double dLng =
-        (distanceMeters * math.sin(bearing * math.pi / 180)) / metersPerLng;
-
-    animatedLat.value += dLat;
-    animatedLng.value += dLng;
-  }
-
-  void updateCameraToFitBounds() {
-    if (animatedLat.value == 0.0) return;
-
-    // In this project, we primarily focus on the vehicle.
-    // If there were other points (Customer, Restaurant), we'd include them in the bounds.
-    final LatLng center = LatLng(animatedLat.value, animatedLng.value);
-    mapController.move(center, mapController.camera.zoom);
-  }
-
-  Future<void> _initializePusher(String imei) async {
-    try {
-      _pusher = PusherConfig.getInstance();
-      await _pusher!.init(
-        apiKey: PusherConfig.pusherAppKey,
-        cluster: PusherConfig.pusherCluster,
-        onEvent: (event) => _handlePusherEvent(event),
-      );
-      // Subscribe to the tracking channel defined in PusherConfig
-      await _pusher!.subscribe(channelName: PusherConfig.getTrackingChannel(0));
-      await _pusher!.connect();
-      debugPrint(
-        '✅ Pusher connected to channel: ${PusherConfig.getTrackingChannel(0)}',
-      );
-    } catch (e) {
-      debugPrint('❌ Pusher Init Error: $e');
-    }
-  }
-
-  void _handlePusherEvent(PusherEvent event) {
-    if (event.eventName == PusherConfig.newLocationUpdated) {
-      final data = jsonDecode(event.data);
-      final lat = double.tryParse(data['latitude'].toString());
-      final lng = double.tryParse(data['longitude'].toString());
-
-      if (lat != null && lng != null) {
-        _handleLocationUpdate(LatLng(lat, lng));
-      }
-    }
-  }
-
-  void _handleLocationUpdate(LatLng newLocation) {
-    // 1. Validation: Ensure point is not extreme GPS noise
-    if (animatedLat.value != 0.0) {
-      double dist = _calculateDistance(
-        LatLng(animatedLat.value, animatedLng.value),
-        newLocation,
-      );
-      if (dist > 5000) return; // Ignore impossible physical leaps (>5km)
-    }
-
-    // 2. Continuous Speed Calculation
-    double speedKmH =
-        liveTrackData.value?.currentPosition?.speed?.toDouble() ?? 0.0;
-    String status = liveTrackData.value?.currentStatus ?? 'Stopped';
-
-    // If business logic says stopped but speed is reported, trust speed slightly.
-    if (status == 'Stopped' && speedKmH < 1.0) {
-      _currentSpeedMs = 0.0;
-    }
-
-    // Update telemetry (this triggers road segments fetching)
-    _updateTelemetry(newLocation, speedKmH);
-  }
-
-  // Helper removed as its logic is integrated into _fetchAndQueueRoute
-
-  Future<void> _initAndStartTracking(String imei) async {
-    final token = await getSavedObject('token');
-    if (token != null) DioClient().updateToken(token.toString());
-    _startLiveTracking(imei);
-  }
-
-  void _startLiveTracking(String imei) {
-    _fetchLiveTrack(imei);
-    _ensurePolling(imei);
-  }
-
-  void _ensurePolling(String imei) {
-    _pollingTimer?.cancel();
-    if (_disposed) return;
-
-    _fetchTcpPosition(imei);
-
-    final speed =
-        liveTrackData.value?.currentPosition?.speed?.toDouble() ?? 0.0;
-    final interval = (speed > 0) ? 3 : 10;
-    _pollingTimer = Timer(
-      Duration(seconds: interval),
-      () => _ensurePolling(imei),
-    );
-  }
-
-  @override
-  void onClose() {
-    _disposed = true;
-    _animationTimer?.cancel();
-    _pollingTimer?.cancel();
-    _pusher?.disconnect();
-    _pusher?.unsubscribe(channelName: PusherConfig.getTrackingChannel(0));
-    fenceNameController.dispose();
-    super.onClose();
-  }
-
-  Future<void> _fetchTcpPosition(String imei) async {
-    if (_disposed || _isFetchingStatus) return;
-    try {
-      _isFetchingStatus = true;
-      final url =
-          '${ApiConfig.tcpBaseUrl}/api/live-tracking/device/${imei.trim()}';
-      final response = await DioClient().dio.get<Map<String, dynamic>>(url);
-
-      final body = response.data;
-      if (body != null &&
-          body['success'] == true &&
-          body['data'] is Map<String, dynamic>) {
-        final merged = _mergeTcpData(
-          body['data'],
-          existing: liveTrackData.value,
-        );
-        if (_isNewerData(merged)) {
-          liveTrackData.value = merged;
-          _onDataUpdated();
-        }
-      }
-    } catch (_) {
-    } finally {
-      _isFetchingStatus = false;
-    }
-  }
-
-  Future<void> _fetchLiveTrack(String imei) async {
-    try {
-      final url =
-          '${ApiConfig.baseUrl}/api/live-tracking/device/${imei.trim()}';
-      final response = await DioClient().dio.get<Map<String, dynamic>>(url);
-      final body = response.data;
-      if (body != null && body['success'] == true) {
-        liveTrackData.value = LiveTrackData.fromJson(body['data']);
-        _onDataUpdated();
-      }
-    } catch (_) {}
-  }
-
-  LiveTrackData _mergeTcpData(
-    Map<String, dynamic> tcp, {
-    LiveTrackData? existing,
-  }) {
-    final pos = LiveCurrentPosition(
-      imei: tcp['imei']?.toString(),
-      latitude: tcp['latitude']?.toString(),
-      longitude: tcp['longitude']?.toString(),
-      speed: tcp['speed'] as num?,
-      deviceTime: tcp['devicetime']?.toString(),
-      ignition: tcp['ignition'] as int?,
-      power: tcp['power'] as int?,
-      mode: tcp['mode']?.toString(),
-    );
-
-    final posApi = LiveCurrentPositionApi(
-      success: true,
-      data: LiveCurrentPositionApiData(
-        imei: tcp['imei']?.toString(),
-        deviceId: tcp['deviceid'] as int?,
-        latitude: tcp['latitude']?.toString(),
-        longitude: tcp['longitude']?.toString(),
-        speed: tcp['speed'] as num?,
-        deviceTime: tcp['devicetime']?.toString(),
-        ignition: tcp['ignition'] as int?,
-        power: tcp['power'] as int?,
-        altitude: tcp['altitude']?.toString(),
-        gsmSignalStrength: tcp['gsm_signal_strength']?.toString(),
-        mode: tcp['mode']?.toString(),
-        network: tcp['network']?.toString(),
-        lastUpdate: tcp['last_update']?.toString(),
-      ),
-    );
-
-    return LiveTrackData(
-      vehicleInfo: existing?.vehicleInfo,
-      currentPosition: pos,
-      currentStatus: pos.derivedStatus,
-      todayStatistics: existing?.todayStatistics,
-      currentPositionApi: posApi,
-    );
-  }
-
-  // --- Geometry Helpers ---
+  double _normalizeBearing(double bearing) => (bearing % 360 + 360) % 360;
 
   double _getBearing(LatLng start, LatLng end) {
     final lat1 = start.latitude * math.pi / 180;
@@ -584,7 +996,7 @@ class TrackController extends GetxController {
   }
 
   double _calculateDistance(LatLng p1, LatLng p2) {
-    const double radius = 6371000;
+    const radius = 6371000.0;
     final dLat = (p2.latitude - p1.latitude) * math.pi / 180;
     final dLon = (p2.longitude - p1.longitude) * math.pi / 180;
     final a =
@@ -596,70 +1008,63 @@ class TrackController extends GetxController {
     return radius * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)));
   }
 
-  Map<String, dynamic> getClosestPointOnPolyline(
-    LatLng current,
-    List<LatLng> polyline,
-  ) {
-    if (polyline.isEmpty)
-      return {
-        'point': current,
-        'distance': double.infinity,
-        'idx': -1,
-        't': 0.0,
-      };
-    if (polyline.length == 1)
-      return {
-        'point': polyline.first,
-        'distance': _calculateDistance(current, polyline.first),
-        'idx': 0,
-        't': 0.0,
-      };
-    double minD = double.infinity;
-    LatLng snapP = polyline.first;
-    int cIdx = 0;
-    double fT = 0.0;
-    for (int i = 0; i < polyline.length - 1; i++) {
-      final p1 = polyline[i];
-      final p2 = polyline[i + 1];
-      final dx = p2.longitude - p1.longitude;
-      final dy = p2.latitude - p1.latitude;
-      final lenSq = dx * dx + dy * dy;
-      if (lenSq < 1e-9) continue;
-      final t =
-          ((current.longitude - p1.longitude) * dx +
-              (current.latitude - p1.latitude) * dy) /
-          lenSq;
-      final cT = t.clamp(0.0, 1.0);
-      final pOnS = LatLng(p1.latitude + cT * dy, p1.longitude + cT * dx);
-      final d = _calculateDistance(current, pOnS);
-      if (d < minD) {
-        minD = d;
-        snapP = pOnS;
-        cIdx = i;
-        fT = cT;
-      }
-    }
-    return {'point': snapP, 'distance': minD, 'idx': cIdx, 't': fT};
-  }
-
   String _formatHours(num? hours) {
     if (hours == null) return '00:00 hrs';
-    int h = hours.toInt();
-    int m = ((hours - h) * 60).toInt();
+    final h = hours.toInt();
+    final m = ((hours - h) * 60).toInt();
     return "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} hrs";
   }
 
+  /// Pull-to-refresh: optional snapshot catch-up only (keeps WebSocket alive).
   Future<void> refreshData() async {
-    if (vehicleImei.value.isNotEmpty) {
-      await _fetchLiveTrack(vehicleImei.value);
-    }
+    if (vehicleImei.value.isEmpty || _disposed) return;
+    await _fetchLiveTrackSnapshot(vehicleImei.value, reconnectOnly: true);
   }
 
-  void startTrackingForImei(String imei, {String? plate}) {
+  Future<void> startTrackingForImei(String imei, {String? plate}) async {
+    await _webSocketService.disconnect();
     vehicleImei.value = imei;
     if (plate != null && plate.isNotEmpty) vehiclePlate.value = plate;
+
     liveTrackData.value = null;
-    _lastProcessedDeviceTime = null;
-    _startLiveTracking(imei);
+    _wsConfig = null;
+    _wsInfo = null;
+    _hasInitialCameraFocus = false;
+    _smoothCameraLat = 0.0;
+    _smoothCameraLng = 0.0;
+    _userAdjustedZoom = false;
+    _liveTarget = null;
+    _lastAcceptedGps = null;
+    _lastGlideTime = null;
+    _lastGpsTime = null;
+    _currentSpeedMs = 0;
+    _smoothedSpeedMs = 0;
+    _lastMovingTime = null;
+    _movementMode = '';
+    _lastReportedSpeedKmh = 0;
+    _lastInferredSpeedKmh = 0;
+    _lastGpsDeltaM = 0;
+    _isMovingVehicle = false;
+    _roadSpeedFactor = 1.0;
+    _targetRoadSpeedFactor = 1.0;
+    _smoothedGlideSpeedMs = 0.0;
+    _routeRequestId = 0;
+    _lockedBearing = 0;
+    _hasHeading = false;
+    animatedLat.value = 0;
+    animatedLng.value = 0;
+    animatedRotation.value = 0;
+
+    await _fetchLiveTrackSnapshot(imei);
+  }
+
+  @override
+  void onClose() {
+    _disposed = true;
+    _animationTimer?.cancel();
+    _animationTimer = null;
+    unawaited(_webSocketService.disconnect());
+    fenceNameController.dispose();
+    super.onClose();
   }
 }

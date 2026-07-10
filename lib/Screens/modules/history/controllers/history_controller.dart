@@ -434,6 +434,11 @@ class HistoryController extends GetxController {
   Timer? _movingMarkerTimer;
   int _movingSegmentIndex = 0;
   double _movingSegmentFraction = 0.0;
+  List<LatLng> _playbackRoutePoints = [];
+
+  static const Duration _playbackFramePeriod = Duration(milliseconds: 16);
+  static const double _playbackTickSeconds = 0.016;
+  static const double _bearingSmoothing = 0.35;
 
   /// Whether the marker is currently animating along the route.
   bool get isMovingMarkerActive => _movingMarkerTimer?.isActive ?? false;
@@ -462,51 +467,56 @@ class HistoryController extends GetxController {
         movingMarkerPosition.value != null &&
         progress.value < 1.0 &&
         _movingSegmentIndex >= 0 &&
-        _movingSegmentIndex < points.length - 1;
+        _playbackRoutePoints.isNotEmpty &&
+        _movingSegmentIndex < _playbackRoutePoints.length - 1;
     if (!resumeFromCurrent) {
+      _playbackRoutePoints = List<LatLng>.from(points);
       _movingSegmentIndex = 0;
       _movingSegmentFraction = 0.0;
-      movingMarkerPosition.value = points.first;
-      movingMarkerBearing.value = points.length > 1
-          ? _getBearing(points[0], points[1])
+      movingMarkerPosition.value = _playbackRoutePoints.first;
+      movingMarkerBearing.value = _playbackRoutePoints.length > 1
+          ? _getBearing(_playbackRoutePoints[0], _playbackRoutePoints[1])
           : 0.0;
+    } else if (_playbackRoutePoints.length < points.length) {
+      // Extend frozen route when more polyline chunks arrive during pause.
+      _playbackRoutePoints = List<LatLng>.from(points);
     }
     debugPrint(
       '[History] Playback: start movement mode=${resumeFromCurrent ? "resume" : "start"}',
     );
     debugPrint('[History] Playback: backend speed driven movement enabled');
     if (!_disposed) update();
-    const period = Duration(milliseconds: 150);
-    const tickSeconds = 0.15;
     isPlaying.value = true;
 
     void advanceFrame() {
       if (_disposed) return;
-      final points = polylinePoints;
-      if (points.length < 2) {
+      final route = _playbackRoutePoints;
+      if (route.length < 2) {
         stopMovingMarker();
         return;
       }
 
-      final currentProgress = _getProgressFromMarkerPosition();
+      final currentProgress = _getProgressFromMarkerPosition(route);
       final backendKmph = _getBackendSpeedKmphAtProgress(currentProgress);
       double effectiveMps;
       if (_playbackSpeedSeries.isEmpty) {
-        // Fallback when backend speed series is unavailable.
         effectiveMps = _basePlaybackSpeedMps * playbackSpeedMultiplier.value;
       } else {
         final effectiveKmph = math.max(_minPlaybackSpeedKmph, backendKmph) *
             playbackSpeedMultiplier.value;
         effectiveMps = effectiveKmph / 3.6;
       }
-      double distanceBudgetMeters = effectiveMps * tickSeconds;
+      double distanceBudgetMeters = effectiveMps * _playbackTickSeconds;
 
       while (distanceBudgetMeters > 0) {
-        if (_movingSegmentIndex >= points.length - 1) {
-          movingMarkerPosition.value = points.last;
-          movingMarkerBearing.value = points.length >= 2
-              ? _getBearing(points[points.length - 2], points.last)
-              : movingMarkerBearing.value;
+        if (_movingSegmentIndex >= route.length - 1) {
+          movingMarkerPosition.value = route.last;
+          final prevBearing = movingMarkerBearing.value ?? 0.0;
+          final endBearing = route.length >= 2
+              ? _getBearing(route[route.length - 2], route.last)
+              : prevBearing;
+          movingMarkerBearing.value =
+              _lerpBearing(prevBearing, endBearing, _bearingSmoothing);
           progress.value = 1.0;
           _syncCurrentSpeedWithProgress(1.0);
           debugPrint('[History] Playback: reached end');
@@ -514,8 +524,8 @@ class HistoryController extends GetxController {
           return;
         }
 
-        final a = points[_movingSegmentIndex];
-        final b = points[_movingSegmentIndex + 1];
+        final a = route[_movingSegmentIndex];
+        final b = route[_movingSegmentIndex + 1];
         final segmentMeters = _distanceMeters(a, b);
         if (segmentMeters <= 1e-6) {
           _movingSegmentIndex++;
@@ -536,11 +546,14 @@ class HistoryController extends GetxController {
         }
       }
 
-      if (_movingSegmentIndex >= points.length - 1) {
-        movingMarkerPosition.value = points.last;
-        movingMarkerBearing.value = points.length >= 2
-            ? _getBearing(points[points.length - 2], points.last)
-            : movingMarkerBearing.value;
+      if (_movingSegmentIndex >= route.length - 1) {
+        movingMarkerPosition.value = route.last;
+        final prevBearing = movingMarkerBearing.value ?? 0.0;
+        final endBearing = route.length >= 2
+            ? _getBearing(route[route.length - 2], route.last)
+            : prevBearing;
+        movingMarkerBearing.value =
+            _lerpBearing(prevBearing, endBearing, _bearingSmoothing);
         progress.value = 1.0;
         _syncCurrentSpeedWithProgress(1.0);
         debugPrint('[History] Playback: reached end');
@@ -548,26 +561,27 @@ class HistoryController extends GetxController {
         return;
       }
 
-      final a = points[_movingSegmentIndex];
-      final b = points[_movingSegmentIndex + 1];
+      final a = route[_movingSegmentIndex];
+      final b = route[_movingSegmentIndex + 1];
       final t = _movingSegmentFraction.clamp(0.0, 1.0);
       final interpolated = LatLng(
         a.latitude + (b.latitude - a.latitude) * t,
         a.longitude + (b.longitude - a.longitude) * t,
       );
       movingMarkerPosition.value = interpolated;
-      movingMarkerBearing.value = _getBearing(a, b);
-      _ensureMarkerOnPolyline(points);
-      // Progress should reflect the final (possibly snapped) marker position.
-      progress.value = _getProgressFromMarkerPosition();
+      final targetBearing = _getBearing(a, b);
+      final prevBearing = movingMarkerBearing.value ?? targetBearing;
+      movingMarkerBearing.value =
+          _lerpBearing(prevBearing, targetBearing, _bearingSmoothing);
+      progress.value = _getProgressFromMarkerPosition(route);
       _syncCurrentSpeedWithProgress();
     }
 
-    // Move immediately on tap so playback feels responsive (no initial timer wait).
     advanceFrame();
     debugPrint('[History] Playback: first movement frame applied');
     if (!isPlaying.value) return;
-    _movingMarkerTimer = Timer.periodic(period, (_) => advanceFrame());
+    _movingMarkerTimer =
+        Timer.periodic(_playbackFramePeriod, (_) => advanceFrame());
   }
 
   /// Stops the marker animation.
@@ -588,6 +602,7 @@ class HistoryController extends GetxController {
     movingMarkerBearing.value = null;
     _movingSegmentIndex = 0;
     _movingSegmentFraction = 0.0;
+    _playbackRoutePoints = [];
     if (!_disposed) update();
   }
 
@@ -595,6 +610,7 @@ class HistoryController extends GetxController {
   void placeMovingMarkerAtStart() {
     stopMovingMarker();
     final points = polylinePoints;
+    _playbackRoutePoints = List<LatLng>.from(points);
     _movingSegmentIndex = 0;
     _movingSegmentFraction = 0.0;
     progress.value = 0.0;
@@ -641,9 +657,18 @@ class HistoryController extends GetxController {
   }
 
   /// Progress 0.0..1.0 from current marker position (distance covered / total distance).
-  double _getProgressFromMarkerPosition() {
-    final points = polylinePoints;
+  double _getProgressFromMarkerPosition([List<LatLng>? routePoints]) {
+    final points = routePoints ?? _playbackRoutePoints;
+    if (points.isEmpty) {
+      final fallback = polylinePoints;
+      if (fallback.length < 2) return 0.0;
+      return _progressForRoute(fallback);
+    }
     if (points.length < 2) return 0.0;
+    return _progressForRoute(points);
+  }
+
+  double _progressForRoute(List<LatLng> points) {
     final total = _getTotalDistanceKm(points);
     if (total <= 0) return 0.0;
     final covered = _getDistanceCoveredKm(
@@ -654,9 +679,16 @@ class HistoryController extends GetxController {
     return (covered / total).clamp(0.0, 1.0);
   }
 
+  double _lerpBearing(double from, double to, double t) {
+    final diff = ((to - from + 540) % 360) - 180;
+    return (from + diff * t) % 360;
+  }
+
   /// Moves the marker to the position corresponding to [p] (0.0..1.0) along the route. Stops animation.
   void seekToProgress(double p) {
-    final points = polylinePoints;
+    final points = _playbackRoutePoints.isNotEmpty
+        ? _playbackRoutePoints
+        : polylinePoints;
     if (points.length < 2) return;
     stopMovingMarker();
     final clamped = p.clamp(0.0, 1.0);
@@ -716,11 +748,11 @@ class HistoryController extends GetxController {
   /// Progressive load: process and draw polyline in chunks of this size.
   static const int _progressiveChunkSize = 50;
 
-  /// Base playback velocity in meters/second. Effective speed = base * playbackSpeedMultiplier.
-  static const double _basePlaybackSpeedMps = 85.0;
+  /// Base playback velocity in meters/second when backend speed is unavailable.
+  static const double _basePlaybackSpeedMps = 120.0;
 
-  /// Minimum speed for playback (even if recorded speed was 0). This keeps the car moving extremely fast.
-  static const double _minPlaybackSpeedKmph = 300.0;
+  /// Minimum playback speed at 1x (km/h). Raised so 1x feels responsive.
+  static const double _minPlaybackSpeedKmph = 480.0;
 
   /// Mapbox chunk size kept conservative for faster first response and smoother perceived start.
   static const int _mapboxChunkSize = 25;
@@ -1063,23 +1095,6 @@ class HistoryController extends GetxController {
     };
   }
 
-  /// Keeps the moving marker on the polyline (snap if drifted > 5m). Prevents marker off road.
-  void _ensureMarkerOnPolyline(List<LatLng> route) {
-    if (route.length < 2) return;
-    final pos = movingMarkerPosition.value;
-    if (pos == null) return;
-    final snap = getClosestPointOnPolyline(pos, route);
-    final distanceM = snap['distance'] as double;
-    if (distanceM > 5.0) {
-      movingMarkerPosition.value = snap['point'] as LatLng;
-      final seg = snap['segmentIndex'] as int;
-      final t = snap['t'] as double;
-      if (seg >= 0 && seg < route.length - 1) {
-        _movingSegmentIndex = seg;
-        _movingSegmentFraction = t;
-      }
-    }
-  }
 
   /// Loads polyline step-by-step: sends points to Mapbox for snapping.
   void _runProgressiveSnapInBackground(List<LatLng> cleanPoints) {

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Utils/app_colors.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
@@ -17,6 +18,7 @@ class HistoryMapLayer extends StatefulWidget {
     this.movingMarkerBearing,
     this.isFollowCameraEnabled = true,
     this.isPlaybackActive = false,
+    this.bottomSheetVisible = true,
     this.onManualFollowDisable,
     this.movingMarkerAssetPath = 'lib/Asset/Images/marker2.png',
   }) : super(key: key);
@@ -29,6 +31,7 @@ class HistoryMapLayer extends StatefulWidget {
   final double? movingMarkerBearing;
   final bool isFollowCameraEnabled;
   final bool isPlaybackActive;
+  final bool bottomSheetVisible;
   final VoidCallback? onManualFollowDisable;
   final String movingMarkerAssetPath;
 
@@ -36,19 +39,97 @@ class HistoryMapLayer extends StatefulWidget {
   State<HistoryMapLayer> createState() => _HistoryMapLayerState();
 }
 
-class _HistoryMapLayerState extends State<HistoryMapLayer> {
+class _HistoryMapLayerState extends State<HistoryMapLayer>
+    with SingleTickerProviderStateMixin {
   final MapController _mapController = MapController();
   static const double _fitPadding = 48.0;
   static const double _followVerticalOffsetFraction = 0.22;
+  static const double _playbackFollowZoom = 16.0;
   bool _hasAutoFittedCurrentRoute = false;
-  static const Duration _followThrottle = Duration(milliseconds: 250);
-  DateTime? _lastFollowTime;
   ll.LatLng? _lastFollowTarget;
+  ll.LatLng? _smoothCameraCenter;
   double _lastKnownZoom = 15.0;
   double _fixedBearing = 0.0;
+  bool _usePlaybackFollowZoom = false;
   bool _tileSourceLogged = false;
   bool _isProgrammaticCameraMove = false;
   bool _isMapReady = false;
+
+  Ticker? _smoothTicker;
+  ll.LatLng? _renderPosition;
+  double _renderBearing = 0.0;
+
+  double _positionAlpha(double latDelta, double lngDelta, bool isPlaying) {
+    if (!isPlaying) return 1.0;
+    // Controller already moves along polyline vertices each frame. Lat/lng lerp
+    // cuts corners and makes the car look like it is driving off the blue route.
+    return 1.0;
+  }
+
+  double _bearingAlpha(bool isPlaying) => isPlaying ? 0.55 : 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _smoothTicker = createTicker(_onSmoothTick)..start();
+  }
+
+  void _onSmoothTick(Duration elapsed) {
+    final target = widget.movingMarkerPosition;
+    if (target == null) {
+      if (_renderPosition != null && mounted) {
+        setState(() => _renderPosition = null);
+      }
+      return;
+    }
+
+    final targetBearing = widget.movingMarkerBearing ?? 0.0;
+    if (_renderPosition == null) {
+      if (!mounted) return;
+      setState(() {
+        _renderPosition = target;
+        _renderBearing = targetBearing;
+      });
+      if (widget.isFollowCameraEnabled &&
+          (widget.isPlaybackActive || widget.movingMarkerPosition != null)) {
+        _enterFollowMode(snapImmediately: true);
+      }
+      return;
+    }
+
+    final latDelta = target.latitude - _renderPosition!.latitude;
+    final lngDelta = target.longitude - _renderPosition!.longitude;
+    final bearingDelta =
+        _shortestBearingDelta(_renderBearing, targetBearing);
+
+    if (latDelta.abs() < 1e-8 &&
+        lngDelta.abs() < 1e-8 &&
+        bearingDelta.abs() < 0.05) {
+      return;
+    }
+
+    final isPlaying = widget.isPlaybackActive;
+    final positionAlpha = _positionAlpha(latDelta, lngDelta, isPlaying);
+    final bearingAlpha = _bearingAlpha(isPlaying);
+
+    if (!mounted) return;
+    setState(() {
+      _renderPosition = ll.LatLng(
+        _renderPosition!.latitude + latDelta * positionAlpha,
+        _renderPosition!.longitude + lngDelta * positionAlpha,
+      );
+      _renderBearing =
+          (_renderBearing + bearingDelta * bearingAlpha) % 360;
+    });
+
+    if (widget.isFollowCameraEnabled && widget.isPlaybackActive) {
+      _followMovingMarker();
+    }
+  }
+
+  double _shortestBearingDelta(double from, double to) {
+    return ((to - from + 540) % 360) - 180;
+  }
 
   @override
   void didUpdateWidget(HistoryMapLayer oldWidget) {
@@ -72,50 +153,90 @@ class _HistoryMapLayerState extends State<HistoryMapLayer> {
         widget.movingMarkerPosition != oldWidget.movingMarkerPosition;
     final followToggledOn =
         widget.isFollowCameraEnabled && !oldWidget.isFollowCameraEnabled;
+    final playbackStarted =
+        widget.isPlaybackActive && !oldWidget.isPlaybackActive;
+    if (playbackStarted && widget.isFollowCameraEnabled) {
+      _enterFollowMode(snapImmediately: true);
+    }
     if ((moved || followToggledOn) &&
         widget.isFollowCameraEnabled &&
-        widget.isPlaybackActive) {
+        widget.isPlaybackActive &&
+        _renderPosition != null) {
+      if (followToggledOn) _enterFollowMode(snapImmediately: true);
       _followMovingMarker();
     }
   }
 
-  Future<void> _followMovingMarker() async {
-    if (!_isMapReady || widget.movingMarkerPosition == null) return;
-    final now = DateTime.now();
-    if (_lastFollowTime != null &&
-        now.difference(_lastFollowTime!).compareTo(_followThrottle) < 0) {
-      return;
-    }
-    final markerPosition = widget.movingMarkerPosition!;
-    final target = _cameraTargetWithVisualOffset(markerPosition);
-    if (_lastFollowTarget != null) {
-      final movedDistance = (target.latitude - _lastFollowTarget!.latitude).abs() +
-          (target.longitude - _lastFollowTarget!.longitude).abs();
-      if (movedDistance < 0.00003) {
-        return;
+  void _enterFollowMode({bool snapImmediately = false}) {
+    _usePlaybackFollowZoom = true;
+    _lastKnownZoom = _playbackFollowZoom;
+    final marker = _renderPosition ?? widget.movingMarkerPosition;
+    if (marker == null || !_isMapReady) return;
+    final target = _cameraTargetWithVisualOffset(marker);
+    if (snapImmediately) {
+      _smoothCameraCenter = target;
+      _lastFollowTarget = target;
+      _isProgrammaticCameraMove = true;
+      try {
+        _mapController.moveAndRotate(target, _playbackFollowZoom, _fixedBearing);
+      } finally {
+        _isProgrammaticCameraMove = false;
       }
     }
-    _lastFollowTime = now;
-    _lastFollowTarget = target;
+  }
+
+  double _activeFollowZoom() =>
+      _usePlaybackFollowZoom ? _playbackFollowZoom : _lastKnownZoom;
+
+  Future<void> _followMovingMarker() async {
+    if (!_isMapReady || _renderPosition == null) return;
+    if (!widget.isFollowCameraEnabled) return;
+
+    final markerPosition = _renderPosition!;
+    final target = _cameraTargetWithVisualOffset(markerPosition);
+    final zoom = _activeFollowZoom();
+
+    if (_smoothCameraCenter == null) {
+      _smoothCameraCenter = target;
+    } else {
+      const cameraAlpha = 0.88;
+      _smoothCameraCenter = ll.LatLng(
+        _smoothCameraCenter!.latitude +
+            (target.latitude - _smoothCameraCenter!.latitude) * cameraAlpha,
+        _smoothCameraCenter!.longitude +
+            (target.longitude - _smoothCameraCenter!.longitude) * cameraAlpha,
+      );
+    }
+
+    if (_lastFollowTarget != null) {
+      final movedDistance =
+          (_smoothCameraCenter!.latitude - _lastFollowTarget!.latitude).abs() +
+          (_smoothCameraCenter!.longitude - _lastFollowTarget!.longitude).abs();
+      if (movedDistance < 0.000001) return;
+    }
+    _lastFollowTarget = _smoothCameraCenter;
     _isProgrammaticCameraMove = true;
     try {
       _mapController.moveAndRotate(
-        target,
-        _lastKnownZoom,
+        _smoothCameraCenter!,
+        zoom,
         _fixedBearing,
       );
-      debugPrint('[History] Camera: follow recenter applied');
     } finally {
       _isProgrammaticCameraMove = false;
     }
   }
 
   ll.LatLng _cameraTargetWithVisualOffset(ll.LatLng marker) {
+    if (!widget.bottomSheetVisible) {
+      return marker;
+    }
     final heightPx = MediaQuery.sizeOf(context).height;
     final offsetPx = heightPx * _followVerticalOffsetFraction;
+    final zoom = _activeFollowZoom();
     final metersPerPixel =
         156543.03392 * math.cos(marker.latitude * math.pi / 180.0) /
-        math.pow(2.0, _lastKnownZoom);
+        math.pow(2.0, zoom);
     final offsetMeters = offsetPx * metersPerPixel;
     final deltaLat = offsetMeters / 111320.0;
     final adjustedLat = (marker.latitude - deltaLat).clamp(-85.0, 85.0);
@@ -152,6 +273,7 @@ class _HistoryMapLayerState extends State<HistoryMapLayer> {
 
   @override
   void dispose() {
+    _smoothTicker?.dispose();
     super.dispose();
   }
 
@@ -217,7 +339,24 @@ class _HistoryMapLayerState extends State<HistoryMapLayer> {
       );
     }
 
-    if (widget.movingMarkerPosition != null) {
+    if (_renderPosition != null) {
+      markers.add(
+        Marker(
+          point: _renderPosition!,
+          width: 44,
+          height: 44,
+          child: Transform.rotate(
+            angle: _renderBearing * (math.pi / 180.0),
+            child: Image.asset(
+              widget.movingMarkerAssetPath,
+              width: 40,
+              height: 40,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
+      );
+    } else if (widget.movingMarkerPosition != null) {
       markers.add(
         Marker(
           point: widget.movingMarkerPosition!,
@@ -254,6 +393,9 @@ class _HistoryMapLayerState extends State<HistoryMapLayer> {
         onPositionChanged: (camera, hasGesture) {
           if (camera.zoom.isFinite) {
             _lastKnownZoom = camera.zoom;
+            if (hasGesture && !_isProgrammaticCameraMove) {
+              _usePlaybackFollowZoom = false;
+            }
           }
           if (hasGesture &&
               !_isProgrammaticCameraMove &&

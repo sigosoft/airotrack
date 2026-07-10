@@ -64,7 +64,7 @@ class LiveTrackData {
               json['current_position'] as Map<String, dynamic>,
             )
           : null,
-      currentStatus: json['current_status'] as String?,
+      currentStatus: json['current_status']?.toString(),
       todayStatistics: json['today_statistics'] != null
           ? LiveTodayStatistics.fromJson(
               json['today_statistics'] as Map<String, dynamic>,
@@ -99,7 +99,7 @@ class LiveVehicleInfo {
     return LiveVehicleInfo(
       id: json['id'] as int?,
       vehicleNumber: json['vehicle_number'] as String?,
-      imei: json['imei'] as String?,
+      imei: json['imei']?.toString(),
       companyId: json['company_id'] as int?,
       totalKilometersTraveled: json['total_kilometers_traveled']?.toString(),
     );
@@ -135,11 +135,11 @@ class LiveCurrentPosition {
   factory LiveCurrentPosition.fromJson(Map<String, dynamic> json) {
     return LiveCurrentPosition(
       id: json['id'] as int?,
-      imei: json['imei'] as String?,
-      deviceTime: json['devicetime'] as String?,
-      latitude: json['latitude'] as String?,
-      longitude: json['longitude'] as String?,
-      mode: json['mode'] as String?,
+      imei: json['imei']?.toString(),
+      deviceTime: json['devicetime']?.toString(),
+      latitude: json['latitude']?.toString(),
+      longitude: json['longitude']?.toString(),
+      mode: json['mode']?.toString(),
       speed: json['speed'] as num?,
       ignition: json['ignition'] as int?,
       power: json['power'] as int?,
@@ -241,17 +241,208 @@ class LiveCurrentPositionApiData {
     return LiveCurrentPositionApiData(
       imei: json['imei'] as String?,
       deviceId: json['deviceid'] as int?,
-      latitude: json['latitude'] as String?,
-      longitude: json['longitude'] as String?,
+      latitude: json['latitude']?.toString(),
+      longitude: json['longitude']?.toString(),
       speed: json['speed'] as num?,
-      deviceTime: json['devicetime'] as String?,
+      deviceTime: json['devicetime']?.toString(),
       ignition: json['ignition'] as int?,
       power: json['power'] as int?,
       altitude: json['altitude']?.toString(),
       gsmSignalStrength: json['gsm_signal_strength']?.toString(),
       mode: json['mode'] as String?,
       network: json['network'] as String?,
-      lastUpdate: json['last_update'] as String?,
+      lastUpdate: json['last_update']?.toString(),
+    );
+  }
+}
+
+/// Response for GET /live_track_snapshot?imei=...
+class LiveTrackSnapshotModel {
+  final bool? status;
+  final String? message;
+  final LiveTrackSnapshotData? data;
+
+  const LiveTrackSnapshotModel({this.status, this.message, this.data});
+
+  factory LiveTrackSnapshotModel.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const LiveTrackSnapshotModel();
+    final payload = json['data'] is Map
+        ? Map<String, dynamic>.from(json['data'] as Map)
+        : json;
+    return LiveTrackSnapshotModel(
+      status: json['status'] is bool ? json['status'] as bool : null,
+      message: json['message'] as String?,
+      data: LiveTrackSnapshotData.fromJson(payload),
+    );
+  }
+}
+
+class LiveTrackSnapshotData {
+  final LiveCurrentPosition? position;
+  final LiveWebsocketInfo? websocket;
+  final LiveWebsocketConfig? websocketConfig;
+  final LiveTrackData? trackData;
+  final String? status;
+  final bool? isLive;
+
+  const LiveTrackSnapshotData({
+    this.position,
+    this.websocket,
+    this.websocketConfig,
+    this.trackData,
+    this.status,
+    this.isLive,
+  });
+
+  /// Maps live_track_snapshot payload to LiveTrackData field names.
+  static Map<String, dynamic> _normalizeSnapshotPayload(
+    Map<String, dynamic> json,
+  ) {
+    final normalized = <String, dynamic>{};
+
+    final vehicle = json['vehicle'] ?? json['vehicle_info'];
+    if (vehicle is Map) {
+      normalized['vehicle_info'] = Map<String, dynamic>.from(vehicle);
+    }
+
+    final position = json['position'] ?? json['current_position'];
+    if (position is Map) {
+      final pos = Map<String, dynamic>.from(position);
+      normalized['current_position'] = pos;
+      normalized['current_position_api'] = {
+        'success': true,
+        'data': pos,
+      };
+    }
+
+    if (json['today_statistics'] is Map<String, dynamic>) {
+      normalized['today_statistics'] = json['today_statistics'];
+    }
+
+    final status = json['current_status'] ?? json['status'];
+    if (status != null) {
+      normalized['current_status'] = status.toString();
+    }
+
+    return normalized;
+  }
+
+  factory LiveTrackSnapshotData.fromJson(Map<String, dynamic> json) {
+    final positionRaw = json['position'] ?? json['current_position'];
+    final positionJson =
+        positionRaw is Map ? Map<String, dynamic>.from(positionRaw) : null;
+    final normalized = _normalizeSnapshotPayload(json);
+    final trackData = normalized.isNotEmpty
+        ? LiveTrackData.fromJson(normalized)
+        : null;
+
+    return LiveTrackSnapshotData(
+      position: positionJson != null
+          ? LiveCurrentPosition.fromJson(positionJson)
+          : null,
+      websocket: json['websocket'] is Map
+          ? LiveWebsocketInfo.fromJson(
+              Map<String, dynamic>.from(json['websocket'] as Map),
+            )
+          : null,
+      websocketConfig: json['websocket_config'] is Map
+          ? LiveWebsocketConfig.fromJson(
+              Map<String, dynamic>.from(json['websocket_config'] as Map),
+            )
+          : null,
+      trackData: trackData,
+      status: json['status']?.toString(),
+      isLive: json['is_live'] is bool
+          ? json['is_live'] as bool
+          : json['is_live'] == 1 || json['is_live']?.toString() == 'true',
+    );
+  }
+
+  LiveTrackData toLiveTrackData() {
+    if (trackData != null) {
+      return LiveTrackData(
+        vehicleInfo: trackData!.vehicleInfo,
+        currentPosition: trackData!.currentPosition ?? position,
+        currentStatus:
+            trackData!.currentStatus ??
+            status ??
+            trackData!.currentPosition?.derivedStatus ??
+            position?.derivedStatus,
+        todayStatistics: trackData!.todayStatistics,
+        currentPositionApi: trackData!.currentPositionApi,
+      );
+    }
+    return LiveTrackData(
+      currentPosition: position,
+      currentStatus: status ?? position?.derivedStatus,
+    );
+  }
+
+  /// Option A: channel from `websocket.channel`, else `websocket_config.channel_prefix.<imei>`.
+  String? channelFor(String imei) {
+    final fromWebsocket = websocket?.channel?.trim();
+    if (fromWebsocket != null && fromWebsocket.isNotEmpty) {
+      return fromWebsocket;
+    }
+    final prefix = websocketConfig?.channelPrefix?.trim();
+    if (prefix != null && prefix.isNotEmpty) {
+      return '$prefix.${imei.trim()}';
+    }
+    return null;
+  }
+
+  /// Option A: event from `websocket.event`, else `websocket_config.event_name`.
+  String? eventNameFor() {
+    final fromWebsocket = websocket?.event?.trim();
+    if (fromWebsocket != null && fromWebsocket.isNotEmpty) {
+      return fromWebsocket;
+    }
+    return websocketConfig?.eventName?.trim();
+  }
+
+  bool get hasWebSocketConnectionConfig {
+    final url = websocketConfig?.websocketUrl?.trim();
+    final key = websocketConfig?.appKey?.trim();
+    return url != null &&
+        url.isNotEmpty &&
+        key != null &&
+        key.isNotEmpty;
+  }
+}
+
+class LiveWebsocketInfo {
+  final String? channel;
+  final String? event;
+
+  const LiveWebsocketInfo({this.channel, this.event});
+
+  factory LiveWebsocketInfo.fromJson(Map<String, dynamic> json) {
+    return LiveWebsocketInfo(
+      channel: json['channel'] as String?,
+      event: json['event'] as String?,
+    );
+  }
+}
+
+class LiveWebsocketConfig {
+  final String? websocketUrl;
+  final String? appKey;
+  final String? channelPrefix;
+  final String? eventName;
+
+  const LiveWebsocketConfig({
+    this.websocketUrl,
+    this.appKey,
+    this.channelPrefix,
+    this.eventName,
+  });
+
+  factory LiveWebsocketConfig.fromJson(Map<String, dynamic> json) {
+    return LiveWebsocketConfig(
+      websocketUrl: json['websocket_url'] as String?,
+      appKey: json['app_key'] as String?,
+      channelPrefix: json['channel_prefix'] as String?,
+      eventName: json['event_name'] as String?,
     );
   }
 }

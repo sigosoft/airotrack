@@ -28,10 +28,9 @@ class TrackView extends GetView<TrackController> {
               mapController: controller.mapController,
               onTap: () => controller.showBottomSheet.value = false,
               markers: controller.mapMarkers,
-              polylines: controller.mapPolylines,
               onPositionChanged: (position, hasGesture) {
                 if (hasGesture) {
-                  controller.isLocked.value = false;
+                  controller.onMapGesture();
                 }
               },
             ),
@@ -67,7 +66,8 @@ class TrackView extends GetView<TrackController> {
                       _buildMapControl(
                         'lib/Asset/Icons/Focus.png',
                         context,
-                        onTap: () => controller.moveMapToVehicle(),
+                        onTap: () =>
+                            controller.moveMapToVehicle(snap: true, resetZoom: true),
                       ),
                       SizedBox(height: height * 0.012),
                       _buildMapControl(
@@ -119,6 +119,8 @@ class TrackView extends GetView<TrackController> {
                       _buildMapControl(
                         'lib/Asset/Icons/Locations.png',
                         context,
+                        onTap: () =>
+                            controller.moveMapToVehicle(snap: true, resetZoom: true),
                       ),
                       SizedBox(height: height * 0.012),
                       _buildMapControl(

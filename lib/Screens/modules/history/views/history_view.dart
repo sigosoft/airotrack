@@ -133,6 +133,7 @@ class HistoryView extends GetView<HistoryController> {
                       isFollowCameraEnabled:
                           controller.isFollowCameraEnabled.value,
                       isPlaybackActive: controller.isPlaying.value,
+                      bottomSheetVisible: controller.showBottomSheet.value,
                       onManualFollowDisable: controller.disableFollowCamera,
                     ),
                   ),

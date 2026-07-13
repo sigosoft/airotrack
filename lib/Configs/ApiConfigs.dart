@@ -2,7 +2,8 @@ class ApiConfig {
   // This is the Test Server URL
   static String baseUrl =
       //"https://api.airotrack.in/website/";
-      "https://dev-api.airotrack.in/airotrack-api/public/website/";
+      //"https://dev-api.airotrack.in/airotrack-api/public/website/";
+      "https://api-dev.airotrack.in/website/";
 
   // TCP server base URL — used for real-time device position (live tracking)
   static const String tcpBaseUrl =

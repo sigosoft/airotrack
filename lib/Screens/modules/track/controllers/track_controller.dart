@@ -320,6 +320,19 @@ class TrackController extends GetxController {
             ? data['power'] as int
             : int.tryParse(data['power']?.toString() ?? ''),
         mode: data['mode']?.toString(),
+        kilometer: data['kilometer']?.toString() ??
+            existing?.currentPosition?.kilometer,
+        altitude: data['altitude']?.toString() ??
+            existing?.currentPosition?.altitude,
+        gsmSignalStrength: data['gsm_signal_strength']?.toString() ??
+            existing?.currentPosition?.gsmSignalStrength ??
+            existing?.currentPositionApi?.data?.gsmSignalStrength,
+        network: data['network']?.toString() ??
+            existing?.currentPosition?.network ??
+            existing?.currentPositionApi?.data?.network,
+        lastUpdate: data['last_update']?.toString() ??
+            existing?.currentPosition?.lastUpdate ??
+            existing?.currentPositionApi?.data?.lastUpdate,
       );
 
       liveTrackData.value = LiveTrackData(
@@ -857,7 +870,9 @@ class TrackController extends GetxController {
   String get displayDeviceTime =>
       liveTrackData.value?.currentPosition?.deviceTime ?? '–';
   String get displayLastUpdate =>
-      liveTrackData.value?.currentPositionApi?.data?.lastUpdate ?? '–';
+      liveTrackData.value?.currentPosition?.lastUpdate ??
+      liveTrackData.value?.currentPositionApi?.data?.lastUpdate ??
+      '–';
 
   String get displayLatitude => animatedLat.value != 0.0
       ? animatedLat.value.toStringAsFixed(7)
@@ -871,25 +886,65 @@ class TrackController extends GetxController {
   bool get isPowerOn =>
       liveTrackData.value?.currentPosition?.isPowerOn ?? false;
 
-  String get displayGsmSignal =>
-      liveTrackData.value?.currentPositionApi?.data?.gsmSignalStrength ?? '–';
-  String get displayNetwork =>
-      liveTrackData.value?.currentPositionApi?.data?.network ?? '–';
-  String get displayAltitude =>
-      liveTrackData.value?.currentPositionApi?.data?.altitude ?? '–';
+  /// GSM from snapshot/WS `position.gsm_signal_strength` only.
+  String get displayGsmSignal {
+    final raw = liveTrackData.value?.currentPosition?.gsmSignalStrength;
+    if (raw == null) return '–';
+    final value = raw.trim();
+    if (value.isEmpty || value.toLowerCase() == 'null') return '–';
+    return value;
+  }
+
+  String get displayNetwork {
+    final raw = liveTrackData.value?.currentPosition?.network;
+    if (raw == null) return '–';
+    final value = raw.trim();
+    if (value.isEmpty || value.toLowerCase() == 'null') return '–';
+    return value;
+  }
+  String get displayAltitude {
+    final fromPos = liveTrackData.value?.currentPosition?.altitude;
+    if (fromPos != null && fromPos.trim().isNotEmpty && fromPos != 'null') {
+      return fromPos;
+    }
+    final fromApi = liveTrackData.value?.currentPositionApi?.data?.altitude;
+    if (fromApi != null && fromApi.trim().isNotEmpty && fromApi != 'null') {
+      return fromApi;
+    }
+    return '–';
+  }
 
   String get displayTodayKm =>
       liveTrackData.value?.todayStatistics?.totalKilometersToday
           ?.toStringAsFixed(2) ??
       '0.00';
-  String get displayTotalKm =>
-      liveTrackData.value?.vehicleInfo?.totalKilometersTraveled ?? '0.00';
+  String get displayTotalKm {
+    final fromVehicle =
+        liveTrackData.value?.vehicleInfo?.totalKilometersTraveled;
+    if (fromVehicle != null && fromVehicle.trim().isNotEmpty) {
+      return fromVehicle;
+    }
+    return liveTrackData.value?.currentPosition?.kilometer ?? '0.00';
+  }
+
   String get displayStoppedDuration =>
-      _formatHours(liveTrackData.value?.todayStatistics?.totalStopHours);
+      liveTrackData.value?.todayStatistics?.displayStoppedDuration ??
+      '00:00:00';
   String get displayIdleDuration =>
-      _formatHours(liveTrackData.value?.todayStatistics?.totalIdleHours);
-  String get displayRunningDuration => "–";
-  String get displayInactiveDuration => "–";
+      liveTrackData.value?.todayStatistics?.displayIdleDuration ?? '00:00:00';
+  String get displayRunningDuration =>
+      liveTrackData.value?.todayStatistics?.displayRunningDuration ??
+      '00:00:00';
+  String get displayInactiveDuration =>
+      liveTrackData.value?.todayStatistics?.displayInactiveDuration ??
+      '00:00:00';
+
+  String get displayAvgSpeed =>
+      liveTrackData.value?.todayStatistics?.avgSpeed?.toStringAsFixed(2) ??
+      '–';
+  String get displayMaxSpeed =>
+      liveTrackData.value?.todayStatistics?.maxSpeed?.toStringAsFixed(0) ??
+      '–';
 
   Color get displayStatusColor {
     final status =
@@ -1006,13 +1061,6 @@ class TrackController extends GetxController {
             math.sin(dLon / 2) *
             math.sin(dLon / 2);
     return radius * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)));
-  }
-
-  String _formatHours(num? hours) {
-    if (hours == null) return '00:00 hrs';
-    final h = hours.toInt();
-    final m = ((hours - h) * 60).toInt();
-    return "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} hrs";
   }
 
   /// Pull-to-refresh: optional snapshot catch-up only (keeps WebSocket alive).

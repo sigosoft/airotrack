@@ -606,7 +606,7 @@ class TrackView extends GetView<TrackController> {
                             Expanded(
                               child: _buildMetricCard(
                                 "Avg Speed",
-                                "–", // Placeholder
+                                controller.displayAvgSpeed,
                                 "Kmph",
                                 'lib/Asset/Icons/AVG speed.png',
                                 const Color(0xFF009FE3),
@@ -616,7 +616,7 @@ class TrackView extends GetView<TrackController> {
                             Expanded(
                               child: _buildMetricCard(
                                 "Max Speed",
-                                "–", // Placeholder
+                                controller.displayMaxSpeed,
                                 "Kmph",
                                 'lib/Asset/Icons/Max Distance.png',
                                 const Color(0xFFFF5252),

@@ -53,27 +53,30 @@ class LiveTrackData {
   });
 
   factory LiveTrackData.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic>? asMap(dynamic value) {
+      if (value is Map) return Map<String, dynamic>.from(value);
+      return null;
+    }
+
+    final vehicleMap = asMap(json['vehicle_info'] ?? json['vehicle']);
+    final positionMap =
+        asMap(json['current_position'] ?? json['position']);
+    final todayMap = asMap(json['today_statistics'] ?? json['today']);
+    final apiMap = asMap(json['current_position_api']);
+
     return LiveTrackData(
-      vehicleInfo: json['vehicle_info'] != null
-          ? LiveVehicleInfo.fromJson(
-              json['vehicle_info'] as Map<String, dynamic>,
-            )
+      vehicleInfo: vehicleMap != null
+          ? LiveVehicleInfo.fromJson(vehicleMap)
           : null,
-      currentPosition: json['current_position'] != null
-          ? LiveCurrentPosition.fromJson(
-              json['current_position'] as Map<String, dynamic>,
-            )
+      currentPosition: positionMap != null
+          ? LiveCurrentPosition.fromJson(positionMap)
           : null,
       currentStatus: json['current_status']?.toString(),
-      todayStatistics: json['today_statistics'] != null
-          ? LiveTodayStatistics.fromJson(
-              json['today_statistics'] as Map<String, dynamic>,
-            )
+      todayStatistics: todayMap != null
+          ? LiveTodayStatistics.fromJson(todayMap)
           : null,
-      currentPositionApi: json['current_position_api'] != null
-          ? LiveCurrentPositionApi.fromJson(
-              json['current_position_api'] as Map<String, dynamic>,
-            )
+      currentPositionApi: apiMap != null
+          ? LiveCurrentPositionApi.fromJson(apiMap)
           : null,
     );
   }
@@ -118,6 +121,10 @@ class LiveCurrentPosition {
   final int? ignition;
   final int? power;
   final String? kilometer;
+  final String? altitude;
+  final String? gsmSignalStrength;
+  final String? network;
+  final String? lastUpdate;
 
   const LiveCurrentPosition({
     this.id,
@@ -130,6 +137,10 @@ class LiveCurrentPosition {
     this.ignition,
     this.power,
     this.kilometer,
+    this.altitude,
+    this.gsmSignalStrength,
+    this.network,
+    this.lastUpdate,
   });
 
   factory LiveCurrentPosition.fromJson(Map<String, dynamic> json) {
@@ -140,10 +151,23 @@ class LiveCurrentPosition {
       latitude: json['latitude']?.toString(),
       longitude: json['longitude']?.toString(),
       mode: json['mode']?.toString(),
-      speed: json['speed'] as num?,
-      ignition: json['ignition'] as int?,
-      power: json['power'] as int?,
+      speed: json['speed'] is num
+          ? json['speed'] as num
+          : num.tryParse(json['speed']?.toString() ?? ''),
+      ignition: json['ignition'] is int
+          ? json['ignition'] as int
+          : int.tryParse(json['ignition']?.toString() ?? ''),
+      power: json['power'] is int
+          ? json['power'] as int
+          : int.tryParse(json['power']?.toString() ?? ''),
       kilometer: json['kilometer']?.toString(),
+      altitude: json['altitude']?.toString(),
+      gsmSignalStrength: (json['gsm_signal_strength'] ??
+              json['gsmSignalStrength'] ??
+              json['gsm'])
+          ?.toString(),
+      network: json['network']?.toString(),
+      lastUpdate: json['last_update']?.toString(),
     );
   }
 
@@ -167,24 +191,131 @@ class LiveCurrentPosition {
 }
 
 /// Today's overall statistics for the vehicle.
+///
+/// Supports both legacy live_track keys and live_track_snapshot `today` /
+/// `position` keys (`today_km`, `*_hours`, `*_seconds`, etc.).
 class LiveTodayStatistics {
+  final String? todayDate;
   final num? totalKilometersToday;
+  final num? maxSpeed;
+  final num? avgSpeed;
   final num? totalStopHours;
   final num? totalIdleHours;
+  final num? totalRunningHours;
+  final num? totalInactiveHours;
+  final int? runningSeconds;
+  final int? idleSeconds;
+  final int? stoppedSeconds;
+  final int? inactiveSeconds;
+  final String? runningHours;
+  final String? idleHours;
+  final String? stoppedHours;
+  final String? inactiveHours;
 
   const LiveTodayStatistics({
+    this.todayDate,
     this.totalKilometersToday,
+    this.maxSpeed,
+    this.avgSpeed,
     this.totalStopHours,
     this.totalIdleHours,
+    this.totalRunningHours,
+    this.totalInactiveHours,
+    this.runningSeconds,
+    this.idleSeconds,
+    this.stoppedSeconds,
+    this.inactiveSeconds,
+    this.runningHours,
+    this.idleHours,
+    this.stoppedHours,
+    this.inactiveHours,
   });
+
+  static num? _asNum(dynamic value) {
+    if (value is num) return value;
+    return num.tryParse(value?.toString() ?? '');
+  }
+
+  static int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
 
   factory LiveTodayStatistics.fromJson(Map<String, dynamic> json) {
     return LiveTodayStatistics(
-      totalKilometersToday: json['total_kilometers_today'] as num?,
-      totalStopHours: json['total_stop_hours'] as num?,
-      totalIdleHours: json['total_idle_hours'] as num?,
+      todayDate: json['today_date']?.toString(),
+      totalKilometersToday: _asNum(
+        json['today_km'] ?? json['total_kilometers_today'],
+      ),
+      maxSpeed: _asNum(json['max_speed']),
+      avgSpeed: _asNum(json['avg_speed']),
+      totalStopHours: _asNum(json['total_stop_hours']),
+      totalIdleHours: _asNum(json['total_idle_hours']),
+      totalRunningHours: _asNum(json['total_running_hours']),
+      totalInactiveHours: _asNum(json['total_inactive_hours']),
+      runningSeconds: _asInt(json['running_seconds']),
+      idleSeconds: _asInt(json['idle_seconds']),
+      stoppedSeconds: _asInt(json['stopped_seconds']),
+      inactiveSeconds: _asInt(json['inactive_seconds']),
+      runningHours: json['running_hours']?.toString(),
+      idleHours: json['idle_hours']?.toString(),
+      stoppedHours: json['stopped_hours']?.toString(),
+      inactiveHours: json['inactive_hours']?.toString(),
     );
   }
+
+  /// Prefer API HH:MM:SS string, then seconds, then decimal hours.
+  String formatDuration({
+    required String? hoursLabel,
+    required int? seconds,
+    required num? decimalHours,
+  }) {
+    final label = hoursLabel?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    if (seconds != null && seconds >= 0) {
+      final h = seconds ~/ 3600;
+      final m = (seconds % 3600) ~/ 60;
+      final s = seconds % 60;
+      return '${h.toString().padLeft(2, '0')}:'
+          '${m.toString().padLeft(2, '0')}:'
+          '${s.toString().padLeft(2, '0')}';
+    }
+    if (decimalHours != null) {
+      final totalSeconds = (decimalHours * 3600).round();
+      final h = totalSeconds ~/ 3600;
+      final m = (totalSeconds % 3600) ~/ 60;
+      final s = totalSeconds % 60;
+      return '${h.toString().padLeft(2, '0')}:'
+          '${m.toString().padLeft(2, '0')}:'
+          '${s.toString().padLeft(2, '0')}';
+    }
+    return '00:00:00';
+  }
+
+  String get displayRunningDuration => formatDuration(
+        hoursLabel: runningHours,
+        seconds: runningSeconds,
+        decimalHours: totalRunningHours,
+      );
+
+  String get displayIdleDuration => formatDuration(
+        hoursLabel: idleHours,
+        seconds: idleSeconds,
+        decimalHours: totalIdleHours,
+      );
+
+  String get displayStoppedDuration => formatDuration(
+        hoursLabel: stoppedHours,
+        seconds: stoppedSeconds,
+        decimalHours: totalStopHours,
+      );
+
+  String get displayInactiveDuration => formatDuration(
+        hoursLabel: inactiveHours,
+        seconds: inactiveSeconds,
+        decimalHours: totalInactiveHours,
+      );
 }
 
 /// The current_position_api nested object.
@@ -315,8 +446,18 @@ class LiveTrackSnapshotData {
       };
     }
 
-    if (json['today_statistics'] is Map<String, dynamic>) {
-      normalized['today_statistics'] = json['today_statistics'];
+    final todayRaw =
+        json['today'] ?? json['today_statistics'] ?? json['todayStatistics'];
+    if (todayRaw is Map) {
+      normalized['today_statistics'] = Map<String, dynamic>.from(todayRaw);
+    } else if (position is Map) {
+      // Fallback: snapshot may embed today_* fields on position.
+      final pos = Map<String, dynamic>.from(position);
+      if (pos.containsKey('today_km') ||
+          pos.containsKey('running_hours') ||
+          pos.containsKey('running_seconds')) {
+        normalized['today_statistics'] = pos;
+      }
     }
 
     final status = json['current_status'] ?? json['status'];
@@ -360,14 +501,15 @@ class LiveTrackSnapshotData {
 
   LiveTrackData toLiveTrackData() {
     if (trackData != null) {
+      // Prefer the raw `position` object (has gsm_signal_strength, network, etc.).
+      final mergedPosition = position ?? trackData!.currentPosition;
       return LiveTrackData(
         vehicleInfo: trackData!.vehicleInfo,
-        currentPosition: trackData!.currentPosition ?? position,
+        currentPosition: mergedPosition,
         currentStatus:
             trackData!.currentStatus ??
             status ??
-            trackData!.currentPosition?.derivedStatus ??
-            position?.derivedStatus,
+            mergedPosition?.derivedStatus,
         todayStatistics: trackData!.todayStatistics,
         currentPositionApi: trackData!.currentPositionApi,
       );

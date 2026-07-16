@@ -10,7 +10,6 @@ import '../../../../Configs/DioClient.dart';
 import '../../../../Utils/Utils.dart';
 import '../../../../Services/LiveTrackWebSocketService.dart';
 import '../../../../Services/DirectionsService.dart';
-
 /// Live tracking flow (snapshot once + WebSocket only):
 /// 1. User selects vehicle on live track screen (IMEI from route).
 /// 2. GET /website/live_track_snapshot?imei= once (Bearer via DioClient).
@@ -30,10 +29,17 @@ class TrackController extends GetxController {
   final liveTrackData = Rxn<LiveTrackData>();
   final isLiveLoading = false.obs;
 
+  /// Published to UI (throttled). Glide math uses [_animLat]/[_animLng].
   final animatedLat = 0.0.obs;
   final animatedLng = 0.0.obs;
   final animatedRotation = 0.0.obs;
   final reactiveMarkers = <Marker>[].obs;
+
+  /// High-frequency glide position (does not notify GetX every frame).
+  double _animLat = 0.0;
+  double _animLng = 0.0;
+  DateTime? _lastUiSync;
+  LatLng? _lastUiSyncPoint;
 
   final MapController mapController = MapController();
   final showBottomSheet = true.obs;
@@ -81,14 +87,21 @@ class TrackController extends GetxController {
   DateTime? _lastGlideTime;
   DateTime? _lastGpsTime;
   DateTime? _lastCameraMove;
-  static const int _cameraMoveIntervalMs = 50;
-  static const double _gpsJitterMeters = 2.0;
+  static const int _cameraMoveIntervalMs = 100;
+  /// Cap map/GetX marker rebuilds (~12–15 fps). Prevents ANR/GPU buffer spam.
+  static const int _uiSyncMinMs = 70;
+  static const double _uiSyncMinMeters = 0.2;
+  /// Ignore GPS noise while stopped — prevents marker vibration.
+  static const double _stoppedGpsDeadbandM = 8.0;
+  /// Slow forward roll while device reports speed 0 (~1.3 km/h).
+  static const double _stoppedCreepMs = 0.35;
+  /// Max distance past last GPS while stopped (avoids endless park drift).
+  static const double _stoppedCreepMaxLeadM = 20.0;
   static const double _minRotationChangeDeg = 22.0;
   static const double _minGpsBearingMoveM = 5.0;
-  static const double _frameSeconds = 0.016;
+  static const double _frameSeconds = 0.033;
   /// Minimum roll speed between WS pings (~1.8 km/h).
   static const double _wsWaitCreepMinMs = 0.5;
-  static const double _movingGpsDeltaM = 0.4;
 
   /// Device-reported speed (km/h) from latest WS ping. Stop only when 0.
   double _lastReportedSpeedKmh = 0.0;
@@ -102,6 +115,11 @@ class TrackController extends GetxController {
   final fenceNameController = TextEditingController();
   final fenceNameError = RxnString();
   final selectedShareOption = '24h'.obs;
+  final isUpdatingOdometer = false.obs;
+  /// Light odometer source for UI (avoids rewriting all liveTrackData on update).
+  final odometerKm = Rxn<num>();
+  /// Pause marker UI sync while an input sheet is open (prevents ANR with IME).
+  bool _pauseMarkerUi = false;
 
   void updateShareOption(String value) => selectedShareOption.value = value;
 
@@ -155,8 +173,8 @@ class TrackController extends GetxController {
       final rawBody = response.data;
       if (rawBody is! Map) {
         debugPrint('❌ LiveTrack: invalid snapshot response');
-        return;
-      }
+      return;
+    }
       final body = Map<String, dynamic>.from(rawBody);
 
       final snapshot = LiveTrackSnapshotModel.fromJson(body);
@@ -170,13 +188,14 @@ class TrackController extends GetxController {
       _wsInfo = data.websocket;
 
       liveTrackData.value = data.toLiveTrackData();
+      _syncOdometerKm(liveTrackData.value?.currentPosition?.odometer);
       if (reconnectOnly) {
         final pos = liveTrackData.value?.currentPosition;
         final lat = double.tryParse(pos?.latitude ?? '');
         final lng = double.tryParse(pos?.longitude ?? '');
-        if (lat != null && lng != null && animatedLat.value != 0.0) {
+        if (lat != null && lng != null && _animLat != 0.0) {
           final snap = LatLng(lat, lng);
-          final current = LatLng(animatedLat.value, animatedLng.value);
+          final current = LatLng(_animLat, _animLng);
           final lag = _calculateDistance(current, snap);
           if (lag > _reconnectSnapMeters && _isForwardOf(snap, current)) {
             _snapMarkerTo(
@@ -219,9 +238,8 @@ class TrackController extends GetxController {
     final location = LatLng(lat, lng);
     final speed = pos?.speed?.toDouble() ?? 0.0;
 
-    if (isInitial || animatedLat.value == 0.0 || animatedLng.value == 0.0) {
-      animatedLat.value = lat;
-      animatedLng.value = lng;
+    if (isInitial || _animLat == 0.0 || _animLng == 0.0) {
+      _setAnimPosition(lat, lng, publish: true);
       _liveTarget = location;
       _lastAcceptedGps = location;
       _lastGpsTime = DateTime.now();
@@ -233,7 +251,6 @@ class TrackController extends GetxController {
           ? (speed / 3.6).clamp(_wsWaitCreepMinMs, _maxGlideSpeedMs)
           : 0.0;
       _updateMovementSpeed(speed, pos?.derivedStatus ?? 'Stopped', mode: pos?.mode);
-      _updateMarkers();
       if (!_hasInitialCameraFocus && isLocked.value) {
         _hasInitialCameraFocus = true;
         moveMapToVehicle(snap: true, resetZoom: true);
@@ -322,6 +339,10 @@ class TrackController extends GetxController {
         mode: data['mode']?.toString(),
         kilometer: data['kilometer']?.toString() ??
             existing?.currentPosition?.kilometer,
+        odometer: data['odometer'] is num
+            ? data['odometer'] as num
+            : num.tryParse(data['odometer']?.toString() ?? '') ??
+                existing?.currentPosition?.odometer,
         altitude: data['altitude']?.toString() ??
             existing?.currentPosition?.altitude,
         gsmSignalStrength: data['gsm_signal_strength']?.toString() ??
@@ -342,6 +363,7 @@ class TrackController extends GetxController {
         todayStatistics: existing?.todayStatistics,
         currentPositionApi: existing?.currentPositionApi,
       );
+      _syncOdometerKm(pos.odometer);
 
       _onDevicePosition(
         LatLng(lat, lng),
@@ -378,9 +400,13 @@ class TrackController extends GetxController {
     }
     _lastGpsDeltaM = gpsDeltaM;
 
-    _isMovingVehicle = reportedKmH > 0 ||
-        speedKmH >= 1.5 ||
-        gpsDeltaM >= _movingGpsDeltaM;
+    // Device-reported speed gates "live tracking" vs "stopped crawl".
+    // GPS jitter alone must not flip into full chase (that caused vibration).
+    if (reportedKmH <= 0) {
+      _isMovingVehicle = false;
+    } else {
+      _isMovingVehicle = true;
+    }
 
     _updateMovementSpeed(
       _isMovingVehicle ? math.max(speedKmH, reportedKmH) : 0,
@@ -388,12 +414,35 @@ class TrackController extends GetxController {
       mode: mode,
     );
 
-    if (previousGps != null) {
-      final delta = gpsDeltaM;
-      if (delta < _gpsJitterMeters && !_isMovingVehicle) {
+    if (!_isMovingVehicle) {
+      // Keep a gentle crawl rate; ignore tiny GPS noise so the marker
+      // doesn't vibrate by chasing the target back and forth.
+      _smoothedGlideSpeedMs = _stoppedCreepMs;
+      if (previousGps != null && gpsDeltaM < _stoppedGpsDeadbandM) {
         _lastGpsTime = now;
         return;
       }
+      // Meaningful update while speed is 0 — accept new track point and
+      // slowly follow it (next frames use soft-follow in the glide loop).
+      if (previousGpsTime != null) {
+        final interval =
+            now.difference(previousGpsTime).inMilliseconds / 1000.0;
+        if (interval >= 0.8 && interval < 60.0) {
+          _expectedPingSec = _expectedPingSec * 0.65 + interval * 0.35;
+        }
+      }
+      _updateHeadingFromMovement(
+        location,
+        previousGps: previousGps,
+        courseDeg: courseDeg,
+      );
+      _lastAcceptedGps = location;
+      _lastGpsTime = now;
+      _liveTarget = location;
+      return;
+    }
+
+    if (previousGps != null) {
       if (previousGpsTime != null) {
         final interval =
             now.difference(previousGpsTime).inMilliseconds / 1000.0;
@@ -419,12 +468,10 @@ class TrackController extends GetxController {
     _lastAcceptedGps = location;
     _lastGpsTime = now;
     _liveTarget = location;
-    if (_isMovingVehicle) {
-      _smoothedGlideSpeedMs = math.max(
-        _smoothedGlideSpeedMs,
-        _wsWaitCreepMinMs,
-      );
-    }
+    _smoothedGlideSpeedMs = math.max(
+      _smoothedGlideSpeedMs,
+      _wsWaitCreepMinMs,
+    );
 
     if (previousGps != null) {
       _requestRoadSpeedFactor(previousGps, location);
@@ -437,8 +484,7 @@ class TrackController extends GetxController {
     String? status,
     String? mode,
   }) {
-    animatedLat.value = location.latitude;
-    animatedLng.value = location.longitude;
+    _setAnimPosition(location.latitude, location.longitude, publish: true);
     _liveTarget = location;
     _lastAcceptedGps = location;
     _lastGpsTime = DateTime.now();
@@ -446,8 +492,68 @@ class TrackController extends GetxController {
     _lastInferredSpeedKmh = speedKmH;
     _isMovingVehicle = speedKmH > 0;
     _updateMovementSpeed(speedKmH, status ?? 'Stopped', mode: mode);
-    _syncMarkerPosition();
     if (isLocked.value) _maybeMoveCameraToVehicle();
+  }
+
+  void _setAnimPosition(double lat, double lng, {bool publish = false}) {
+    _animLat = lat;
+    _animLng = lng;
+    if (publish) _publishAnim(force: true);
+  }
+
+  /// Push glide position to GetX / map marker at a capped rate.
+  void _publishAnim({bool force = false}) {
+    if (_animLat == 0.0 && _animLng == 0.0) return;
+    if (_pauseMarkerUi && !force) return;
+
+    final point = LatLng(_animLat, _animLng);
+    final now = DateTime.now();
+    if (!force && _lastUiSyncPoint != null && _lastUiSync != null) {
+      final dtMs = now.difference(_lastUiSync!).inMilliseconds;
+      final moved = _calculateDistance(_lastUiSyncPoint!, point);
+      if (dtMs < _uiSyncMinMs && moved < 1.5) return;
+      if (moved < _uiSyncMinMeters && dtMs < 250) return;
+    }
+
+    _lastUiSync = now;
+    _lastUiSyncPoint = point;
+    animatedLat.value = _animLat;
+    animatedLng.value = _animLng;
+    _syncMarkerPosition();
+  }
+
+  void setInputSheetOpen(bool open) {
+    _pauseMarkerUi = open;
+    if (open) {
+      // Fully stop glide while IME/sheet is open — timer+rebuild was ANRing.
+      _animationTimer?.cancel();
+      _animationTimer = null;
+      return;
+    }
+    if (!_disposed) {
+      _startAnimationLoop();
+      Future<void>.delayed(const Duration(milliseconds: 150), () {
+        if (!_disposed && !_pauseMarkerUi) {
+          _publishAnim(force: true);
+        }
+      });
+    }
+  }
+
+  void applyOdometerLocal(num value) {
+    odometerKm.value = value;
+  }
+
+  void clearOdometerUpdating() {
+    if (isUpdatingOdometer.value) {
+      isUpdatingOdometer.value = false;
+    }
+  }
+
+  void _syncOdometerKm(num? value) {
+    if (value == null) return;
+    if (odometerKm.value == value) return;
+    odometerKm.value = value;
   }
 
   /// Mapbox route length vs straight GPS line — roads are longer, so boost glide speed.
@@ -515,9 +621,9 @@ class TrackController extends GetxController {
     }
 
     if (_liveTarget != null &&
-        animatedLat.value != 0.0 &&
+        _animLat != 0.0 &&
         distToGps >= _catchUpMinLagMeters) {
-      final current = LatLng(animatedLat.value, animatedLng.value);
+      final current = LatLng(_animLat, _animLng);
       if (!_hasHeading || !_isBehind(current, _liveTarget!)) {
         ms = math.max(ms, distToGps / _catchUpWindowSec);
       }
@@ -536,16 +642,16 @@ class TrackController extends GetxController {
     if (step <= 0) return;
 
     if (distToGps > 0.2) {
-      final before = LatLng(animatedLat.value, animatedLng.value);
+      final before = LatLng(_animLat, _animLng);
       _nudgeToward(gpsTarget, math.min(step, distToGps));
-      final after = LatLng(animatedLat.value, animatedLng.value);
+      final after = LatLng(_animLat, _animLng);
       if (_calculateDistance(before, after) >= 0.001) return;
     }
 
-    final anchor = LatLng(animatedLat.value, animatedLng.value);
+    final anchor = LatLng(_animLat, _animLng);
     final next = _offsetMeters(anchor, bearing, step);
-    animatedLat.value = next.latitude;
-    animatedLng.value = next.longitude;
+    _animLat = next.latitude;
+    _animLng = next.longitude;
   }
 
   LatLng _offsetMeters(LatLng from, double bearingDeg, double meters) {
@@ -571,8 +677,8 @@ class TrackController extends GetxController {
         movementBearing = _getBearing(previousGps, location);
       }
     }
-    if (movementBearing == null && animatedLat.value != 0.0) {
-      final current = LatLng(animatedLat.value, animatedLng.value);
+    if (movementBearing == null && _animLat != 0.0) {
+      final current = LatLng(_animLat, _animLng);
       final moved = _calculateDistance(current, location);
       if (moved >= _minGpsBearingMoveM) {
         movementBearing = _getBearing(current, location);
@@ -626,9 +732,9 @@ class TrackController extends GetxController {
   /// Stale GPS that would pull the marker backward after we've already glided ahead.
   /// Does not block genuine reverse — only lag/jitter behind the animated position.
   bool _isLikelySnapBack(LatLng location, LatLng previousGps) {
-    if (!_hasHeading || animatedLat.value == 0.0) return false;
+    if (!_hasHeading || _animLat == 0.0) return false;
 
-    final animated = LatLng(animatedLat.value, animatedLng.value);
+    final animated = LatLng(_animLat, _animLng);
     if (!_isBehind(animated, location)) return false;
 
     final lagM = _calculateDistance(animated, location);
@@ -672,8 +778,8 @@ class TrackController extends GetxController {
   }
 
   void _nudgeToward(LatLng target, double meters) {
-    final lat = animatedLat.value;
-    final lng = animatedLng.value;
+    final lat = _animLat;
+    final lng = _animLng;
     if (lat == 0.0 && lng == 0.0) return;
 
     final dist = _calculateDistance(LatLng(lat, lng), target);
@@ -681,35 +787,30 @@ class TrackController extends GetxController {
 
     final step = math.min(meters, dist);
     final fraction = step / dist;
-    animatedLat.value = lat + (target.latitude - lat) * fraction;
-    animatedLng.value = lng + (target.longitude - lng) * fraction;
+    _animLat = lat + (target.latitude - lat) * fraction;
+    _animLng = lng + (target.longitude - lng) * fraction;
   }
 
   void _glideTowardTarget() {
-    if (animatedLat.value == 0.0 && animatedLng.value == 0.0) return;
+    if (_animLat == 0.0 && _animLng == 0.0) return;
 
     final now = DateTime.now();
     final dtSec = _lastGlideTime == null
         ? _frameSeconds
         : now.difference(_lastGlideTime!).inMicroseconds / 1000000.0;
     _lastGlideTime = now;
-    final dt = dtSec.clamp(0.008, 0.05);
+    final dt = dtSec.clamp(0.016, 0.08);
 
     _roadSpeedFactor +=
         (_targetRoadSpeedFactor - _roadSpeedFactor) * 0.06;
 
-    final current = LatLng(animatedLat.value, animatedLng.value);
+    final current = LatLng(_animLat, _animLng);
 
     if (_liveTarget == null) return;
 
+    // Device stopped: slow forward crawl, and soft-follow if a new GPS update arrived.
     if (!_shouldKeepMoving()) {
-      final settleDist = _distanceToLiveGps(current);
-      if (settleDist > 0.05) {
-        _nudgeToward(_liveTarget!, math.min(0.6 * dt, settleDist));
-      }
-      _smoothedGlideSpeedMs = 0;
-      _syncMarkerPosition();
-      if (isLocked.value) _maybeMoveCameraToVehicle();
+      _advanceWhileStopped(current, dt);
       return;
     }
 
@@ -734,13 +835,42 @@ class TrackController extends GetxController {
       distToGps: distToGps,
     );
 
-    _syncMarkerPosition();
+    _publishAnim();
+    if (isLocked.value) _maybeMoveCameraToVehicle();
+  }
+
+  /// While speed is 0: slowly roll forward; if GPS was updated, ease toward it.
+  void _advanceWhileStopped(LatLng current, double dt) {
+    _smoothedGlideSpeedMs = _stoppedCreepMs;
+    final distToGps = _distanceToLiveGps(current);
+
+    // New track point while stopped — slowly follow tracking toward it.
+    if (distToGps > 1.5) {
+      final step = math.min(_stoppedCreepMs * 1.5 * dt, distToGps);
+      _nudgeToward(_liveTarget!, step);
+      _publishAnim();
+      if (isLocked.value) _maybeMoveCameraToVehicle();
+      return;
+    }
+
+    // Near last GPS: keep a gentle forward roll so it doesn't look frozen,
+    // but don't drift endlessly past the last accepted point.
+    if (!_hasHeading) return;
+    final lead = _lastAcceptedGps == null
+        ? 0.0
+        : _calculateDistance(current, _lastAcceptedGps!);
+    if (lead >= _stoppedCreepMaxLeadM) return;
+
+    final next = _offsetMeters(current, _lockedBearing, _stoppedCreepMs * dt);
+    _animLat = next.latitude;
+    _animLng = next.longitude;
+    _publishAnim();
     if (isLocked.value) _maybeMoveCameraToVehicle();
   }
 
   void _startAnimationLoop() {
     _animationTimer?.cancel();
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+    _animationTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
       if (_disposed) return;
       _glideTowardTarget();
     });
@@ -820,8 +950,8 @@ class TrackController extends GetxController {
     isLocked.value = true;
     if (resetZoom) _userAdjustedZoom = false;
 
-    final lat = animatedLat.value;
-    final lng = animatedLng.value;
+    final lat = _animLat != 0.0 ? _animLat : animatedLat.value;
+    final lng = _animLng != 0.0 ? _animLng : animatedLng.value;
     if (lat == 0.0 || lng == 0.0) return;
 
     double zoom = _followZoom;
@@ -832,10 +962,10 @@ class TrackController extends GetxController {
     }
 
     var center = LatLng(lat, lng);
-    if (showBottomSheet.value) {
+      if (showBottomSheet.value) {
       final latOffset = 0.006 * math.pow(2, 15.0 - zoom);
-      center = LatLng(lat - latOffset, lng);
-    }
+        center = LatLng(lat - latOffset, lng);
+      }
 
     if (snap || _smoothCameraLat == 0.0) {
       _smoothCameraLat = center.latitude;
@@ -853,7 +983,7 @@ class TrackController extends GetxController {
         LatLng(_smoothCameraLat, _smoothCameraLng),
         zoom,
       );
-    } catch (_) {}
+      } catch (_) {}
   }
 
   void toggleBottomSheet() => showBottomSheet.value = !showBottomSheet.value;
@@ -918,6 +1048,23 @@ class TrackController extends GetxController {
       liveTrackData.value?.todayStatistics?.totalKilometersToday
           ?.toStringAsFixed(2) ??
       '0.00';
+  /// Odometer km from `position.odometer`.
+  String get displayOdometer {
+    final value =
+        odometerKm.value ?? liveTrackData.value?.currentPosition?.odometer;
+    if (value == null) return '0.00';
+    return value.toStringAsFixed(2);
+  }
+
+  /// 8 digit columns under the plate — whole km from `position.odometer`.
+  String get displayOdometerDigits {
+    final value =
+        odometerKm.value ?? liveTrackData.value?.currentPosition?.odometer ?? 0;
+    final wholeKm = value.floor().clamp(0, 99999999);
+    return wholeKm.toString().padLeft(8, '0');
+  }
+
+  /// Total traveled km (`position.kilometer`), not the device odometer.
   String get displayTotalKm {
     final fromVehicle =
         liveTrackData.value?.vehicleInfo?.totalKilometersTraveled;
@@ -962,8 +1109,8 @@ class TrackController extends GetxController {
   }
 
   void _syncMarkerPosition() {
-    final lat = animatedLat.value;
-    final lng = animatedLng.value;
+    final lat = _animLat != 0.0 ? _animLat : animatedLat.value;
+    final lng = _animLng != 0.0 ? _animLng : animatedLng.value;
     if (lat == 0.0 && lng == 0.0) {
       if (reactiveMarkers.isNotEmpty) reactiveMarkers.clear();
       return;
@@ -982,56 +1129,54 @@ class TrackController extends GetxController {
   Marker _buildVehicleMarker(LatLng point) {
     return Marker(
       point: point,
-      width: 100,
-      height: 100,
-      child: GestureDetector(
+        width: 100,
+        height: 100,
+        child: GestureDetector(
         onTap: toggleBottomSheet,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Obx(
-              () => Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: displayStatusColor,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  displayPlate,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Obx(
+                () => Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: displayStatusColor,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    displayPlate,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const Icon(
-              Icons.arrow_drop_down,
-              size: 12,
-              color: Colors.black54,
-            ),
-            Obx(
-              () => Transform.rotate(
-                angle: (animatedRotation.value - 45) * (math.pi / 180),
-                child: Image.asset(
-                  'lib/Asset/Icons/Track Vehicle.png',
-                  width: 50,
-                  height: 50,
-                  fit: BoxFit.contain,
+              const Icon(
+                Icons.arrow_drop_down,
+                size: 12,
+                color: Colors.black54,
+              ),
+              Obx(
+                () => Transform.rotate(
+                  angle: (animatedRotation.value - 45) * (math.pi / 180),
+                  child: Image.asset(
+                    'lib/Asset/Icons/Track Vehicle.png',
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
     );
   }
-
-  void _updateMarkers() => _syncMarkerPosition();
 
   RxList<Marker> get mapMarkers => reactiveMarkers;
 
@@ -1061,6 +1206,64 @@ class TrackController extends GetxController {
             math.sin(dLon / 2) *
             math.sin(dLon / 2);
     return radius * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)));
+  }
+
+  /// POST update_odometer — body: { imei, odometer }
+  /// On success returns the new value; caller must close sheet BEFORE applying UI.
+  Future<({bool ok, num? value, String message})> updateOdometer(
+    String odometerInput,
+  ) async {
+    final imei = vehicleImei.value.trim();
+    final trimmed = odometerInput.trim();
+    final value = num.tryParse(trimmed);
+
+    if (imei.isEmpty) {
+      showErrorMessage('Vehicle IMEI is missing');
+      return (ok: false, value: null, message: 'Vehicle IMEI is missing');
+    }
+    if (value == null || value < 0) {
+      showErrorMessage('Enter a valid odometer value');
+      return (ok: false, value: null, message: 'Enter a valid odometer value');
+    }
+    if (isUpdatingOdometer.value) {
+      return (ok: false, value: null, message: 'Already updating');
+    }
+
+    isUpdatingOdometer.value = true;
+    try {
+      final response = await DioClient().post(
+        ApiEndPoints.updateOdometer,
+        body: {
+          'imei': imei,
+          'odometer': value,
+        },
+      );
+
+      final raw = response.data;
+      final ok = raw is Map
+          ? (raw['status'] == true ||
+              raw['success'] == true ||
+              response.statusCode == 200)
+          : response.statusCode == 200;
+
+      if (!ok) {
+        final msg = raw is Map
+            ? (raw['message']?.toString() ?? 'Failed to update odometer')
+            : 'Failed to update odometer';
+        showErrorMessage(msg);
+        clearOdometerUpdating();
+        return (ok: false, value: null, message: msg);
+      }
+
+      final msg = (raw is Map ? raw['message']?.toString() : null) ??
+          'Odometer updated';
+      // No UI mutations here — applying while modal is open was freezing the app.
+      return (ok: true, value: value, message: msg);
+    } catch (e) {
+      showErrorMessage(e);
+      clearOdometerUpdating();
+      return (ok: false, value: null, message: e.toString());
+    }
   }
 
   /// Pull-to-refresh: optional snapshot catch-up only (keeps WebSocket alive).
@@ -1099,6 +1302,12 @@ class TrackController extends GetxController {
     _routeRequestId = 0;
     _lockedBearing = 0;
     _hasHeading = false;
+    _animLat = 0;
+    _animLng = 0;
+    _lastUiSync = null;
+    _lastUiSyncPoint = null;
+    _pauseMarkerUi = false;
+    odometerKm.value = null;
     animatedLat.value = 0;
     animatedLng.value = 0;
     animatedRotation.value = 0;

@@ -25,4 +25,5 @@ class ApiEndPoints {
   static String vehicleHistory = "track_vehicle";
   static String liveTrack = "live_track";
   static String liveTrackSnapshot = "live_track_snapshot";
+  static String updateOdometer = "update_odometer";
 }

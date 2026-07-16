@@ -121,6 +121,8 @@ class LiveCurrentPosition {
   final int? ignition;
   final int? power;
   final String? kilometer;
+  /// Device odometer km from `position.odometer`.
+  final num? odometer;
   final String? altitude;
   final String? gsmSignalStrength;
   final String? network;
@@ -137,6 +139,7 @@ class LiveCurrentPosition {
     this.ignition,
     this.power,
     this.kilometer,
+    this.odometer,
     this.altitude,
     this.gsmSignalStrength,
     this.network,
@@ -161,6 +164,9 @@ class LiveCurrentPosition {
           ? json['power'] as int
           : int.tryParse(json['power']?.toString() ?? ''),
       kilometer: json['kilometer']?.toString(),
+      odometer: json['odometer'] is num
+          ? json['odometer'] as num
+          : num.tryParse(json['odometer']?.toString() ?? ''),
       altitude: json['altitude']?.toString(),
       gsmSignalStrength: (json['gsm_signal_strength'] ??
               json['gsmSignalStrength'] ??

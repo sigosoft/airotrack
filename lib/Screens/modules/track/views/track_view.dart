@@ -11,15 +11,13 @@ class TrackView extends GetView<TrackController> {
 
   @override
   Widget build(BuildContext context) {
-    // Ensure keyboard is dismissed when entering track page
-    FocusManager.instance.primaryFocus?.unfocus();
-
     final width = MediaQuery.of(context).size.width;
     final height = MediaQuery.of(context).size.height;
     return SafeArea(
       top: false,
       child: Scaffold(
         backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
             // 1. Map Background
@@ -378,15 +376,13 @@ class TrackView extends GetView<TrackController> {
                               ),
                               SizedBox(height: height * 0.01),
                               Obx(() {
-                                final imei = controller.vehicleImei.value;
-                                // Show last 8 digits of IMEI to fit design
-                                final displayImei = imei.length > 8
-                                    ? imei.substring(imei.length - 8)
-                                    : imei;
+                                // Digits under plate = position.odometer (8 columns)
+                                controller.odometerKm.value;
+                                final digits = controller.displayOdometerDigits;
                                 return Row(
                                   children: List.generate(
-                                    displayImei.length,
-                                    (index) => _buildIdBox(displayImei[index]),
+                                    digits.length,
+                                    (index) => _buildIdBox(digits[index]),
                                   ),
                                 );
                               }),
@@ -434,62 +430,6 @@ class TrackView extends GetView<TrackController> {
                           child: Image.asset(
                             'lib/Asset/Images/Green Car.png',
                             fit: BoxFit.contain,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    Row(
-                      children: [
-                        Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: width * 0.03,
-                            vertical: height * 0.012,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF7F8FA),
-                            borderRadius: BorderRadius.circular(width * 0.02),
-                          ),
-                          child: Obx(
-                            () => Text(
-                              "${controller.displayLatitude} ${controller.displayLongitude}",
-                              style: TextStyle(
-                                color: const Color(0xFF009FE3),
-                                fontSize: width * 0.029,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: width * 0.03),
-                        Expanded(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Image.asset(
-                                'lib/Asset/Icons/Location.png',
-                                width: width * 0.053,
-                                height: width * 0.053,
-                                color: Colors.black54,
-                              ),
-                              SizedBox(width: width * 0.015),
-                              Expanded(
-                                child: Obx(
-                                  () => Text(
-                                    controller.displayLatitude != '–'
-                                        ? "Coordinates: ${controller.displayLatitude}, ${controller.displayLongitude}"
-                                        : "Address information unavailable",
-                                    style: TextStyle(
-                                      fontSize: width * 0.027,
-                                      color: Colors.black,
-                                      height: 1.3,
-                                    ),
-                                    maxLines: 2,
-                                  ),
-                                ),
-                              ),
-                            ],
                           ),
                         ),
                       ],
@@ -1218,88 +1158,174 @@ class TrackView extends GetView<TrackController> {
   }
 
   void _showUpdateOdometerDialog(BuildContext context) {
-    showDialog(
+    final odometerController = TextEditingController(
+      text: controller.displayOdometer == '0.00'
+          ? ''
+          : controller.displayOdometer,
+    );
+    final focusNode = FocusNode();
+    var disposed = false;
+    var submitting = false;
+
+    controller.setInputSheetOpen(true);
+
+    // Modal sheet + root navigator avoids IME fight with DraggableScrollableSheet.
+    showModalBottomSheet<void>(
       context: context,
-      builder: (context) {
-        final width = MediaQuery.of(context).size.width;
-        final height = MediaQuery.of(context).size.height;
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: EdgeInsets.symmetric(horizontal: width * 0.028),
-          child: Container(
-            width: width * 0.95,
-            height: height * 0.2,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(width * 0.035),
-            ),
-            child: Stack(
-              children: [
-                Positioned(
-                  top: height * 0.018,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: Text(
-                      "Update Odometer",
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setModalState) {
+            final width = MediaQuery.of(sheetContext).size.width;
+            final bottomInset = MediaQuery.viewInsetsOf(sheetContext).bottom;
+
+            Future<void> submit() async {
+              if (submitting) return;
+              submitting = true;
+              setModalState(() {});
+              FocusManager.instance.primaryFocus?.unfocus();
+
+              final result =
+                  await controller.updateOdometer(odometerController.text);
+
+              if (!result.ok) {
+                submitting = false;
+                controller.clearOdometerUpdating();
+                if (sheetContext.mounted) setModalState(() {});
+                return;
+              }
+
+              // Success: close first, then apply UI.
+              if (sheetContext.mounted) {
+                Navigator.pop(sheetContext);
+              }
+              await Future<void>.delayed(const Duration(milliseconds: 80));
+              controller.clearOdometerUpdating();
+              controller.applyOdometerLocal(result.value!);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result.message),
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: Container(
+                width: width,
+                padding: EdgeInsets.fromLTRB(
+                  width * 0.05,
+                  width * 0.04,
+                  width * 0.05,
+                  width * 0.05 + MediaQuery.paddingOf(sheetContext).bottom,
+                ),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Text(
+                      'Update Odometer',
                       style: TextStyle(
                         fontSize: width * 0.04,
                         fontWeight: FontWeight.bold,
                         color: Colors.black,
                       ),
                     ),
-                  ),
-                ),
-                Positioned(
-                  top: height * 0.068,
-                  left: width * 0.06,
-                  child: Container(
-                    width: width * 0.82,
-                    height: height * 0.047,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F5F5),
-                      borderRadius: BorderRadius.circular(width * 0.008),
-                    ),
-                    child: TextField(
-                      style: TextStyle(fontSize: width * 0.035),
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: width * 0.025,
-                          vertical: height * 0.01,
+                    SizedBox(height: width * 0.045),
+                    Container(
+                      height: 48,
+                      alignment: Alignment.centerLeft,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(width * 0.008),
+                      ),
+                      child: TextField(
+                        controller: odometerController,
+                        focusNode: focusNode,
+                        enabled: !submitting,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
                         ),
+                        textInputAction: TextInputAction.done,
+                        style: TextStyle(fontSize: width * 0.035),
+                        decoration: InputDecoration(
+                          hintText: 'Enter odometer (km)',
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: width * 0.03,
+                            vertical: 12,
+                          ),
+                        ),
+                        onSubmitted: (_) => submit(),
                       ),
                     ),
-                  ),
+                    SizedBox(height: width * 0.05),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildShareActionButton(
+                            'Cancel',
+                            isSelected: false,
+                            width: double.infinity,
+                            onTap: submitting
+                                ? () {}
+                                : () => Navigator.pop(sheetContext),
+                          ),
+                        ),
+                        SizedBox(width: width * 0.04),
+                        Expanded(
+                          child: _buildShareActionButton(
+                            submitting ? 'Updating...' : 'Update',
+                            isSelected: true,
+                            width: double.infinity,
+                            onTap: submitting ? () {} : submit,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                Positioned(
-                  bottom: height * 0.018,
-                  left: width * 0.06,
-                  right: width * 0.06,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildShareActionButton(
-                        "Cancel",
-                        isSelected: false,
-                        onTap: () => Navigator.pop(context),
-                      ),
-                      _buildShareActionButton(
-                        "Update",
-                        isSelected: true,
-                        onTap: () {
-                          Navigator.pop(context);
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
-    );
+    ).whenComplete(() {
+      disposed = true;
+      controller.clearOdometerUpdating();
+      // Resume marker loop after sheet teardown settles.
+      Future<void>.delayed(const Duration(milliseconds: 120), () {
+        controller.setInputSheetOpen(false);
+      });
+      focusNode.dispose();
+      odometerController.dispose();
+    });
+
+    // Focus after the sheet is laid out (avoids IME show→cancel race).
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      if (!disposed && focusNode.canRequestFocus) {
+        focusNode.requestFocus();
+      }
+    });
   }
 
   void _showOverspeedLimitDialog(BuildContext context) {

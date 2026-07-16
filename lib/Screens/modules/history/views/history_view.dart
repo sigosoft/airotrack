@@ -110,6 +110,15 @@ class HistoryView extends GetView<HistoryController> {
               vehicleNameOrId: routeVehicleId,
             );
             debugPrint('The emi number is: $resolvedImei');
+            // Ensure Today range is applied and history loads if imei arrived late.
+            if (resolvedImei.isNotEmpty) {
+              if (controller.fromDate.value == '-:-' ||
+                  controller.toDate.value == '-:-') {
+                controller.updateDateRange('Today');
+              } else {
+                controller.getHistoryOnce(resolvedImei);
+              }
+            }
           },
           builder: (controller) => LayoutBuilder(
             builder: (context, constraints) {
@@ -125,8 +134,13 @@ class HistoryView extends GetView<HistoryController> {
                     () => HistoryMapLayer(
                       initialCenter: controller.initialMapCenter,
                       initialZoom: controller.initialMapZoom,
+                      mapController: controller.mapController,
                       polylinePoints: controller.polylinePoints,
                       markerPoints: controller.mapMarkerPoints,
+                      stopLocations: controller.stopLocations.toList(),
+                      selectedStopIndex: controller.selectedStopIndex.value,
+                      showStopMarkers: controller.showStopMarkers.value,
+                      onStopTap: controller.selectStop,
                       movingMarkerPosition:
                           controller.movingMarkerPosition.value,
                       movingMarkerBearing: controller.movingMarkerBearing.value,
@@ -156,7 +170,17 @@ class HistoryView extends GetView<HistoryController> {
                           ),
                         ),
                         SizedBox(height: sideBtnSpacing),
-                        HistorySideButton(text: "P", textColor: Colors.green),
+                        GestureDetector(
+                          onTap: controller.toggleStopMarkers,
+                          child: Obx(
+                            () => HistorySideButton(
+                              text: 'P',
+                              textColor: controller.showStopMarkers.value
+                                  ? Colors.red
+                                  : Colors.green,
+                            ),
+                          ),
+                        ),
                         SizedBox(height: sideBtnSpacing),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -168,12 +192,20 @@ class HistoryView extends GetView<HistoryController> {
                           ),
                         ),
                         SizedBox(height: sideBtnSpacing),
-                        HistorySideButton(
-                          assetPath: 'lib/Asset/Icons/zoomin.png',
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: controller.zoomIn,
+                          child: HistorySideButton(
+                            assetPath: 'lib/Asset/Icons/zoomin.png',
+                          ),
                         ),
                         SizedBox(height: sideBtnSpacing),
-                        HistorySideButton(
-                          assetPath: 'lib/Asset/Icons/zoomout.png',
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: controller.zoomOut,
+                          child: HistorySideButton(
+                            assetPath: 'lib/Asset/Icons/zoomout.png',
+                          ),
                         ),
                       ],
                     ),

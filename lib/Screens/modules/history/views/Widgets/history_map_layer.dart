@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:airotrack/Configs/ApiConfigs.dart';
+import 'package:airotrack/Models/HistoryModel.dart';
 import 'package:airotrack/Utils/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
 class HistoryMapLayer extends StatefulWidget {
@@ -14,6 +16,11 @@ class HistoryMapLayer extends StatefulWidget {
     required this.initialZoom,
     required this.polylinePoints,
     required this.markerPoints,
+    this.mapController,
+    this.stopLocations = const [],
+    this.selectedStopIndex,
+    this.showStopMarkers = true,
+    this.onStopTap,
     this.movingMarkerPosition,
     this.movingMarkerBearing,
     this.isFollowCameraEnabled = true,
@@ -27,6 +34,11 @@ class HistoryMapLayer extends StatefulWidget {
   final double initialZoom;
   final List<ll.LatLng> polylinePoints;
   final List<ll.LatLng> markerPoints;
+  final MapController? mapController;
+  final List<HistoryStopLocation> stopLocations;
+  final int? selectedStopIndex;
+  final bool showStopMarkers;
+  final ValueChanged<int>? onStopTap;
   final ll.LatLng? movingMarkerPosition;
   final double? movingMarkerBearing;
   final bool isFollowCameraEnabled;
@@ -41,7 +53,7 @@ class HistoryMapLayer extends StatefulWidget {
 
 class _HistoryMapLayerState extends State<HistoryMapLayer>
     with SingleTickerProviderStateMixin {
-  final MapController _mapController = MapController();
+  late final MapController _mapController;
   static const double _fitPadding = 48.0;
   static const double _followVerticalOffsetFraction = 0.22;
   static const double _playbackFollowZoom = 16.0;
@@ -71,6 +83,7 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
   @override
   void initState() {
     super.initState();
+    _mapController = widget.mapController ?? MapController();
     _smoothTicker = createTicker(_onSmoothTick)..start();
   }
 
@@ -339,6 +352,28 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
       );
     }
 
+    if (widget.showStopMarkers) {
+      for (var i = 0; i < widget.stopLocations.length; i++) {
+        final stop = widget.stopLocations[i];
+        final selected = widget.selectedStopIndex == i;
+        final number = stop.index ?? (i + 1);
+        markers.add(
+          Marker(
+            point: ll.LatLng(stop.markerLatitude, stop.markerLongitude),
+            width: selected ? 250 : 28,
+            height: selected ? 170 : 28,
+            alignment: selected ? Alignment.bottomCenter : Alignment.center,
+            child: _HistoryStopMarker(
+              number: number,
+              selected: selected,
+              stop: stop,
+              onTap: () => widget.onStopTap?.call(i),
+            ),
+          ),
+        );
+      }
+    }
+
     if (_renderPosition != null) {
       markers.add(
         Marker(
@@ -381,6 +416,11 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
         initialCenter: initialTarget,
         initialZoom: widget.initialZoom,
         initialRotation: 0.0,
+        onTap: (_, _) {
+          if (widget.selectedStopIndex != null) {
+            widget.onStopTap?.call(-1);
+          }
+        },
         onMapReady: () {
           _isMapReady = true;
           _lastKnownZoom = widget.initialZoom;
@@ -417,6 +457,167 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
         ),
         PolylineLayer(polylines: polylines),
         MarkerLayer(markers: markers),
+      ],
+    );
+  }
+}
+
+class _HistoryStopMarker extends StatelessWidget {
+  const _HistoryStopMarker({
+    required this.number,
+    required this.selected,
+    required this.stop,
+    required this.onTap,
+  });
+
+  final int number;
+  final bool selected;
+  final HistoryStopLocation stop;
+  final VoidCallback onTap;
+
+  static final _displayTimeFormat = DateFormat('dd MMM yyyy hh:mm a');
+  static final _apiTimeFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+
+  String _formatTime(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return '–';
+    try {
+      final parsed = _apiTimeFormat.parse(raw.trim());
+      return _displayTimeFormat.format(parsed);
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (selected) ...[
+            Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 236,
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _detailRow('Arrival Time:', _formatTime(stop.arrivalTime)),
+                    const SizedBox(height: 4),
+                    _detailRow(
+                      'Departure Time:',
+                      _formatTime(stop.departureTime),
+                    ),
+                    const SizedBox(height: 4),
+                    _detailRow('Duration:', stop.duration ?? '–'),
+                    const SizedBox(height: 4),
+                    _detailRow(
+                      'Latlong:',
+                      '${stop.latitude.toStringAsFixed(6)}, ${stop.longitude.toStringAsFixed(6)}',
+                      valueColor: const Color(0xFF009FE3),
+                    ),
+                    const SizedBox(height: 4),
+                    _detailRow(
+                      'Address:',
+                      (stop.address?.trim().isNotEmpty ?? false)
+                          ? stop.address!
+                          : 'Address unavailable',
+                      maxLines: 2,
+                    ),
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: Icon(
+                        Icons.near_me,
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.red.shade700,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 3,
+                  offset: Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                height: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(
+    String label,
+    String value, {
+    Color? valueColor,
+    int maxLines = 1,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 88,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: valueColor ?? Colors.black87,
+              fontWeight:
+                  valueColor != null ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
       ],
     );
   }

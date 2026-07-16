@@ -8,6 +8,7 @@ import 'package:airotrack/Utils/Utils.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
@@ -216,10 +217,13 @@ class HistoryController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _historyFetchScheduled = false;
     syncRouteParams(
       imei: Get.parameters['imei'],
       vehicleNameOrId: Get.parameters['vehicleId'],
     );
+    // Default: show Today and load history as soon as the screen opens.
+    updateDateRange('Today');
   }
 
   String get activeImei => _activeImei;
@@ -250,8 +254,39 @@ class HistoryController extends GetxController {
   }
 
   var currentSpeed = "0 Kmph".obs;
+  /// Elapsed time from `vehicle_timing.vehicle_start_time` → `vehicle_end_time`.
   var duration = "00:00:00".obs;
-  var totalDistance = "12.5 Km".obs;
+  /// From `kilometer_statistics.total_kilometers_traveled`.
+  var totalDistance = "0.00 Km".obs;
+  final vehicleStartTime = RxnString();
+  final vehicleEndTime = RxnString();
+
+  /// Stops from `stop_analysis.stop_locations` — numbered markers on the route.
+  final stopLocations = <HistoryStopLocation>[].obs;
+  final selectedStopIndex = RxnInt();
+  final showStopMarkers = true.obs;
+
+  final MapController mapController = MapController();
+
+  void zoomIn() {
+    try {
+      final camera = mapController.camera;
+      mapController.move(camera.center, camera.zoom + 1);
+      disableFollowCamera();
+    } catch (e) {
+      debugPrint('[History] zoomIn failed: $e');
+    }
+  }
+
+  void zoomOut() {
+    try {
+      final camera = mapController.camera;
+      mapController.move(camera.center, camera.zoom - 1);
+      disableFollowCamera();
+    } catch (e) {
+      debugPrint('[History] zoomOut failed: $e');
+    }
+  }
 
   /// Playback speed multiplier: 1.0, 1.5, or 2.0. Used for smooth movement animation.
   final playbackSpeedMultiplier = 1.0.obs;
@@ -291,8 +326,23 @@ class HistoryController extends GetxController {
     }
   }
 
-  void toggleBottomSheet() {
-    showBottomSheet.value = !showBottomSheet.value;
+  void toggleStopMarkers() {
+    showStopMarkers.value = !showStopMarkers.value;
+    if (!showStopMarkers.value) selectedStopIndex.value = null;
+  }
+
+  void selectStop(int index) {
+    if (index < 0) {
+      selectedStopIndex.value = null;
+      return;
+    }
+    if (index >= stopLocations.length) return;
+    selectedStopIndex.value =
+        selectedStopIndex.value == index ? null : index;
+  }
+
+  void clearSelectedStop() {
+    selectedStopIndex.value = null;
   }
 
   static final _dateFormat = DateFormat('dd MMM yyyy');
@@ -746,7 +796,7 @@ class HistoryController extends GetxController {
   }
 
   /// Progressive load: process and draw polyline in chunks of this size.
-  static const int _progressiveChunkSize = 50;
+  static const int _progressiveChunkSize = 80;
 
   /// Base playback velocity in meters/second when backend speed is unavailable.
   static const double _basePlaybackSpeedMps = 120.0;
@@ -754,8 +804,11 @@ class HistoryController extends GetxController {
   /// Minimum playback speed at 1x (km/h). Raised so 1x feels responsive.
   static const double _minPlaybackSpeedKmph = 480.0;
 
-  /// Mapbox chunk size kept conservative for faster first response and smoother perceived start.
-  static const int _mapboxChunkSize = 25;
+  /// Mapbox allows up to 100 coords/request — use larger chunks = fewer HTTP round-trips.
+  static const int _mapboxChunkSize = 80;
+
+  /// Cap points sent to Mapbox so long trips don't take forever.
+  static const int _maxMapboxInputPoints = 500;
 
   static const double _coordEpsilon = 1e-6;
 
@@ -981,7 +1034,6 @@ class HistoryController extends GetxController {
         debugPrint(
           '[History] Mapbox: chunk $chunkIndex fully done, snappedPath.length=${snappedPath.length}',
         );
-        await Future<void>.delayed(const Duration(milliseconds: 60));
       }
       if (snappedPath.isEmpty) {
         debugPrint(
@@ -1097,100 +1149,103 @@ class HistoryController extends GetxController {
 
 
   /// Loads polyline step-by-step: sends points to Mapbox for snapping.
+  /// Caller should already show the raw GPS line for instant feedback.
   void _runProgressiveSnapInBackground(List<LatLng> cleanPoints) {
     if (cleanPoints.length < 2) {
       debugPrint('[History] Progressive: cleanPoints < 2, skipping');
       return;
     }
     final runId = ++_progressiveRunId;
+    final mapboxInput = _downsampleForMapbox(cleanPoints);
     debugPrint(
-      '[History] Progressive: runId=$runId cleanPoints=${cleanPoints.length}',
+      '[History] Progressive: runId=$runId cleanPoints=${cleanPoints.length} '
+      'mapboxInput=${mapboxInput.length}',
     );
     Future<void>.delayed(Duration.zero, () async {
       _isPolylineFullyDrawn = false;
-      final reducedPoints = cleanPoints;
-      debugPrint(
-        '[History] Progressive: points to Mapbox = ${reducedPoints.length}',
-      );
+      final snappedAccum = <LatLng>[];
       int chunkIndex = 0;
       for (
         int start = 0;
-        start < reducedPoints.length;
+        start < mapboxInput.length;
         start += _progressiveChunkSize
       ) {
         if (_disposed || runId != _progressiveRunId) return;
-        final end = (start + _progressiveChunkSize > reducedPoints.length)
-            ? reducedPoints.length
+        final end = (start + _progressiveChunkSize > mapboxInput.length)
+            ? mapboxInput.length
             : start + _progressiveChunkSize;
-        final chunk = reducedPoints.sublist(start, end);
+        final chunk = mapboxInput.sublist(start, end);
         if (chunk.length < 2) continue;
         debugPrint(
           '[History] Progressive: chunk $chunkIndex start=$start end=$end size=${chunk.length}',
         );
-        debugPrint(
-          '[History] Progressive: chunk $chunkIndex calling _smoothPathWithMapbox...',
-        );
         List<LatLng> snapped;
         try {
           snapped = await _smoothPathWithMapbox(chunk);
-          debugPrint(
-            '[History] Progressive: chunk $chunkIndex _smoothPathWithMapbox returned length=${snapped.length}',
-          );
         } catch (e, st) {
           debugPrint(
-            '[History] Progressive: chunk $chunkIndex _smoothPathWithMapbox THREW $e',
+            '[History] Progressive: chunk $chunkIndex _smoothPathWithMapbox THREW $e\n$st',
           );
-          debugPrint('[History] Progressive: chunk $chunkIndex stack: $st');
           chunkIndex++;
           continue;
         }
         if (_disposed || runId != _progressiveRunId) return;
         final mapboxOk = !identical(snapped, chunk) && snapped.length >= 2;
         if (!mapboxOk) {
-          debugPrint(
-            '[History] Progressive: chunk $chunkIndex skipped (Mapbox failed or < 2 points, no raw drawn)',
-          );
+          // Keep raw segment if Mapbox fails for this chunk.
+          if (snappedAccum.isNotEmpty &&
+              chunk.isNotEmpty &&
+              _samePoint(snappedAccum.last, chunk.first)) {
+            snappedAccum.addAll(chunk.skip(1));
+          } else {
+            snappedAccum.addAll(chunk);
+          }
           chunkIndex++;
           continue;
         }
-        debugPrint(
-          '[History] Progressive: chunk $chunkIndex using Mapbox snapped ${snapped.length} points',
-        );
-        if (_disposed || runId != _progressiveRunId) return;
-        if (start == 0) {
-          _cachedPolylinePoints = List<LatLng>.from(snapped);
-          debugPrint(
-            '[History] Progressive: chunk 0 drawn (Mapbox only), cached points = ${_cachedPolylinePoints.length}',
-          );
-        } else {
-          if (_cachedPolylinePoints.isNotEmpty &&
-              snapped.isNotEmpty &&
-              _samePoint(_cachedPolylinePoints.last, snapped.first)) {
-            snapped = snapped.sublist(1);
-          }
-          _cachedPolylinePoints = List<LatLng>.from(_cachedPolylinePoints)
-            ..addAll(snapped);
-          debugPrint(
-            '[History] Progressive: chunk $chunkIndex merged, cached points = ${_cachedPolylinePoints.length}',
-          );
+        if (snappedAccum.isNotEmpty &&
+            snapped.isNotEmpty &&
+            _samePoint(snappedAccum.last, snapped.first)) {
+          snapped = snapped.sublist(1);
         }
-        _tryFulfillPendingPlay();
+        snappedAccum.addAll(snapped);
+        // Update the blue line as soon as we have snapped geometry.
+        if (snappedAccum.length >= 2) {
+          _cachedPolylinePoints = List<LatLng>.from(snappedAccum);
+          _snapStopsToTraveledLine();
+          if (!_disposed) update();
+        }
         chunkIndex++;
-        if (_disposed || runId != _progressiveRunId) return;
-        update();
-        await Future<void>.delayed(const Duration(milliseconds: 300));
       }
       if (_disposed || runId != _progressiveRunId) return;
+      if (snappedAccum.length >= 2) {
+        _cachedPolylinePoints = List<LatLng>.from(snappedAccum);
+      }
       _isPolylineFullyDrawn = true;
       debugPrint(
         '[History] Progressive: done. Total polyline points on map = ${_cachedPolylinePoints.length}',
       );
+      _snapStopsToTraveledLine();
       placeMovingMarkerAtStart();
       if (_disposed) return;
       update();
       _tryFulfillPendingPlay();
-      // Smooth movement starts only when user taps play (no auto-start).
     });
+  }
+
+  /// Reduce dense GPS tracks before Mapbox to cut HTTP round-trips.
+  List<LatLng> _downsampleForMapbox(List<LatLng> points) {
+    if (points.length <= _maxMapboxInputPoints) return points;
+    final result = <LatLng>[points.first];
+    final step = (points.length - 1) / (_maxMapboxInputPoints - 1);
+    for (var i = 1; i < _maxMapboxInputPoints - 1; i++) {
+      result.add(points[(i * step).round().clamp(0, points.length - 1)]);
+    }
+    result.add(points.last);
+    debugPrint(
+      '[History] Mapbox downsample: ${points.length} → ${result.length}',
+    );
+    return result;
   }
 
   @override
@@ -1218,6 +1273,7 @@ class HistoryController extends GetxController {
     );
     if (effectiveImei.isEmpty) return;
     _activeImei = effectiveImei;
+    _historyFetchScheduled = true;
     if (_pendingPlayRequest) {
       debugPrint(
         '[History] Playback: cleared pending play request on new fetch',
@@ -1225,6 +1281,7 @@ class HistoryController extends GetxController {
     }
     _pendingPlayRequest = false;
     isLoading.value = true;
+    _resetHistorySummaryStats();
     debugPrint(
       '[History] getHistory: imei=$imei fromDate=${fromDate.value} toDate=${toDate.value}',
     );
@@ -1260,21 +1317,46 @@ class HistoryController extends GetxController {
       final responseBody = result['data'] as Map<String, dynamic>?;
       if (responseBody != null) {
         final dataMap = responseBody['data'];
-        final vehicleInfoJson = dataMap is Map<String, dynamic>
-            ? dataMap['vehicle_info']
-            : null;
+        final dataJson = dataMap is Map
+            ? Map<String, dynamic>.from(dataMap)
+            : <String, dynamic>{};
+        Map<String, dynamic>? asMap(dynamic value) =>
+            value is Map ? Map<String, dynamic>.from(value) : null;
+
         // Keep model lightweight: avoid parsing full location_history into HistoryModel.
         historyModel = HistoryModel(
           status: responseBody['status'] is bool
               ? responseBody['status'] as bool
               : null,
           data: HistoryData(
-            vehicleInfo: vehicleInfoJson is Map<String, dynamic>
-                ? VehicleInfo.fromJson(vehicleInfoJson)
+            vehicleInfo: asMap(dataJson['vehicle_info']) != null
+                ? VehicleInfo.fromJson(asMap(dataJson['vehicle_info']))
                 : null,
             locationHistory: const [],
+            kilometerStatistics: asMap(dataJson['kilometer_statistics']) != null
+                ? HistoryKilometerStatistics.fromJson(
+                    asMap(dataJson['kilometer_statistics']),
+                  )
+                : null,
+            vehicleTiming: asMap(dataJson['vehicle_timing']) != null
+                ? HistoryVehicleTiming.fromJson(
+                    asMap(dataJson['vehicle_timing']),
+                  )
+                : null,
+            speedStatistics: asMap(dataJson['speed_statistics']) != null
+                ? HistorySpeedStatistics.fromJson(
+                    asMap(dataJson['speed_statistics']),
+                  )
+                : null,
+            stopAnalysis: asMap(dataJson['stop_analysis']) != null
+                ? HistoryStopAnalysis.fromJson(
+                    asMap(dataJson['stop_analysis']),
+                  )
+                : null,
           ),
         );
+        _applyHistorySummaryStats(historyModel.data);
+        _applyStopLocationsFromResponse(dataJson);
         historyPreviewItems.assignAll(_buildHistoryPreview(responseBody));
         debugPrint(
           '[History] getHistory: history preview items = ${historyPreviewItems.length}',
@@ -1296,13 +1378,15 @@ class HistoryController extends GetxController {
         );
         resetMovingMarker();
         if (cleanList.length >= 2) {
-          // Do not draw raw points: only draw after Mapbox returns snapped geometry.
-          _cachedPolylinePoints = [];
+          // Instant UI: draw raw GPS track immediately, then refine with Mapbox.
+          _cachedPolylinePoints = List<LatLng>.from(cleanList);
           _isPolylineFullyDrawn = false;
           debugPrint(
-            '[History] getHistory: no raw draw; starting Mapbox matching (cleanList=${cleanList.length})',
+            '[History] getHistory: drew raw line (${cleanList.length} pts), '
+            'starting Mapbox refine in background',
           );
           _syncCurrentSpeedWithProgress(0.0);
+          placeMovingMarkerAtStart();
           update();
           isLoading.value = false;
           _runProgressiveSnapInBackground(cleanList);
@@ -1318,6 +1402,7 @@ class HistoryController extends GetxController {
         debugPrint('[History] getHistory: responseBody null');
         historyPreviewItems.clear();
         _playbackSpeedSeries = <double>[];
+        _resetHistorySummaryStats();
         isLoading.value = false;
       }
     } catch (e, st) {
@@ -1325,5 +1410,327 @@ class HistoryController extends GetxController {
       isLoading.value = false;
       showErrorMessage(e);
     }
+  }
+
+  void _resetHistorySummaryStats() {
+    totalDistance.value = '0.00 Km';
+    duration.value = '00:00:00';
+    vehicleStartTime.value = null;
+    vehicleEndTime.value = null;
+    stopLocations.clear();
+    selectedStopIndex.value = null;
+  }
+
+  void _applyStopLocationsFromResponse(Map<String, dynamic> dataJson) {
+    selectedStopIndex.value = null;
+
+    final analysisMap = dataJson['stop_analysis'];
+    HistoryStopAnalysis? analysis;
+    if (analysisMap is Map) {
+      analysis = HistoryStopAnalysis.fromJson(
+        Map<String, dynamic>.from(analysisMap),
+      );
+    }
+
+    var stops = List<HistoryStopLocation>.from(
+      analysis?.stopLocations ?? const <HistoryStopLocation>[],
+    );
+
+    // Log raw stop payload shape to diagnose field-name mismatches.
+    final rawStops = analysisMap is Map ? analysisMap['stop_locations'] : null;
+    if (rawStops is List) {
+      debugPrint(
+        '[History] stop_analysis.total_stops=${analysis?.totalStops} '
+        'raw stop_locations=${rawStops.length} parsed=${stops.length}',
+      );
+      if (rawStops.isNotEmpty && stops.isEmpty) {
+        final first = rawStops.first;
+        debugPrint(
+          '[History] stop_locations[0] keys='
+          '${first is Map ? Map<String, dynamic>.from(first).keys.toList() : first.runtimeType}',
+        );
+      }
+    }
+
+    // Fallback: build numbered stops from location_history is_stopped / mode=S clusters.
+    if (stops.isEmpty) {
+      stops = _deriveStopsFromLocationHistory(dataJson['location_history']);
+      debugPrint(
+        '[History] derived stop markers from location_history = ${stops.length}',
+      );
+    }
+
+    // Chronological order: earliest arrival = 1, next = 2, ...
+    stops = _sortStopsChronologically(stops);
+    stopLocations.assignAll(_numberStops(stops));
+    _snapStopsToTraveledLine();
+    debugPrint(
+      '[History] stop markers on map = ${stopLocations.length} '
+      '(numbered 1..${stopLocations.length} by arrival time)',
+    );
+  }
+
+  /// Sort stops by arrival time (then departure). Ensures marker 1 is the first stop.
+  List<HistoryStopLocation> _sortStopsChronologically(
+    List<HistoryStopLocation> stops,
+  ) {
+    if (stops.length <= 1) return List<HistoryStopLocation>.from(stops);
+
+    final sorted = List<HistoryStopLocation>.from(stops);
+    sorted.sort((a, b) {
+      final aHas = a.arrivalTime != null && a.arrivalTime!.trim().isNotEmpty;
+      final bHas = b.arrivalTime != null && b.arrivalTime!.trim().isNotEmpty;
+      if (aHas && bHas) {
+        final cmp = _parseDeviceTime(a.arrivalTime)
+            .compareTo(_parseDeviceTime(b.arrivalTime));
+        if (cmp != 0) return cmp;
+      } else if (aHas != bHas) {
+        return aHas ? -1 : 1;
+      }
+
+      final aDep = a.departureTime != null && a.departureTime!.trim().isNotEmpty;
+      final bDep = b.departureTime != null && b.departureTime!.trim().isNotEmpty;
+      if (aDep && bDep) {
+        return _parseDeviceTime(a.departureTime)
+            .compareTo(_parseDeviceTime(b.departureTime));
+      }
+      return 0;
+    });
+    return sorted;
+  }
+
+  List<HistoryStopLocation> _numberStops(List<HistoryStopLocation> stops) {
+    return [
+      for (var i = 0; i < stops.length; i++)
+        stops[i].copyWith(index: i + 1),
+    ];
+  }
+
+  /// Place stop markers on the blue Mapbox-snapped route (raw GPS can sit off-road).
+  /// Popup Latlong still shows the original GPS from the API.
+  /// Snaps in chronological order along the route so 1 → 2 → 3 follow travel direction.
+  void _snapStopsToTraveledLine() {
+    if (stopLocations.isEmpty) return;
+    final route = _cachedPolylinePoints;
+    if (route.length < 2) return;
+
+    final snapped = <HistoryStopLocation>[];
+    var minRouteIndex = 0;
+
+    for (final stop in stopLocations) {
+      final nearest = _nearestPointOnPolylineAfter(
+        LatLng(stop.latitude, stop.longitude),
+        route,
+        minRouteIndex: minRouteIndex,
+      );
+      snapped.add(
+        stop.copyWith(
+          mapLatitude: nearest.point.latitude,
+          mapLongitude: nearest.point.longitude,
+        ),
+      );
+      // Next stop should generally be further along the traveled line.
+      minRouteIndex = nearest.segmentIndex;
+    }
+    stopLocations.assignAll(snapped);
+    debugPrint(
+      '[History] snapped ${snapped.length} stop markers onto traveled line (ordered)',
+    );
+  }
+
+  ({LatLng point, int segmentIndex}) _nearestPointOnPolylineAfter(
+    LatLng target,
+    List<LatLng> route, {
+    int minRouteIndex = 0,
+  }) {
+    final start = minRouteIndex.clamp(0, route.length - 2);
+    var best = route[start];
+    var bestDist = _calculateDistanceMeters(target, best);
+    var bestSeg = start;
+
+    for (var i = start + 1; i < route.length; i++) {
+      final a = route[i - 1];
+      final b = route[i];
+      final projected = _projectPointOntoSegment(target, a, b);
+      final dist = _calculateDistanceMeters(target, projected);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = projected;
+        bestSeg = i - 1;
+      }
+    }
+
+    // If remaining route is a poor match (e.g. GPS noise), fall back to full route.
+    if (bestDist > 250 && start > 0) {
+      return _nearestPointOnPolylineAfter(target, route, minRouteIndex: 0);
+    }
+    return (point: best, segmentIndex: bestSeg);
+  }
+
+  LatLng _projectPointOntoSegment(LatLng p, LatLng a, LatLng b) {
+    final ax = a.longitude;
+    final ay = a.latitude;
+    final bx = b.longitude;
+    final by = b.latitude;
+    final px = p.longitude;
+    final py = p.latitude;
+
+    final dx = bx - ax;
+    final dy = by - ay;
+    if (dx == 0 && dy == 0) return a;
+
+    final t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+    final clamped = t.clamp(0.0, 1.0);
+    return LatLng(ay + dy * clamped, ax + dx * clamped);
+  }
+
+  double _calculateDistanceMeters(LatLng p1, LatLng p2) {
+    const radius = 6371000.0;
+    final dLat = (p2.latitude - p1.latitude) * math.pi / 180;
+    final dLon = (p2.longitude - p1.longitude) * math.pi / 180;
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(p1.latitude * math.pi / 180) *
+            math.cos(p2.latitude * math.pi / 180) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    return radius * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)));
+  }
+
+  /// Build stop markers from consecutive stopped points when API stop_locations is empty.
+  List<HistoryStopLocation> _deriveStopsFromLocationHistory(dynamic raw) {
+    if (raw is! List || raw.isEmpty) return const [];
+
+    final points = <Map<String, dynamic>>[];
+    for (final item in raw) {
+      if (item is Map) points.add(Map<String, dynamic>.from(item));
+    }
+    if (points.isEmpty) return const [];
+
+    points.sort((a, b) {
+      final t1 = _parseDeviceTime(
+        (a['devicetime'] ?? a['device_time'])?.toString(),
+      );
+      final t2 = _parseDeviceTime(
+        (b['devicetime'] ?? b['device_time'])?.toString(),
+      );
+      return t1.compareTo(t2);
+    });
+
+    bool isStoppedPoint(Map<String, dynamic> p) {
+      if (p['is_stopped'] == true) return true;
+      final mode = p['mode']?.toString().toUpperCase() ?? '';
+      if (mode == 'S' || mode == 'STOPPED') return true;
+      return false;
+    }
+
+    double? coord(Map<String, dynamic> p, List<String> keys) {
+      for (final key in keys) {
+        final v = p[key];
+        if (v is num) return v.toDouble();
+        final parsed = double.tryParse(v?.toString() ?? '');
+        if (parsed != null) return parsed;
+      }
+      return null;
+    }
+
+    final stops = <HistoryStopLocation>[];
+    int? clusterStart;
+
+    void closeCluster(int endIdx) {
+      final startIdx = clusterStart;
+      if (startIdx == null || endIdx < startIdx) return;
+      final first = points[startIdx];
+      final last = points[endIdx];
+      final lat = coord(first, ['latitude', 'lat']);
+      final lng = coord(first, ['longitude', 'lng', 'lon']);
+      if (lat == null || lng == null || (lat == 0 && lng == 0)) return;
+
+      final arrival =
+          (first['devicetime'] ?? first['device_time'])?.toString();
+      final departure =
+          (last['devicetime'] ?? last['device_time'])?.toString();
+      String? durationText;
+      if (arrival != null && departure != null) {
+        final a = _parseDeviceTime(arrival);
+        final b = _parseDeviceTime(departure);
+        if (!b.isBefore(a)) {
+          durationText = HistoryStopLocation.formatDurationSeconds(
+            b.difference(a).inSeconds,
+          );
+        }
+      }
+
+      stops.add(
+        HistoryStopLocation(
+          latitude: lat,
+          longitude: lng,
+          arrivalTime: arrival,
+          departureTime: departure,
+          duration: durationText,
+          address: first['address']?.toString(),
+        ),
+      );
+    }
+
+    for (var i = 0; i < points.length; i++) {
+      if (isStoppedPoint(points[i])) {
+        clusterStart ??= i;
+      } else if (clusterStart != null) {
+        closeCluster(i - 1);
+        clusterStart = null;
+      }
+    }
+    if (clusterStart != null) closeCluster(points.length - 1);
+
+    // Ignore tiny single-point blips with no meaningful duration.
+    return stops
+        .where((s) {
+          if (s.arrivalTime == null || s.departureTime == null) return true;
+          final a = _parseDeviceTime(s.arrivalTime);
+          final b = _parseDeviceTime(s.departureTime);
+          return b.difference(a).inSeconds >= 60;
+        })
+        .toList();
+  }
+
+  /// Maps API summary blocks into bottom-sheet stats.
+  /// - Distance ← `kilometer_statistics.total_kilometers_traveled`
+  /// - Duration ← elapsed between `vehicle_timing` start/end
+  void _applyHistorySummaryStats(HistoryData? data) {
+    final km = data?.kilometerStatistics?.totalKilometersTraveled;
+    if (km == null) {
+      totalDistance.value = '0.00 Km';
+    } else {
+      totalDistance.value = '${km.toStringAsFixed(2)} Km';
+    }
+
+    final startRaw = data?.vehicleTiming?.vehicleStartTime;
+    final endRaw = data?.vehicleTiming?.vehicleEndTime;
+    vehicleStartTime.value =
+        (startRaw != null && startRaw.trim().isNotEmpty && startRaw != 'null')
+            ? startRaw.trim()
+            : null;
+    vehicleEndTime.value =
+        (endRaw != null && endRaw.trim().isNotEmpty && endRaw != 'null')
+            ? endRaw.trim()
+            : null;
+
+    duration.value = _formatVehicleTimingDuration(
+      vehicleStartTime.value,
+      vehicleEndTime.value,
+    );
+  }
+
+  String _formatVehicleTimingDuration(String? startRaw, String? endRaw) {
+    if (startRaw == null || endRaw == null) return '00:00:00';
+    final start = _parseDeviceTime(startRaw);
+    final end = _parseDeviceTime(endRaw);
+    if (end.isBefore(start)) return '00:00:00';
+    final totalSeconds = end.difference(start).inSeconds;
+    final h = (totalSeconds ~/ 3600).toString().padLeft(2, '0');
+    final m = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final s = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
   }
 }

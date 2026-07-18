@@ -259,35 +259,35 @@ class TrackView extends GetView<TrackController> {
 
       final width = MediaQuery.of(Get.context!).size.width;
       return Container(
-        width: width * 0.35,
-        height: width * 0.32,
+        width: width * 0.24,
+        height: width * 0.22,
         decoration: const BoxDecoration(
           color: Colors.white,
           shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
         ),
         child: Stack(
           alignment: Alignment.center,
           children: [
             CustomPaint(
-              size: Size(width * 0.28, width * 0.28),
+              size: Size(width * 0.19, width * 0.19),
               painter: GaugePainter(),
             ),
             Positioned(
-              bottom: width * 0.05,
+              bottom: width * 0.032,
               child: Column(
                 children: [
                   Text(
                     speedStr,
                     style: TextStyle(
-                      fontSize: width * 0.06,
+                      fontSize: width * 0.042,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
                     "Km/h",
                     style: TextStyle(
-                      fontSize: width * 0.03,
+                      fontSize: width * 0.022,
                       color: Colors.grey,
                     ),
                   ),
@@ -298,13 +298,13 @@ class TrackView extends GetView<TrackController> {
             Transform.rotate(
               angle: targetAngle,
               child: Container(
-                width: width * 0.007,
-                height: width * 0.11,
+                width: width * 0.005,
+                height: width * 0.075,
                 decoration: BoxDecoration(
                   color: Colors.red,
-                  borderRadius: BorderRadius.circular(width * 0.005),
+                  borderRadius: BorderRadius.circular(width * 0.004),
                 ),
-                margin: EdgeInsets.only(bottom: width * 0.11),
+                margin: EdgeInsets.only(bottom: width * 0.075),
               ),
             ),
           ],
@@ -396,28 +396,6 @@ class TrackView extends GetView<TrackController> {
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                              ),
-                              SizedBox(height: height * 0.012),
-                              Row(
-                                children: [
-                                  Image.asset(
-                                    'lib/Asset/Icons/Speed.png',
-                                    width: 18,
-                                    height: 18,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Obx(
-                                    () => Text(
-                                      "${controller.displayTodayKm} Km",
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
                               ),
                             ],
                           ),
@@ -704,7 +682,7 @@ class TrackView extends GetView<TrackController> {
             ),
             // Speedometer floating above
             Positioned(
-              top: -height * 0.1,
+              top: -height * 0.07,
               left: 0,
               right: 0,
               child: Center(child: _buildSpeedometerIndicator()),
@@ -1616,7 +1594,8 @@ class GaugePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 12;
+    final radius = size.width / 2 - 8;
+    final strokeW = (size.width * 0.08).clamp(8.0, 12.0);
 
     final sections = [
       {'color': const Color(0xFF00C853), 'start': 0.75, 'sweep': 0.5},
@@ -1628,7 +1607,7 @@ class GaugePainter extends CustomPainter {
       final paint = Paint()
         ..color = section['color'] as Color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 14
+        ..strokeWidth = strokeW
         ..strokeCap = StrokeCap.round;
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),
@@ -1641,14 +1620,14 @@ class GaugePainter extends CustomPainter {
 
     final paintMark = Paint()
       ..color = Colors.black38
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 1.2;
 
     for (int i = 0; i <= 20; i++) {
       final double angle = math.pi * (0.75 + (i * 1.5 / 20));
       final double dx = math.cos(angle);
       final double dy = math.sin(angle);
-      final double outerR = radius + 6;
-      final double innerR = i % 5 == 0 ? radius - 6 : radius - 2;
+      final double outerR = radius + 4;
+      final double innerR = i % 5 == 0 ? radius - 4 : radius - 1.5;
       canvas.drawLine(
         Offset(center.dx + innerR * dx, center.dy + innerR * dy),
         Offset(center.dx + outerR * dx, center.dy + outerR * dy),

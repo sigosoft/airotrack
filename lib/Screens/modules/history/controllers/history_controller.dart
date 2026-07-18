@@ -787,7 +787,7 @@ class HistoryController extends GetxController {
       }
       cum += segKm;
     }
-    _movingSegmentIndex = points.length - 1;
+    _movingSegmentIndex = points.length - 1;  
     _movingSegmentFraction = 1.0;
     movingMarkerPosition.value = points.last;
     progress.value = 1.0;

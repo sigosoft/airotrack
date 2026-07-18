@@ -76,6 +76,11 @@ class TrackController extends GetxController {
   double _smoothedGlideSpeedMs = 0.0;
   int _routeRequestId = 0;
 
+  /// Road-snapped waypoints the marker walks along (Map Matching).
+  final List<LatLng> _roadQueue = [];
+  /// Recent raw GPS samples used for Map Matching (keeps path on the road).
+  final List<LatLng> _gpsTrace = [];
+
   final DirectionsService _directionsService = DirectionsService();
 
   double _currentSpeedMs = 0.0;
@@ -88,20 +93,27 @@ class TrackController extends GetxController {
   DateTime? _lastGpsTime;
   DateTime? _lastCameraMove;
   static const int _cameraMoveIntervalMs = 100;
-  /// Cap map/GetX marker rebuilds (~12–15 fps). Prevents ANR/GPU buffer spam.
-  static const int _uiSyncMinMs = 70;
-  static const double _uiSyncMinMeters = 0.2;
+  /// Cap map/GetX marker rebuilds (~20 fps while moving).
+  static const int _uiSyncMinMs = 50;
+  static const double _uiSyncMinMeters = 0.15;
   /// Ignore GPS noise while stopped — prevents marker vibration.
   static const double _stoppedGpsDeadbandM = 8.0;
   /// Slow forward roll while device reports speed 0 (~1.3 km/h).
   static const double _stoppedCreepMs = 0.35;
   /// Max distance past last GPS while stopped (avoids endless park drift).
   static const double _stoppedCreepMaxLeadM = 20.0;
-  static const double _minRotationChangeDeg = 22.0;
-  static const double _minGpsBearingMoveM = 5.0;
+  static const double _minRotationChangeDeg = 12.0;
+  static const double _minGpsBearingMoveM = 8.0;
+  /// GPS must be within this of travel heading to chase it (else go straight).
+  static const double _onCourseMaxDeg = 28.0;
   static const double _frameSeconds = 0.033;
   /// Minimum roll speed between WS pings (~1.8 km/h).
   static const double _wsWaitCreepMinMs = 0.5;
+  /// Skip Mapbox for tiny hops; stay on last matched road instead of raw GPS.
+  static const double _minRoadRouteMeters = 4.0;
+  /// Max turn rate while following a road polyline (~deg per frame @30fps).
+  static const double _maxRotationStepDeg = 5.0;
+  static const int _gpsTraceMaxPoints = 6;
 
   /// Device-reported speed (km/h) from latest WS ping. Stop only when 0.
   double _lastReportedSpeedKmh = 0.0;
@@ -247,6 +259,9 @@ class TrackController extends GetxController {
       _lastInferredSpeedKmh = speed;
       _lastGpsDeltaM = 0;
       _isMovingVehicle = speed > 0;
+      _gpsTrace
+        ..clear()
+        ..add(location);
       _smoothedGlideSpeedMs = speed > 0
           ? (speed / 3.6).clamp(_wsWaitCreepMinMs, _maxGlideSpeedMs)
           : 0.0;
@@ -418,6 +433,8 @@ class TrackController extends GetxController {
       // Keep a gentle crawl rate; ignore tiny GPS noise so the marker
       // doesn't vibrate by chasing the target back and forth.
       _smoothedGlideSpeedMs = _stoppedCreepMs;
+      _roadQueue.clear();
+      _gpsTrace.clear();
       if (previousGps != null && gpsDeltaM < _stoppedGpsDeadbandM) {
         _lastGpsTime = now;
         return;
@@ -431,11 +448,14 @@ class TrackController extends GetxController {
           _expectedPingSec = _expectedPingSec * 0.65 + interval * 0.35;
         }
       }
-      _updateHeadingFromMovement(
-        location,
-        previousGps: previousGps,
-        courseDeg: courseDeg,
-      );
+      // Do not invent heading from park jitter — that causes a bend on pull-away.
+      // Only seed heading from device course if we still have none.
+      if (!_hasHeading &&
+          courseDeg != null &&
+          courseDeg >= 0 &&
+          courseDeg <= 360) {
+        _setLockedBearing(courseDeg % 360);
+      }
       _lastAcceptedGps = location;
       _lastGpsTime = now;
       _liveTarget = location;
@@ -473,9 +493,8 @@ class TrackController extends GetxController {
       _wsWaitCreepMinMs,
     );
 
-    if (previousGps != null) {
-      _requestRoadSpeedFactor(previousGps, location);
-    }
+    // Glide along the road between pings (keeps marker on the map roads).
+    _requestRoadPath(location);
   }
 
   void _snapMarkerTo(
@@ -491,6 +510,8 @@ class TrackController extends GetxController {
     _lastReportedSpeedKmh = speedKmH;
     _lastInferredSpeedKmh = speedKmH;
     _isMovingVehicle = speedKmH > 0;
+    _roadQueue.clear();
+    _gpsTrace.clear();
     _updateMovementSpeed(speedKmH, status ?? 'Stopped', mode: mode);
     if (isLocked.value) _maybeMoveCameraToVehicle();
   }
@@ -556,34 +577,148 @@ class TrackController extends GetxController {
     odometerKm.value = value;
   }
 
-  /// Mapbox route length vs straight GPS line — roads are longer, so boost glide speed.
-  void _requestRoadSpeedFactor(LatLng from, LatLng to) {
+  /// Snap latest GPS onto the road (Map Matching) and walk that geometry only.
+  void _requestRoadPath(LatLng to) {
+    _pushGpsTrace(to);
+
+    if (_animLat == 0.0 && _animLng == 0.0) return;
+
+    final from = LatLng(_animLat, _animLng);
     final straightM = _calculateDistance(from, to);
-    if (straightM < 8.0) {
+    // Tiny hops: do not chase raw GPS off-road — keep current road queue.
+    if (straightM < _minRoadRouteMeters) {
       _targetRoadSpeedFactor = 1.0;
       return;
     }
 
     final requestId = ++_routeRequestId;
-    _directionsService.getRoute(from, to).then((route) {
+
+    // Trace = recent GPS (+ current marker) so Matching snaps the real path.
+    final trace = <LatLng>[];
+    if (_gpsTrace.length >= 2) {
+      trace.addAll(_gpsTrace);
+    } else {
+      trace.add(from);
+      trace.add(to);
+    }
+    // Prefer starting match near the marker so the path begins on-road.
+    if (_calculateDistance(trace.first, from) > 8.0) {
+      trace.insert(0, from);
+    }
+
+    _directionsService.matchTrace(trace, radiusMeters: 30).then((matched) {
       if (_disposed || requestId != _routeRequestId) return;
-      if (route.length < 2) {
-        _targetRoadSpeedFactor = 1.0;
+
+      if (matched.length < 2) {
+        // Stay on whatever road path we already have — never queue raw GPS.
         return;
       }
 
       var routeLenM = 0.0;
-      for (var i = 1; i < route.length; i++) {
-        routeLenM += _calculateDistance(route[i - 1], route[i]);
+      for (var i = 1; i < matched.length; i++) {
+        routeLenM += _calculateDistance(matched[i - 1], matched[i]);
       }
       if (straightM > 1.0) {
-        _targetRoadSpeedFactor = (routeLenM / straightM).clamp(1.0, 1.35);
+        _targetRoadSpeedFactor = (routeLenM / straightM).clamp(1.0, 1.45);
       }
-    }).catchError((_) {
-      if (!_disposed && requestId == _routeRequestId) {
-        _targetRoadSpeedFactor = 1.0;
+
+      // Pull marker onto the road if we're sitting beside it.
+      final onRoadStart = _closestPointOnPolyline(from, matched);
+      final lateral = _calculateDistance(from, onRoadStart);
+      if (lateral > 2.0 && lateral < 40.0) {
+        _animLat = onRoadStart.latitude;
+        _animLng = onRoadStart.longitude;
       }
+
+      final remaining = _trimRouteAhead(
+        LatLng(_animLat, _animLng),
+        matched,
+      );
+      if (remaining.isEmpty) return;
+
+      // Only road-matched points — never append raw GPS (that causes overflow).
+      _roadQueue
+        ..clear()
+        ..addAll(remaining);
+    }).catchError((e) {
+      debugPrint('[LiveTrack] matchTrace failed: $e');
     });
+  }
+
+  void _pushGpsTrace(LatLng point) {
+    if (_gpsTrace.isNotEmpty &&
+        _calculateDistance(_gpsTrace.last, point) < 1.5) {
+      _gpsTrace[_gpsTrace.length - 1] = point;
+      return;
+    }
+    _gpsTrace.add(point);
+    while (_gpsTrace.length > _gpsTraceMaxPoints) {
+      _gpsTrace.removeAt(0);
+    }
+  }
+
+  /// Closest vertex (or interpolated segment point) on [poly] to [p].
+  LatLng _closestPointOnPolyline(LatLng p, List<LatLng> poly) {
+    if (poly.isEmpty) return p;
+    if (poly.length == 1) return poly.first;
+
+    var best = poly.first;
+    var bestDist = _calculateDistance(p, best);
+
+    for (var i = 0; i < poly.length - 1; i++) {
+      final a = poly[i];
+      final b = poly[i + 1];
+      final projected = _projectOnSegment(p, a, b);
+      final d = _calculateDistance(p, projected);
+      if (d < bestDist) {
+        bestDist = d;
+        best = projected;
+      }
+    }
+    return best;
+  }
+
+  LatLng _projectOnSegment(LatLng p, LatLng a, LatLng b) {
+    final ax = a.longitude;
+    final ay = a.latitude;
+    final bx = b.longitude;
+    final by = b.latitude;
+    final px = p.longitude;
+    final py = p.latitude;
+    final dx = bx - ax;
+    final dy = by - ay;
+    if (dx == 0 && dy == 0) return a;
+    final t = (((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))
+        .clamp(0.0, 1.0);
+    return LatLng(ay + dy * t, ax + dx * t);
+  }
+
+  /// Keep only the portion of [route] still ahead of [from].
+  List<LatLng> _trimRouteAhead(LatLng from, List<LatLng> route) {
+    if (route.isEmpty) return route;
+
+    var closestIdx = 0;
+    var closestDist = double.infinity;
+    for (var i = 0; i < route.length; i++) {
+      final d = _calculateDistance(from, route[i]);
+      if (d < closestDist) {
+        closestDist = d;
+        closestIdx = i;
+      }
+    }
+
+    var start = closestIdx;
+    if (closestDist < 3.0 && closestIdx + 1 < route.length) {
+      start = closestIdx + 1;
+    }
+
+    final out = <LatLng>[];
+    for (var i = start; i < route.length; i++) {
+      if (out.isEmpty || _calculateDistance(out.last, route[i]) >= 0.8) {
+        out.add(route[i]);
+      }
+    }
+    return out;
   }
 
   bool _shouldKeepMoving() => _isMovingVehicle;
@@ -593,7 +728,21 @@ class TrackController extends GetxController {
     return _calculateDistance(current, _liveTarget!);
   }
 
+  /// Remaining meters along the road queue (falls back to straight GPS distance).
+  double _remainingPathMeters(LatLng current) {
+    if (_roadQueue.isEmpty) return _distanceToLiveGps(current);
+
+    var total = _calculateDistance(current, _roadQueue.first);
+    for (var i = 1; i < _roadQueue.length; i++) {
+      total += _calculateDistance(_roadQueue[i - 1], _roadQueue[i]);
+    }
+    return total;
+  }
+
   double _resolveTravelBearing(LatLng current) {
+    if (_roadQueue.isNotEmpty) {
+      return _getBearing(current, _roadQueue.first);
+    }
     if (_hasHeading) return _lockedBearing;
     if (_liveTarget != null) {
       final bearing = _getBearing(current, _liveTarget!);
@@ -605,7 +754,7 @@ class TrackController extends GetxController {
   }
 
   /// Single continuous speed — catch-up when behind, roll when at GPS dot.
-  double _continuousSpeedMs(double distToGps) {
+  double _continuousSpeedMs(double distAlongPath) {
     if (!_isMovingVehicle) return 0;
 
     var ms = _effectiveSpeedMs();
@@ -616,22 +765,18 @@ class TrackController extends GetxController {
       ) / 3.6;
     }
 
-    if (distToGps > 0.3) {
-      ms = math.max(ms, distToGps / math.max(_expectedPingSec, 0.8));
+    if (distAlongPath > 0.3) {
+      ms = math.max(ms, distAlongPath / math.max(_expectedPingSec, 0.8));
     }
 
-    if (_liveTarget != null &&
-        _animLat != 0.0 &&
-        distToGps >= _catchUpMinLagMeters) {
-      final current = LatLng(_animLat, _animLng);
-      if (!_hasHeading || !_isBehind(current, _liveTarget!)) {
-        ms = math.max(ms, distToGps / _catchUpWindowSec);
-      }
+    if (distAlongPath >= _catchUpMinLagMeters) {
+      ms = math.max(ms, distAlongPath / _catchUpWindowSec);
     }
 
     return (ms * _roadSpeedFactor).clamp(_wsWaitCreepMinMs, _maxGlideSpeedMs);
   }
 
+  /// Walk along matched road polyline only — never chase raw GPS off-road.
   void _advanceMarkerContinuously({
     required LatLng current,
     required LatLng gpsTarget,
@@ -641,17 +786,62 @@ class TrackController extends GetxController {
   }) {
     if (step <= 0) return;
 
-    if (distToGps > 0.2) {
-      final before = LatLng(_animLat, _animLng);
-      _nudgeToward(gpsTarget, math.min(step, distToGps));
-      final after = LatLng(_animLat, _animLng);
-      if (_calculateDistance(before, after) >= 0.001) return;
+    if (_roadQueue.isNotEmpty) {
+      _advanceAlongRoad(current, step);
+      return;
     }
 
-    final anchor = LatLng(_animLat, _animLng);
-    final next = _offsetMeters(anchor, bearing, step);
-    _animLat = next.latitude;
-    _animLng = next.longitude;
+    // No matched road yet — stay put instead of drifting off-road toward GPS.
+  }
+
+  void _advanceAlongRoad(LatLng current, double step) {
+    var remaining = step;
+    var pos = current;
+
+    while (remaining > 0.01 && _roadQueue.isNotEmpty) {
+      final next = _roadQueue.first;
+      final dist = _calculateDistance(pos, next);
+      if (dist < 0.05) {
+        _roadQueue.removeAt(0);
+        continue;
+      }
+
+      final segmentBearing = _getBearing(pos, next);
+      _easeRotationToward(segmentBearing);
+
+      if (dist <= remaining) {
+        pos = next;
+        remaining -= dist;
+        _roadQueue.removeAt(0);
+      } else {
+        final fraction = remaining / dist;
+        pos = LatLng(
+          pos.latitude + (next.latitude - pos.latitude) * fraction,
+          pos.longitude + (next.longitude - pos.longitude) * fraction,
+        );
+        remaining = 0;
+      }
+    }
+
+    _animLat = pos.latitude;
+    _animLng = pos.longitude;
+  }
+
+  void _easeRotationToward(double bearing) {
+    bearing = _normalizeBearing(bearing);
+    if (!_hasHeading) {
+      _lockedBearing = bearing;
+      animatedRotation.value = bearing;
+      _hasHeading = true;
+      return;
+    }
+
+    final delta = _shortestBearingDelta(_lockedBearing, bearing);
+    if (delta.abs() < 0.5) return;
+
+    final step = delta.clamp(-_maxRotationStepDeg, _maxRotationStepDeg);
+    _lockedBearing = _normalizeBearing(_lockedBearing + step);
+    animatedRotation.value = _lockedBearing;
   }
 
   LatLng _offsetMeters(LatLng from, double bearingDeg, double meters) {
@@ -671,25 +861,36 @@ class TrackController extends GetxController {
     double? courseDeg,
   }) {
     double? movementBearing;
+    double movedM = 0.0;
     if (previousGps != null) {
-      final moved = _calculateDistance(previousGps, location);
-      if (moved >= _minGpsBearingMoveM) {
+      movedM = _calculateDistance(previousGps, location);
+      if (movedM >= _minGpsBearingMoveM) {
         movementBearing = _getBearing(previousGps, location);
       }
     }
     if (movementBearing == null && _animLat != 0.0) {
       final current = LatLng(_animLat, _animLng);
-      final moved = _calculateDistance(current, location);
-      if (moved >= _minGpsBearingMoveM) {
+      movedM = _calculateDistance(current, location);
+      // Prefer GPS→GPS over marker→GPS so park-creep lead doesn't invent a bend.
+      if (movedM >= _minGpsBearingMoveM * 1.5) {
         movementBearing = _getBearing(current, location);
       }
     }
 
     if (movementBearing != null) {
+      // Ignore wild heading flips from a single noisy ping unless the step is large.
+      if (_hasHeading) {
+        final flip =
+            _shortestBearingDelta(_lockedBearing, movementBearing).abs();
+        if (flip > 55.0 && movedM < 25.0) {
+          return;
+        }
+      }
       _setLockedBearing(movementBearing);
       return;
     }
 
+    // On first move, prefer device course over waiting for a noisy GPS delta.
     if (!_hasHeading &&
         courseDeg != null &&
         courseDeg >= 0 &&
@@ -708,9 +909,16 @@ class TrackController extends GetxController {
     }
 
     final diff = _shortestBearingDelta(_lockedBearing, bearing).abs();
+    // Small GPS zigzags must not rotate the car / dead-reckon path.
     if (diff >= _minRotationChangeDeg) {
-      _lockedBearing = bearing;
-      animatedRotation.value = bearing;
+      // Ease large turns instead of snapping (reduces bend on start/turn).
+      final eased = diff > 50.0
+          ? _normalizeBearing(
+              _lockedBearing + _shortestBearingDelta(_lockedBearing, bearing) * 0.45,
+            )
+          : bearing;
+      _lockedBearing = eased;
+      animatedRotation.value = eased;
     }
   }
 
@@ -802,7 +1010,7 @@ class TrackController extends GetxController {
     final dt = dtSec.clamp(0.016, 0.08);
 
     _roadSpeedFactor +=
-        (_targetRoadSpeedFactor - _roadSpeedFactor) * 0.06;
+        (_targetRoadSpeedFactor - _roadSpeedFactor) * 0.08;
 
     final current = LatLng(_animLat, _animLng);
 
@@ -814,11 +1022,13 @@ class TrackController extends GetxController {
       return;
     }
 
+    final pathMeters = _remainingPathMeters(current);
     final distToGps = _distanceToLiveGps(current);
     final bearing = _resolveTravelBearing(current);
-    final targetSpeed = _continuousSpeedMs(distToGps);
+    final targetSpeed = _continuousSpeedMs(pathMeters);
 
-    _smoothedGlideSpeedMs += (targetSpeed - _smoothedGlideSpeedMs) * 0.2;
+    // Stronger smoothing → less jerky speed changes between pings.
+    _smoothedGlideSpeedMs += (targetSpeed - _smoothedGlideSpeedMs) * 0.12;
     _smoothedGlideSpeedMs =
         math.max(_smoothedGlideSpeedMs, _wsWaitCreepMinMs);
 
@@ -842,12 +1052,26 @@ class TrackController extends GetxController {
   /// While speed is 0: slowly roll forward; if GPS was updated, ease toward it.
   void _advanceWhileStopped(LatLng current, double dt) {
     _smoothedGlideSpeedMs = _stoppedCreepMs;
+    _roadQueue.clear();
     final distToGps = _distanceToLiveGps(current);
 
-    // New track point while stopped — slowly follow tracking toward it.
+    // New track point while stopped — ease along heading when possible so we
+    // don't slide sideways into noisy GPS (that bend shows up on pull-away).
     if (distToGps > 1.5) {
       final step = math.min(_stoppedCreepMs * 1.5 * dt, distToGps);
-      _nudgeToward(_liveTarget!, step);
+      if (_hasHeading && _isForwardOf(_liveTarget!, current)) {
+        final toGps = _getBearing(current, _liveTarget!);
+        final err = _shortestBearingDelta(_lockedBearing, toGps).abs();
+        if (err <= _onCourseMaxDeg) {
+          _nudgeToward(_liveTarget!, step);
+        } else {
+          final next = _offsetMeters(current, _lockedBearing, step);
+          _animLat = next.latitude;
+          _animLng = next.longitude;
+        }
+      } else {
+        _nudgeToward(_liveTarget!, step);
+      }
       _publishAnim();
       if (isLocked.value) _maybeMoveCameraToVehicle();
       return;
@@ -976,9 +1200,9 @@ class TrackController extends GetxController {
           (center.latitude - _smoothCameraLat) * cameraAlpha;
       _smoothCameraLng +=
           (center.longitude - _smoothCameraLng) * cameraAlpha;
-    }
+      }
 
-    try {
+      try {
       mapController.move(
         LatLng(_smoothCameraLat, _smoothCameraLng),
         zoom,
@@ -1300,6 +1524,8 @@ class TrackController extends GetxController {
     _targetRoadSpeedFactor = 1.0;
     _smoothedGlideSpeedMs = 0.0;
     _routeRequestId = 0;
+    _roadQueue.clear();
+    _gpsTrace.clear();
     _lockedBearing = 0;
     _hasHeading = false;
     _animLat = 0;

@@ -34,21 +34,24 @@ class Vehicle {
   });
 
   factory Vehicle.fromJson(Map<String, dynamic> json) {
-    // Derived status logic
-    String derivedStatus = 'Stopped';
     final mode = json['mode']?.toString().toUpperCase();
     final speed = double.tryParse(json['speed']?.toString() ?? '0') ?? 0;
-    final ignition = json['ignition'] == 1;
+    final ignitionRaw = json['ignition'];
+    final ignition = ignitionRaw == 1 ||
+        ignitionRaw == true ||
+        ignitionRaw?.toString() == '1';
 
-    if (mode == 'INACTIVE') {
-      derivedStatus = 'Inactive';
-    } else if (mode == 'R' || mode == 'RUNNING' || (ignition && speed > 0)) {
-      derivedStatus = 'Running';
-    } else if (mode == 'I' || mode == 'IDLE' || (ignition && speed == 0)) {
-      derivedStatus = 'Idle';
-    } else {
-      derivedStatus = 'Stopped';
-    }
+    // Prefer explicit status string from API when present (not bool flags).
+    final rawStatus =
+        json['current_status'] ?? json['vehicle_status'] ?? json['status'];
+    final apiStatus = rawStatus is String ? rawStatus.trim() : null;
+
+    final derivedStatus = _resolveVehicleStatus(
+      apiStatus: apiStatus,
+      mode: mode,
+      speed: speed,
+      ignition: ignition,
+    );
 
     return Vehicle(
       id: json['id'] ?? 0,
@@ -69,6 +72,36 @@ class Vehicle {
       isLocked: json['lock'] != 0,
       deviceId: (json['imei'] ?? json['device_id'] ?? '').toString(),
     );
+  }
+
+  /// Aligns with live-track modes: M/R = Running, H/I = Idle, S = Stopped.
+  static String _resolveVehicleStatus({
+    String? apiStatus,
+    String? mode,
+    required double speed,
+    required bool ignition,
+  }) {
+    if (apiStatus != null && apiStatus.isNotEmpty) {
+      final s = apiStatus.toLowerCase();
+      if (s.contains('inactive') || s.contains('expired')) return 'Inactive';
+      if (s.contains('run') || s.contains('mov')) return 'Running';
+      if (s.contains('idle')) return 'Idle';
+      if (s.contains('stop')) return 'Stopped';
+    }
+
+    final m = mode?.toUpperCase();
+    if (m == 'INACTIVE' || m == 'EXPIRED') return 'Inactive';
+    // Mode is authoritative — do not override Stopped with noisy speed.
+    if (m == 'M' || m == 'R' || m == 'RUNNING' || m == 'MOVING') {
+      return 'Running';
+    }
+    if (m == 'H' || m == 'I' || m == 'IDLE') return 'Idle';
+    if (m == 'S' || m == 'STOPPED' || m == 'STOP') return 'Stopped';
+
+    // Fallback when mode is missing.
+    if (speed > 1.0) return 'Running';
+    if (ignition) return 'Idle';
+    return 'Stopped';
   }
 }
 
@@ -92,11 +125,34 @@ class HomeController extends GetxController {
   /// Search query for filtering vehicles (plate number, address, device id).
   final searchQuery = ''.obs;
 
-  /// Vehicles filtered by [searchQuery] from the fetched list. Empty query = all vehicles.
+  /// API type → status: 1 Stopped, 2 Running, 3 Idle, 4 Inactive.
+  String? get _selectedStatusFilter {
+    switch (selectedType.value) {
+      case 1:
+        return 'Stopped';
+      case 2:
+        return 'Running';
+      case 3:
+        return 'Idle';
+      case 4:
+        return 'Inactive';
+      default:
+        return null;
+    }
+  }
+
+  /// Vehicles for the selected tab (+ search). Always status-filtered on device
+  /// so Stopped never appears under Running even if the API mix is wrong.
   List<Vehicle> get filteredVehicles {
+    var list = vehicles.toList();
+    final status = _selectedStatusFilter;
+    if (status != null) {
+      list = list.where((v) => v.status == status).toList();
+    }
+
     final q = searchQuery.value.trim().toLowerCase();
-    if (q.isEmpty) return vehicles;
-    return vehicles
+    if (q.isEmpty) return list;
+    return list
         .where(
           (v) =>
               v.plateNumber.toLowerCase().contains(q) ||

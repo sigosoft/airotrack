@@ -51,9 +51,7 @@ class LocationController extends GetxController {
           deviceTime: v.lastUpdated.isEmpty
               ? 'Aug 02,2025 02:30:40 PM'
               : v.lastUpdated,
-          location: v.address.isEmpty
-              ? 'Puthiyakavu Junction,Karunagappalli, Kerala 690539, India.'
-              : v.address,
+          location: v.locationLabel,
           engine: v.isIgnitionOn ? 'On' : 'Off',
           voltage: '13.78 V',
           imei: v.deviceId,

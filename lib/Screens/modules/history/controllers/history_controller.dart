@@ -1598,8 +1598,6 @@ class HistoryController extends GetxController {
   }
 
   /// Reverse-geocode vehicle__history segments (and sync ignition_off map markers).
-  /// Prefers Mapbox place for exact start/end coordinates over API address text
-  /// so labels stay accurate and consistent.
   Future<void> _resolveVehicleHistoryAddresses() async {
     final runId = ++_geocodeRunId;
     final count = vehicleHistoryItems.length;
@@ -1680,12 +1678,11 @@ class HistoryController extends GetxController {
     final markerIndex = item.mapMarkerIndex;
     if (markerIndex == null) return;
     if (markerIndex < 0 || markerIndex >= stopLocations.length) return;
-    // Always apply coordinate-based address so markers stay accurate.
     stopLocations[markerIndex] =
         stopLocations[markerIndex].copyWith(address: address);
   }
 
-  /// Reverse-geocode stops from exact GPS coordinates (always preferred).
+  /// Reverse-geocode stops from exact GPS coordinates.
   Future<void> _resolveMissingStopAddresses({int? runId}) async {
     final activeRunId = runId ?? ++_geocodeRunId;
     final count = stopLocations.length;

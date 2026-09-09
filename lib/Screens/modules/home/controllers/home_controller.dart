@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
-import 'package:airotrack/Services/ReverseGeocodeService.dart';
 import 'package:airotrack/Utils/Utils.dart';
 
 class Vehicle {
@@ -11,6 +10,7 @@ class Vehicle {
   final String status; // 'Running', 'Stopped', 'Idle', 'Inactive'
   final String statusDuration;
   final String lastUpdated;
+  /// Place name from API `location` (home endpoint).
   final String address;
   final double? latitude;
   final double? longitude;
@@ -49,13 +49,10 @@ class Vehicle {
     return !(lat == 0 && lng == 0);
   }
 
-  /// Place name for UI — same style as History (no raw lat/lng).
+  /// Display text from API `location` (no client reverse-geocode).
   String get locationLabel {
     final text = address.trim();
-    if (text.isNotEmpty && text.toLowerCase() != 'null') {
-      return ReverseGeocodeService.withoutPincode(text);
-    }
-    if (hasValidCoordinates) return 'Fetching location…';
+    if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
     return 'Location unavailable';
   }
 
@@ -106,13 +103,15 @@ class Vehicle {
     final lat = double.tryParse(json['latitude']?.toString() ?? '');
     final lng = double.tryParse(json['longitude']?.toString() ?? '');
 
-    final rawAddress =
-        (json['location'] ?? json['address'])?.toString().trim() ?? '';
-    final address = rawAddress.isNotEmpty &&
-            rawAddress.toLowerCase() != 'null' &&
-            !_looksLikeRawCoordinates(rawAddress)
-        ? ReverseGeocodeService.withoutPincode(rawAddress)
-        : '';
+    // API `location` only (no reverse-geocode / no address fallbacks).
+    final locationRaw = json['location'];
+    String address = '';
+    if (locationRaw is String) {
+      final text = locationRaw.trim();
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        address = text;
+      }
+    }
 
     return Vehicle(
       id: json['id'] ?? 0,
@@ -140,14 +139,6 @@ class Vehicle {
       isLocked: json['lock'] != 0,
       deviceId: (json['imei'] ?? json['device_id'] ?? '').toString(),
     );
-  }
-
-  static bool _looksLikeRawCoordinates(String value) {
-    final parts = value.split(',');
-    if (parts.length != 2) return false;
-    final lat = double.tryParse(parts[0].trim());
-    final lng = double.tryParse(parts[1].trim());
-    return lat != null && lng != null;
   }
 
   static String _formatTodayKm(dynamic raw) {
@@ -243,7 +234,6 @@ class HomeController extends GetxController {
   final RxInt selectedIndex = 1.obs;
   final ScrollController scrollController = ScrollController();
   int currentPage = 1;
-  int _geocodeRunId = 0;
 
   // Status counts
   final totalCount = "0".obs;
@@ -346,7 +336,6 @@ class HomeController extends GetxController {
           );
           // No more pages when first page is shorter than the page size.
           hasMore.value = vehiclesList.length >= 20;
-          _resolveVehicleAddresses();
         } else {
           vehicles.clear();
           hasMore.value = false;
@@ -419,13 +408,11 @@ class HomeController extends GetxController {
               // API repeated page-1 vehicles — stop paging.
               hasMore.value = false;
             } else {
-              final startIndex = vehicles.length;
               vehicles.addAll(unique);
               currentPage = nextPage;
               if (newVehicles.length < 20) {
                 hasMore.value = false;
               }
-              _resolveVehicleAddresses(startIndex: startIndex);
             }
           }
         } else {
@@ -462,40 +449,12 @@ class HomeController extends GetxController {
     return 'plate:${v.plateNumber.trim().toLowerCase()}';
   }
 
-  /// Reverse-geocode home vehicles so the list shows place names like History.
-  Future<void> _resolveVehicleAddresses({int startIndex = 0}) async {
-    final runId = ++_geocodeRunId;
-    final count = vehicles.length;
-    if (startIndex < 0 || startIndex >= count) return;
-
-    for (var i = startIndex; i < count; i++) {
-      if (isClosed || runId != _geocodeRunId) return;
-      if (i >= vehicles.length) return;
-
-      final vehicle = vehicles[i];
-      if (!vehicle.hasValidCoordinates) continue;
-
-      final place = await ReverseGeocodeService.instance.reverse(
-        vehicle.latitude!,
-        vehicle.longitude!,
-      );
-      if (isClosed || runId != _geocodeRunId) return;
-      if (i >= vehicles.length) return;
-
-      if (place != null && place.isNotEmpty) {
-        vehicles[i] = vehicle.copyWith(address: place);
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-    }
-  }
-
   void changeTab(int index) {
     selectedIndex.value = index;
   }
 
   @override
   void onClose() {
-    _geocodeRunId++;
     scrollController.dispose();
     super.onClose();
   }

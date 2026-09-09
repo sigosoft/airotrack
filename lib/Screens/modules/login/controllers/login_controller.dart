@@ -1,5 +1,6 @@
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
+import 'package:airotrack/Services/FcmService.dart';
 import 'package:airotrack/Utils/Utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -67,12 +68,13 @@ class LoginController extends GetxController {
     if (!validate()) return;
     isLoading.value = true;
     try {
+      final fcmToken = await FcmService.instance.getToken();
       final response = await DioClient().post(
         ApiEndPoints.login,
         body: {
           'username': phoneController.text.trim(),
           'password': passwordController.text.trim(),
-          'fcm': '',
+          'fcm': fcmToken,
         },
       );
       isLoading.value = false;

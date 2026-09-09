@@ -5,8 +5,7 @@ import '../Configs/ApiConfigs.dart';
 
 /// Reverse-geocodes lat/lng to a human-readable place name via Mapbox.
 ///
-/// Prefers street / POI level results so History locations stay accurate to
-/// the GPS coordinates (not a coarse Area + City + State label).
+/// Used by History. Home uses API `location` directly (no reverse geocode).
 class ReverseGeocodeService {
   ReverseGeocodeService._();
   static final ReverseGeocodeService instance = ReverseGeocodeService._();
@@ -30,7 +29,6 @@ class ReverseGeocodeService {
     var text = raw.trim();
     if (text.isEmpty) return '';
 
-    // Drop postal / PIN codes.
     text = text.replaceAll(
       RegExp(
         r'(?:,\s*)?(?:\bPIN\b|\bPincode\b|\bPostal\s*Code\b)?\s*[A-Z]{0,2}\s*\d{3}\s*-?\s*\d{3}\b',
@@ -43,7 +41,6 @@ class ReverseGeocodeService {
       '',
     );
 
-    // Drop country only.
     text = text.replaceAll(
       RegExp(r'(?:,\s*)?\bIndia\b\.?', caseSensitive: false),
       '',
@@ -56,8 +53,6 @@ class ReverseGeocodeService {
         .where((p) => !_isCountry(p))
         .toList();
 
-    // Keep all meaningful segments (street → state). Do not truncate —
-    // truncating to 3 parts was dropping the accurate street / POI label.
     text = parts.join(', ');
 
     return text
@@ -156,7 +151,6 @@ class ReverseGeocodeService {
       return withoutPincode(parts.join(', '));
     }
 
-    // Fallback: full Mapbox place_name (still stripped of PIN / country).
     final placeName = feature['place_name']?.toString().trim();
     if (placeName == null || placeName.isEmpty) return null;
     return withoutPincode(placeName);
@@ -196,8 +190,6 @@ class ReverseGeocodeService {
   }
 
   /// Returns the most accurate place name for the coordinates, or null.
-  ///
-  /// Tries street `address` first, then broader types (POI / locality / city).
   Future<String?> reverse(double latitude, double longitude) async {
     if (!latitude.isFinite || !longitude.isFinite) return null;
     if (latitude == 0 && longitude == 0) return null;
@@ -207,19 +199,16 @@ class ReverseGeocodeService {
     if (cached != null && cached.isNotEmpty) return withoutPincode(cached);
 
     try {
-      // 1) Street-level when Mapbox has an address near the point.
       String? place = await _queryMapbox(
         latitude,
         longitude,
         types: 'address',
       );
 
-      // 2) Fall back to POI / neighborhood / city so we still get a label.
       place ??= await _queryMapbox(
         latitude,
         longitude,
-        types:
-            'address,poi,neighborhood,locality,place,district,region',
+        types: 'address,poi,neighborhood,locality,place,district,region',
       );
 
       if (place == null || place.isEmpty) return null;

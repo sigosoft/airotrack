@@ -284,13 +284,8 @@ class HistoryVehicleHistoryItem {
       totalKm: totalKmRaw is num
           ? totalKmRaw
           : num.tryParse(totalKmRaw?.toString() ?? ''),
-      startAddress: pickString([
-        'start_address',
-        'address',
-        'location',
-        'place',
-      ]),
-      endAddress: pickString(['end_address']),
+      startAddress: null,
+      endAddress: null,
     );
   }
 
@@ -462,13 +457,15 @@ class HistoryStopLocation {
         'next_key_on',
       ]),
       duration: durationText,
-      address: pickString([
-        'address',
-        'location_address',
-        'place',
-        'formatted_address',
-        'stop_address',
-      ]),
+      address: () {
+        // API `location` only (stop_analysis.stop_locations[].location).
+        final loc = json['location'];
+        if (loc is String) {
+          final text = loc.trim();
+          if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+        }
+        return null;
+      }(),
       index: index,
     );
   }

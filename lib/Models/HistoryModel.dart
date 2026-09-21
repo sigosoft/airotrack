@@ -268,8 +268,8 @@ class HistoryVehicleHistoryItem {
         startLng;
 
     final typeRaw = pickString(['type', 'segment_type', 'mode']) ?? 'unknown';
-    final totalKmRaw =
-        json['total_km'] ?? json['total_kilometers'] ?? json['distance'];
+    // Only API `total_km` — no distance / route_length fallbacks.
+    final totalKmRaw = json['total_km'];
 
     return HistoryVehicleHistoryItem(
       startLatitude: startLat,
@@ -280,7 +280,7 @@ class HistoryVehicleHistoryItem {
       endTime: pickString(['end_time', 'end', 'departure_time']),
       duration: pickString(['duration', 'duration_text']),
       type: typeRaw.toLowerCase().trim(),
-      speed: pickString(['speed', 'max_speed', 'maximum_speed']),
+      speed: pickString(['speed']),
       totalKm: totalKmRaw is num
           ? totalKmRaw
           : num.tryParse(totalKmRaw?.toString() ?? ''),
@@ -485,12 +485,15 @@ class HistoryKilometerStatistics {
 
   factory HistoryKilometerStatistics.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const HistoryKilometerStatistics();
-    final raw = json['total_kilometers_traveled'];
-    return HistoryKilometerStatistics(
-      totalKilometersTraveled: raw is num
-          ? raw
-          : num.tryParse(raw?.toString() ?? ''),
-    );
+    num? parseKm(dynamic raw) {
+      if (raw == null) return null;
+      if (raw is num) return raw;
+      return num.tryParse(raw.toString().trim());
+    }
+
+    // Only API `total_kilometers_traveled` — no distance/running_km fallbacks.
+    final value = parseKm(json['total_kilometers_traveled']);
+    return HistoryKilometerStatistics(totalKilometersTraveled: value);
   }
 }
 

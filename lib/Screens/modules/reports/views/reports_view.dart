@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/reports_controller.dart';
 import '../../../routes/app_routes.dart';
+import 'alert_reports_view.dart';
 
 class ReportsView extends GetView<ReportsController> {
   const ReportsView({Key? key}) : super(key: key);
@@ -83,6 +84,13 @@ class ReportsView extends GetView<ReportsController> {
                   'Geofence Reports',
                   () {
                     Get.toNamed(Routes.GEOFENCE_REPORTS);
+                  },
+                ),
+                _buildReportCard(
+                  'lib/Asset/Icons/notification.png',
+                  'Alert Reports',
+                  () {
+                    Get.to(() => const AlertReportsView());
                   },
                 ),
               ],

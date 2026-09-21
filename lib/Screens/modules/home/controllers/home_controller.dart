@@ -115,26 +115,18 @@ class Vehicle {
 
     return Vehicle(
       id: json['id'] ?? 0,
-      plateNumber: json['vehicle_number'] ?? json['name'] ?? '',
+      plateNumber: (json['vehicle_number'] ?? json['name'] ?? '').toString(),
       status: derivedStatus,
-      statusDuration: json['duration'] ?? '',
-      lastUpdated: json['last_update'] ?? json['device_time'] ?? '',
+      statusDuration: (json['duration'] ?? '').toString(),
+      lastUpdated:
+          (json['last_update'] ?? json['device_time'] ?? '').toString(),
       address: address,
       latitude: lat,
       longitude: lng,
       speed: speed.toStringAsFixed(1),
       distance: (json['distance'] ?? 0).toString(),
-      todayKm: _formatTodayKm(
-        json['today_km'] ??
-            json['total_kilometers_today'] ??
-            json['todayKm'] ??
-            json['distance'],
-      ),
-      validityDays: _daysFromExpiration(
-        json['expirationtime'] ??
-            json['expiration_time'] ??
-            json['expirationTime'],
-      ),
+      todayKm: _formatTodayKm(json['today_km']),
+      validityDays: _daysFromExpiration(json['expirationtime']),
       isIgnitionOn: ignition,
       isLocked: json['lock'] != 0,
       deviceId: (json['imei'] ?? json['device_id'] ?? '').toString(),
@@ -142,18 +134,19 @@ class Vehicle {
   }
 
   static String _formatTodayKm(dynamic raw) {
+    if (raw == null) return '0 Km';
     final value = raw is num
         ? raw.toDouble()
-        : double.tryParse(raw?.toString() ?? '') ?? 0.0;
+        : double.tryParse(raw.toString()) ?? 0.0;
     if (value == value.roundToDouble()) {
       return '${value.toInt()} Km';
     }
     return '${value.toStringAsFixed(2)} Km';
   }
 
-  /// Days between today and `expirationtime` (calendar days remaining).
-  /// Returns `0` when `expirationtime` is missing or invalid.
-  static String _daysFromExpiration(dynamic expirationRaw, {dynamic fallback}) {
+  /// Days between today and API `expirationtime` (calendar days remaining).
+  /// Returns `0` when missing or invalid — no other field fallbacks.
+  static String _daysFromExpiration(dynamic expirationRaw) {
     final expiry = _parseExpirationDate(expirationRaw);
     if (expiry == null) return '0';
 
@@ -164,34 +157,34 @@ class Vehicle {
     return days < 0 ? '0' : days.toString();
   }
 
+  /// Parses API values like `2027-04-24 12:00:00`.
   static DateTime? _parseExpirationDate(dynamic raw) {
     if (raw == null) return null;
-    final text = raw.toString().trim();
+    if (raw is DateTime) return raw;
+
+    // Prefer string/num only — avoid toString() on unexpected Map/List payloads.
+    final String text;
+    if (raw is String) {
+      text = raw.trim();
+    } else if (raw is num) {
+      // Treat large values as unix seconds.
+      if (raw > 1000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(
+          (raw > 1000000000000 ? raw : raw * 1000).toInt(),
+        );
+      }
+      text = raw.toString();
+    } else {
+      return null;
+    }
+
     if (text.isEmpty || text.toLowerCase() == 'null') return null;
 
-    final direct = DateTime.tryParse(text);
-    if (direct != null) return direct;
-
-    // Common API form: "yyyy-MM-dd HH:mm:ss"
-    final withT = DateTime.tryParse(text.replaceFirst(' ', 'T'));
-    if (withT != null) return withT;
-
-    final parts = text.split(RegExp(r'[/\-.]'));
-    if (parts.length == 3) {
-      final a = int.tryParse(parts[0]);
-      final b = int.tryParse(parts[1]);
-      final c = int.tryParse(parts[2].split(RegExp(r'\s')).first);
-      if (a != null && b != null && c != null) {
-        // yyyy-MM-dd vs dd-MM-yyyy
-        if (parts[0].length == 4) {
-          return DateTime(a, b, c);
-        }
-        if (parts[2].length == 4) {
-          return DateTime(c, b, a);
-        }
-      }
-    }
-    return null;
+    // "yyyy-MM-dd HH:mm:ss" → ISO-friendly
+    final normalized = text.contains('T')
+        ? text
+        : text.replaceFirst(' ', 'T');
+    return DateTime.tryParse(normalized) ?? DateTime.tryParse(text);
   }
 
   /// Aligns with live-track modes: M/R = Running, H/I = Idle, S = Stopped.
@@ -331,9 +324,18 @@ class HomeController extends GetxController {
         final data = response.data['data'];
         if (data['vehicles_data'] != null) {
           final List<dynamic> vehiclesList = data['vehicles_data'];
-          vehicles.value = _uniqueVehicles(
-            vehiclesList.map((json) => Vehicle.fromJson(json)).toList(),
-          );
+          final parsed = <Vehicle>[];
+          for (final row in vehiclesList) {
+            try {
+              final map = row is Map<String, dynamic>
+                  ? row
+                  : Map<String, dynamic>.from(row as Map);
+              parsed.add(Vehicle.fromJson(map));
+            } catch (e) {
+              debugPrint('[Home] skip vehicle parse error: $e');
+            }
+          }
+          vehicles.value = _uniqueVehicles(parsed);
           // No more pages when first page is shorter than the page size.
           hasMore.value = vehiclesList.length >= 20;
         } else {
@@ -400,9 +402,17 @@ class HomeController extends GetxController {
           if (vehiclesList.isEmpty) {
             hasMore.value = false;
           } else {
-            final newVehicles = vehiclesList
-                .map((json) => Vehicle.fromJson(json))
-                .toList();
+            final newVehicles = <Vehicle>[];
+            for (final row in vehiclesList) {
+              try {
+                final map = row is Map<String, dynamic>
+                    ? row
+                    : Map<String, dynamic>.from(row as Map);
+                newVehicles.add(Vehicle.fromJson(map));
+              } catch (e) {
+                debugPrint('[Home] skip vehicle parse error: $e');
+              }
+            }
             final unique = _dedupeVehicles(newVehicles);
             if (unique.isEmpty) {
               // API repeated page-1 vehicles — stop paging.

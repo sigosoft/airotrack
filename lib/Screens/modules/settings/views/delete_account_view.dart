@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../../routes/app_routes.dart';
 import '../controllers/delete_account_controller.dart';
 
 class DeleteAccountView extends GetView<DeleteAccountController> {
@@ -274,24 +273,40 @@ class DeleteAccountView extends GetView<DeleteAccountController> {
                             ),
                           ],
                         ),
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Get.back();
-                            Get.toNamed(Routes.DELETE_SUCCESS);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                        child: Obx(
+                          () => ElevatedButton(
+                            onPressed: controller.isLoading.value
+                                ? null
+                                : () async {
+                                    Get.back();
+                                    await controller.deleteAccount();
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 0,
                             ),
-                            elevation: 0,
-                          ),
-                          child: const Text(
-                            "Delete Account",
-                            maxLines: 1,
-                            overflow: TextOverflow.visible,
-                            style: TextStyle(color: Colors.white, fontSize: 12),
+                            child: controller.isLoading.value
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    "Delete Account",
+                                    maxLines: 1,
+                                    overflow: TextOverflow.visible,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                    ),
+                                  ),
                           ),
                         ),
                       ),

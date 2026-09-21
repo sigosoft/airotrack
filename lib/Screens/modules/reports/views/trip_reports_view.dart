@@ -1,168 +1,33 @@
+import 'package:airotrack/Models/ReportItem.dart';
+import 'package:airotrack/Screens/modules/reports/controllers/reports_controller.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_list_scaffold.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_map_view.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../controllers/reports_controller.dart';
-import '../../../routes/app_routes.dart';
 
-class TripReportsView extends GetView<ReportsController> {
+class TripReportsView extends StatelessWidget {
   const TripReportsView({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 22),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          'Trip Reports',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Image.asset(
-              'lib/Asset/Icons/download.png',
-              width: 32,
-              height: 32,
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Container(
-              height: 45,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: "Search Vehicles",
-                        border: InputBorder.none,
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                        contentPadding: EdgeInsets.only(bottom: 12),
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.search, color: Colors.grey, size: 24),
-                  const SizedBox(width: 16),
-                ],
-              ),
-            ),
-          ),
-          // Filter Tabs
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-            child: Row(
-              children: [
-                _buildFilterTab("Today", true),
-                const SizedBox(width: 8),
-                _buildFilterTab("Yesterday", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Week", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Month", false),
-                const SizedBox(width: 8),
-                Image.asset(
-                  'lib/Asset/Icons/Calender.png',
-                  height: 28,
-                  width: 28,
-                ),
-              ],
-            ),
-          ),
-          // List of Tiles
-          Expanded(
-            child: Obx(
-              () => ListView.separated(
-                controller: controller.scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.31,
-                  vertical: 10,
-                ),
-                itemCount:
-                    controller.items.length +
-                    (controller.isLoading.value && controller.hasMore.value
-                        ? 1
-                        : 0),
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  if (index < controller.items.length) {
-                    return GestureDetector(
-                      onTap: () => Get.toNamed(Routes.HISTORY),
-                      child: _buildTripTile(context),
-                    );
-                  } else {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Color(0xFF009FE3),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
+    return ReportListScaffold(
+      type: ReportType.trip,
+      title: 'Trip Reports',
+      onTap: (_) => Get.to(() => const ReportMapView(title: 'Trip')),
+      itemBuilder: (context, item, index) => _TripTile(item: item),
     );
   }
+}
 
-  Widget _buildFilterTab(String text, bool isSelected) {
-    return Container(
-      width: 72.2,
-      height: 26.89,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFF009FE3) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isSelected ? Colors.white : Colors.black,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
+class _TripTile extends StatelessWidget {
+  final ReportItem item;
+  const _TripTile({required this.item});
 
-  Widget _buildTripTile(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return Container(
       width: screenWidth - 32.62,
-      height: 128,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -179,7 +44,7 @@ class TripReportsView extends GetView<ReportsController> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Row
+          // Vehicle number
           Row(
             children: [
               Image.asset(
@@ -189,18 +54,21 @@ class TripReportsView extends GetView<ReportsController> {
                 color: const Color(0xFF009FE3),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'KL 07 D 0518',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.black,
+              Expanded(
+                child: Text(
+                  reportDisplay(item.vehicleNumber, fallback: '—'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          // Distance Row
+          // Distance + Duration
           Row(
             children: [
               Image.asset(
@@ -214,9 +82,9 @@ class TripReportsView extends GetView<ReportsController> {
                 'Distance: ',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
-              const Text(
-                '18.0 Km',
-                style: TextStyle(
+              Text(
+                reportDisplay(item.distance, fallback: '0 Km'),
+                style: const TextStyle(
                   fontSize: 12,
                   color: Colors.black,
                   fontWeight: FontWeight.bold,
@@ -229,7 +97,7 @@ class TripReportsView extends GetView<ReportsController> {
                   children: [
                     const TextSpan(text: 'Duration: '),
                     TextSpan(
-                      text: '02h 40m',
+                      text: reportDisplay(item.duration, fallback: '00h 00m'),
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.grey[800],
@@ -241,7 +109,7 @@ class TripReportsView extends GetView<ReportsController> {
             ],
           ),
           const SizedBox(height: 5),
-          // Time Row
+          // Start / end times
           Row(
             children: [
               Image.asset(
@@ -251,11 +119,14 @@ class TripReportsView extends GetView<ReportsController> {
                 color: const Color(0xFF00C853),
               ),
               const SizedBox(width: 6),
-              const Text(
-                'Oct 17, 2025 12:00:08 AM',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
+              Flexible(
+                child: Text(
+                  reportDisplay(item.startTime),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 12),
               Image.asset(
                 'lib/Asset/Icons/Time.png',
                 width: 13,
@@ -263,51 +134,70 @@ class TripReportsView extends GetView<ReportsController> {
                 color: const Color(0xFFFF5252),
               ),
               const SizedBox(width: 6),
-              const Text(
-                'Oct 17, 2025 2:40:08 AM',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          // Start Location
-          Row(
-            children: [
-              Container(
-                width: 11,
-                height: 11,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF00C853),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
+              Flexible(
                 child: Text(
-                  'Puthiyakavu Junction, Karunagappalli, Kerala 690539, India',
-                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                  reportDisplay(item.endTime),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          // End Location
+          const SizedBox(height: 8),
+          // Start address (green dot)
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 11,
-                height: 11,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFF3D00),
-                  shape: BoxShape.circle,
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Container(
+                  width: 11,
+                  height: 11,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF00C853),
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Puthiyakavu Junction, Karunagappalli, Kerala 690539, India',
-                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                  reportDisplay(
+                    item.startLocation,
+                    fallback: 'Start location unavailable',
+                  ),
+                  style: TextStyle(fontSize: 10, color: Colors.grey[700]),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // End address (red dot)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Container(
+                  width: 11,
+                  height: 11,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFF3D00),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  reportDisplay(
+                    item.endLocation,
+                    fallback: 'End location unavailable',
+                  ),
+                  style: TextStyle(fontSize: 10, color: Colors.grey[700]),
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

@@ -26,169 +26,155 @@ class EditProfileView extends GetView<EditProfileController> {
         ),
         centerTitle: false,
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.5),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 30),
-              // Avatar and Name Row
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Circle Avatar
-                  Container(
-                    width: 77,
-                    height: 77,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'J',
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
+      body: Obx(() {
+        if (controller.isLoading.value) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF009FE3)),
+          );
+        }
+        return SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 30),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 77,
+                      height: 77,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        shape: BoxShape.circle,
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  // Name Field
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey.shade200),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 5,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: TextField(
-                            controller: controller.nameController,
-                            decoration: const InputDecoration(
-                              hintText: "John Doe",
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              border: InputBorder.none,
-                            ),
+                      child: Center(
+                        child: Obx(
+                          () => Text(
+                            controller.avatarInitial.value,
                             style: const TextStyle(
-                              fontSize: 14,
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
                               color: Colors.black,
                             ),
                           ),
                         ),
-                        Obx(
-                          () => controller.nameError.value.isNotEmpty
-                              ? Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 4,
-                                    top: 4,
-                                  ),
-                                  child: Text(
-                                    controller.nameError.value,
-                                    style: const TextStyle(
-                                      color: Colors.red,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 30),
-              // Phone Number Field
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade200),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 5,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      controller: controller.phoneController,
-                      decoration: const InputDecoration(
-                        hintText: "+91 91234 56789",
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                        border: InputBorder.none,
                       ),
-                      style: const TextStyle(fontSize: 14, color: Colors.black),
                     ),
-                  ),
-                  Obx(
-                    () => controller.phoneError.value.isNotEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.only(left: 4, top: 4),
-                            child: Text(
-                              controller.phoneError.value,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 12,
-                              ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildField(
+                        controller: controller.nameController,
+                        hint: 'Name',
+                        error: controller.nameError,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _buildField(
+                  controller: controller.companyController,
+                  hint: 'Company name',
+                  error: controller.companyError,
+                ),
+                const SizedBox(height: 20),
+                _buildField(
+                  controller: controller.phoneController,
+                  hint: 'Mobile number',
+                  error: controller.phoneError,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 80),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed:
+                        controller.isSaving.value ? null : controller.saveProfile,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF009FE3),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                      side: const BorderSide(color: Color(0xFF009FE3), width: 1),
+                    ),
+                    child: controller.isSaving.value
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
                             ),
                           )
-                        : const SizedBox.shrink(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 330), // Spacing to match "top 607" approx
-              // Save Button
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: controller.saveProfile,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF009FE3),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    elevation: 0,
-                    side: const BorderSide(color: Color(0xFF009FE3), width: 1),
-                  ),
-                  child: const Text(
-                    'Save',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                        : const Text(
+                            'Save',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildField({
+    required TextEditingController controller,
+    required String hint,
+    required RxString error,
+    TextInputType? keyboardType,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          height: 50,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 5,
+                offset: const Offset(0, 2),
               ),
-              const SizedBox(height: 20),
             ],
           ),
+          child: TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            decoration: InputDecoration(
+              hintText: hint,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              border: InputBorder.none,
+            ),
+            style: const TextStyle(fontSize: 14, color: Colors.black),
+          ),
         ),
-      ),
+        Obx(
+          () => error.value.isNotEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(left: 4, top: 4),
+                  child: Text(
+                    error.value,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 }

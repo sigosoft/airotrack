@@ -1,166 +1,31 @@
+import 'package:airotrack/Models/ReportItem.dart';
+import 'package:airotrack/Screens/modules/reports/controllers/reports_controller.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_list_scaffold.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_map_view.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../controllers/reports_controller.dart';
-import 'report_map_view.dart';
 
-class StoppageReportsView extends GetView<ReportsController> {
+class StoppageReportsView extends StatelessWidget {
   const StoppageReportsView({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 22),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          'Stoppage Reports',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Image.asset(
-              'lib/Asset/Icons/download.png',
-              width: 32,
-              height: 32,
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Container(
-              height: 45,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: "Search Vehicles",
-                        border: InputBorder.none,
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                        contentPadding: EdgeInsets.only(bottom: 12),
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.search, color: Colors.grey, size: 24),
-                  const SizedBox(width: 16),
-                ],
-              ),
-            ),
-          ),
-          // Filter Tabs
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-            child: Row(
-              children: [
-                _buildFilterTab("Today", true),
-                const SizedBox(width: 8),
-                _buildFilterTab("Yesterday", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Week", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Month", false),
-                const SizedBox(width: 8),
-                Image.asset(
-                  'lib/Asset/Icons/Calender.png',
-                  height: 28,
-                  width: 28,
-                ),
-              ],
-            ),
-          ),
-          // List of Tiles
-          Expanded(
-            child: Obx(
-              () => ListView.separated(
-                controller: controller.scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.31,
-                  vertical: 10,
-                ),
-                itemCount:
-                    controller.items.length +
-                    (controller.isLoading.value && controller.hasMore.value
-                        ? 1
-                        : 0),
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  if (index < controller.items.length) {
-                    return GestureDetector(
-                      onTap: () =>
-                          Get.to(() => const ReportMapView(title: 'Stoppage')),
-                      child: _buildStoppageTile(context),
-                    );
-                  } else {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Color(0xFF009FE3),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
+    return ReportListScaffold(
+      type: ReportType.stoppage,
+      title: 'Stoppage Reports',
+      onTap: (_) => Get.to(() => const ReportMapView(title: 'Stoppage')),
+      itemBuilder: (context, item, index) => _StoppageTile(item: item),
     );
   }
+}
 
-  Widget _buildFilterTab(String text, bool isSelected) {
-    return Container(
-      width: 72.2,
-      height: 26.89,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFF009FE3) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isSelected ? Colors.white : Colors.black,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
+class _StoppageTile extends StatelessWidget {
+  final ReportItem item;
+  const _StoppageTile({required this.item});
 
-  Widget _buildStoppageTile(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return Container(
       width: screenWidth - 32.62,
       height: 90,
@@ -186,25 +51,27 @@ class StoppageReportsView extends GetView<ReportsController> {
                 'lib/Asset/Icons/Car.png',
                 width: 22,
                 height: 20,
-                color: const Color(0xFFFF3D00), // Red car
+                color: const Color(0xFFFF3D00),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'KL 07 D 0518',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.black,
+              Expanded(
+                child: Text(
+                  reportDisplay(item.vehicleNumber, fallback: 'Vehicle'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
               RichText(
                 text: TextSpan(
                   style: const TextStyle(fontSize: 10, color: Colors.grey),
                   children: [
                     const TextSpan(text: 'Duration: '),
                     TextSpan(
-                      text: '02h 40m',
+                      text: reportDisplay(item.duration, fallback: '00h 00m'),
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.grey[800],
@@ -222,24 +89,30 @@ class StoppageReportsView extends GetView<ReportsController> {
                 'lib/Asset/Icons/Time.png',
                 width: 12,
                 height: 12,
-                color: const Color(0xFF00C853), // Green start time
+                color: const Color(0xFF00C853),
               ),
               const SizedBox(width: 6),
-              const Text(
-                'Oct 17, 2025 12:00:08 AM',
-                style: TextStyle(fontSize: 9, color: Colors.grey),
+              Flexible(
+                child: Text(
+                  reportDisplay(item.startTime),
+                  style: const TextStyle(fontSize: 9, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 12),
               Image.asset(
                 'lib/Asset/Icons/Time.png',
                 width: 12,
                 height: 12,
-                color: const Color(0xFFFF5252), // Red end time
+                color: const Color(0xFFFF5252),
               ),
               const SizedBox(width: 6),
-              const Text(
-                'Oct 17, 2025 2:40:08 AM',
-                style: TextStyle(fontSize: 9, color: Colors.grey),
+              Flexible(
+                child: Text(
+                  reportDisplay(item.endTime),
+                  style: const TextStyle(fontSize: 9, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -255,7 +128,7 @@ class StoppageReportsView extends GetView<ReportsController> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Puthiyakavu Junction, Karunagappalli, Kerala 690539, India',
+                  reportDisplay(item.location, fallback: 'Location unavailable'),
                   style: TextStyle(fontSize: 9, color: Colors.grey[700]),
                   overflow: TextOverflow.ellipsis,
                 ),

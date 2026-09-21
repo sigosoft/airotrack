@@ -56,25 +56,38 @@ class ChangePasswordView extends GetView<ChangePasswordController> {
                 controller.confirmPasswordError,
               ),
               const SizedBox(height: 300), // Spacing to match "top 607" approx
-              SizedBox(
-                width: 357,
-                height: 45,
-                child: ElevatedButton(
-                  onPressed: controller.changePassword,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF009FE3),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+              Obx(
+                () => SizedBox(
+                  width: 357,
+                  height: 45,
+                  child: ElevatedButton(
+                    onPressed: controller.isLoading.value
+                        ? null
+                        : controller.changePassword,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF009FE3),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
                     ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    'Change Password',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    child: controller.isLoading.value
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Change Password',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
               ),

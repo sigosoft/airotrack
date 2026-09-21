@@ -1,5 +1,11 @@
+import 'package:airotrack/Configs/ApiConfigs.dart';
+import 'package:airotrack/Configs/DioClient.dart';
+import 'package:airotrack/Utils/ApiHelpers.dart';
+import 'package:airotrack/Utils/Utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import '../../../routes/app_routes.dart';
 
 class DeleteAccountController extends GetxController {
   final phoneController = TextEditingController();
@@ -7,6 +13,7 @@ class DeleteAccountController extends GetxController {
   final RxBool obscurePassword = true.obs;
   final phoneError = ''.obs;
   final passwordError = ''.obs;
+  final isLoading = false.obs;
 
   void toggleObscure() => obscurePassword.value = !obscurePassword.value;
 
@@ -28,19 +35,50 @@ class DeleteAccountController extends GetxController {
     return isValid;
   }
 
-  void deleteAccount() {
-    if (validate()) {
-      // Logic for account deletion
-      Get.back();
-      // Usually would navigate somewhere else like Routes.WELCOME
-      Get.snackbar(
-        'Account Deleted',
-        'Your account has been deleted successfully',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
+  Future<void> deleteAccount() async {
+    if (!validate()) return;
+    try {
+      isLoading.value = true;
+      await ensureApiToken();
+      final response = await DioClient().post(
+        ApiEndPoints.deleteAccount,
+        body: {
+          'mobile': phoneController.text.trim(),
+          'password': passwordController.text.trim(),
+        },
       );
+
+      final ok = response.data == null ||
+          response.data['status'] == true ||
+          response.data['success'] == true ||
+          response.statusCode == 200;
+
+      if (ok) {
+        await _clearSession();
+        Get.offAllNamed(Routes.DELETE_SUCCESS);
+      } else {
+        showErrorMessage(
+          response.data is Map
+              ? (response.data['message'] ?? 'Failed to delete account')
+              : 'Failed to delete account',
+        );
+      }
+    } catch (e) {
+      showErrorMessage(e);
+    } finally {
+      isLoading.value = false;
     }
+  }
+
+  Future<void> _clearSession() async {
+    try {
+      if (!Hive.isBoxOpen('userBox')) {
+        await Hive.openBox('userBox');
+      }
+      await Hive.box('userBox').put('isLoggedIn', false);
+      await removename('token');
+      DioClient().dio.options.headers.remove('Authorization');
+    } catch (_) {}
   }
 
   @override

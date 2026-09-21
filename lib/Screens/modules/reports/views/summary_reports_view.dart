@@ -1,164 +1,33 @@
+import 'package:airotrack/Models/ReportItem.dart';
+import 'package:airotrack/Screens/modules/reports/controllers/reports_controller.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_list_scaffold.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_map_view.dart';
 import 'package:flutter/material.dart';
-
 import 'package:get/get.dart';
-import '../controllers/reports_controller.dart';
 
-class SummaryReportsView extends GetView<ReportsController> {
+class SummaryReportsView extends StatelessWidget {
   const SummaryReportsView({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 22),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          'Summary Reports',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Image.asset(
-              'lib/Asset/Icons/download.png',
-              width: 32,
-              height: 32,
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Container(
-              height: 45,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: "Search Vehicles",
-                        border: InputBorder.none,
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                        contentPadding: EdgeInsets.only(bottom: 12),
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.search, color: Colors.grey, size: 24),
-                  const SizedBox(width: 16),
-                ],
-              ),
-            ),
-          ),
-          // Filter Tabs
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-            child: Row(
-              children: [
-                _buildFilterTab("Today", true),
-                const SizedBox(width: 8),
-                _buildFilterTab("Yesterday", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Week", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Month", false),
-                const SizedBox(width: 8),
-                Image.asset(
-                  'lib/Asset/Icons/Calender.png',
-                  height: 28,
-                  width: 28,
-                ),
-              ],
-            ),
-          ),
-          // List of Tiles
-          Expanded(
-            child: Obx(
-              () => ListView.separated(
-                controller: controller.scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.31,
-                  vertical: 10,
-                ),
-                itemCount:
-                    controller.items.length +
-                    (controller.isLoading.value && controller.hasMore.value
-                        ? 1
-                        : 0),
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  if (index < controller.items.length) {
-                    return _buildSummaryTile(context);
-                  } else {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Color(0xFF009FE3),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
+    return ReportListScaffold(
+      type: ReportType.summary,
+      title: 'Summary Reports',
+      onTap: (_) => Get.to(() => const ReportMapView(title: 'Summary')),
+      itemBuilder: (context, item, index) => _SummaryTile(item: item),
     );
   }
+}
 
-  Widget _buildFilterTab(String text, bool isSelected) {
-    return Container(
-      width: 72.2,
-      height: 26.89,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFF009FE3) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isSelected ? Colors.white : Colors.black,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
+class _SummaryTile extends StatelessWidget {
+  final ReportItem item;
+  const _SummaryTile({required this.item});
 
-  Widget _buildSummaryTile(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return Container(
-      width: screenWidth - 32.62, // Responsive width
+      width: screenWidth - 32.62,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -175,7 +44,7 @@ class SummaryReportsView extends GetView<ReportsController> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Row
+          // Vehicle + distance
           Row(
             children: [
               Image.asset(
@@ -185,20 +54,22 @@ class SummaryReportsView extends GetView<ReportsController> {
                 color: const Color(0xFF009FE3),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'KL 07 D 0518',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.black,
+              Expanded(
+                child: Text(
+                  reportDisplay(item.vehicleNumber, fallback: '—'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
               Image.asset('lib/Asset/Icons/Route.png', width: 14, height: 14),
               const SizedBox(width: 4),
-              const Text(
-                '2.65 Km',
-                style: TextStyle(
+              Text(
+                reportDisplay(item.distance, fallback: '0 Km'),
+                style: const TextStyle(
                   fontSize: 11,
                   color: Colors.black,
                   fontWeight: FontWeight.bold,
@@ -207,28 +78,39 @@ class SummaryReportsView extends GetView<ReportsController> {
             ],
           ),
           const SizedBox(height: 12),
-          // Stats Row
+          // Duration stats
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStatItem(
+              _stat(
                 'Engine Hour',
-                '00:38:41h',
+                reportDisplay(item.engineHours),
                 const Color(0xFFFF6F00),
               ),
-              _buildStatItem('Running', '00:38:41h', const Color(0xFF00C853)),
-              _buildStatItem('Stoped', '00:38:41h', const Color(0xFFFF5252)),
-              _buildStatItem('Idle', '00:38:41h', const Color(0xFFFFC107)),
+              _stat(
+                'Running',
+                reportDisplay(item.running),
+                const Color(0xFF00C853),
+              ),
+              _stat(
+                'Stoped',
+                reportDisplay(item.stopped),
+                const Color(0xFFFF5252),
+              ),
+              _stat(
+                'Idle',
+                reportDisplay(item.idle),
+                const Color(0xFFFFC107),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          // Dotted Line
-          _buildDottedLine(),
-          const SizedBox(height: 10),
-          // Locations with vertical line alignment
+          const SizedBox(height: 12),
+          _dottedLine(),
+          const SizedBox(height: 12),
+          // Addresses + odometer
           IntrinsicHeight(
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Column(
                   children: [
@@ -258,72 +140,29 @@ class SummaryReportsView extends GetView<ReportsController> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'PuthiyakavuJunction,Karunagappalli, Kerala 690539, India',
-                        style: TextStyle(
+                      Text(
+                        reportDisplay(
+                          item.startLocation,
+                          fallback: 'Start location unavailable',
+                        ),
+                        style: const TextStyle(
                           fontSize: 9.5,
-                          color: Color.fromARGB(255, 110, 109, 109),
+                          color: Color(0xFF6E6D6D),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 12),
-                      // Trip IDs Row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE8F5E9),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              '000036345',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Color(0xFF00C853),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Image.asset(
-                            'lib/Asset/Icons/Line.png',
-                            width: 45,
-                            height: 12,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFEBEE),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              '000036361',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Color(0xFFFF3D00),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'PuthiyakavuJunction,Karunagappalli, Kerala 690539, India',
-                        style: TextStyle(
+                      const SizedBox(height: 10),
+                      _odometerRow(),
+                      const SizedBox(height: 10),
+                      Text(
+                        reportDisplay(
+                          item.endLocation,
+                          fallback: 'End location unavailable',
+                        ),
+                        style: const TextStyle(
                           fontSize: 9.5,
-                          color: Color.fromARGB(255, 110, 109, 109),
+                          color: Color(0xFF6E6D6D),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -334,95 +173,27 @@ class SummaryReportsView extends GetView<ReportsController> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          // Dotted Line
-          _buildDottedLine(),
-          const SizedBox(height: 10),
-          // Speed Cards
+          const SizedBox(height: 12),
+          _dottedLine(),
+          const SizedBox(height: 12),
+          // Avg / Max speed
           Row(
             children: [
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 10,
-                    horizontal: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Image.asset(
-                        'lib/Asset/Icons/Distance.png',
-                        width: 18,
-                        height: 18,
-                        color: const Color(0xFF009FE3),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Avg Speed: ',
-                        style: TextStyle(fontSize: 9, color: Colors.grey),
-                      ),
-                      const Text(
-                        '25.10 kmph',
-                        style: TextStyle(
-                          fontSize: 9,
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: _speedBox(
+                  iconColor: const Color(0xFF009FE3),
+                  label: 'Avg Speed: ',
+                  value: reportDisplay(item.averageSpeed, fallback: '—'),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 10,
-                    horizontal: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Image.asset(
-                        'lib/Asset/Icons/Max Distance.png',
-                        width: 18,
-                        height: 18,
-                        color: const Color(0xFFFF5252),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Max Speed: ',
-                        style: TextStyle(fontSize: 9, color: Colors.grey),
-                      ),
-                      const Text(
-                        '52.10 kmph',
-                        style: TextStyle(
-                          fontSize: 9,
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                child: _speedBox(
+                  iconColor: const Color(0xFFFF5252),
+                  label: 'Max Speed: ',
+                  value: reportDisplay(
+                    item.maxSpeed.isNotEmpty ? item.maxSpeed : item.speed,
+                    fallback: '—',
                   ),
                 ),
               ),
@@ -433,59 +204,135 @@ class SummaryReportsView extends GetView<ReportsController> {
     );
   }
 
-  Widget _buildStatItem(String label, String value, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
+  Widget _odometerRow() {
+    final start = reportDisplay(item.startOdometer, fallback: '—');
+    final end = reportDisplay(item.endOdometer, fallback: '—');
+    return Row(
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: color,
-            fontWeight: FontWeight.w600,
+        _odoPill(start, const Color(0xFFE8F5E9), const Color(0xFF00C853)),
+        Expanded(
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(height: 1, color: Colors.grey.shade300),
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 4),
-        Container(width: 65, height: 2, color: color),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 11,
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
+        _odoPill(end, const Color(0xFFFFEBEE), const Color(0xFFFF5252)),
+      ],
+    );
+  }
+
+  Widget _odoPill(String value, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        value,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: fg,
+        ),
+      ),
+    );
+  }
+
+  Widget _speedBox({
+    required Color iconColor,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Image.asset(
+            'lib/Asset/Icons/Speed.png',
+            width: 16,
+            height: 16,
+            color: iconColor,
+            colorBlendMode: BlendMode.srcIn,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: RichText(
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+                children: [
+                  TextSpan(text: label),
+                  TextSpan(
+                    text: value,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dottedLine() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const dashWidth = 4.0;
+        const dashSpace = 3.0;
+        final count =
+            (constraints.maxWidth / (dashWidth + dashSpace)).floor();
+        return Row(
+          children: List.generate(
+            count,
+            (_) => Container(
+              width: dashWidth,
+              height: 1,
+              margin: const EdgeInsets.only(right: dashSpace),
+              color: Colors.grey.shade300,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _stat(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(label, style: TextStyle(fontSize: 9, color: color)),
+        const SizedBox(height: 2),
+        Container(
+          padding: const EdgeInsets.only(bottom: 2),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: color.withOpacity(0.7), width: 1.5),
+            ),
+          ),
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
           ),
         ),
       ],
     );
   }
-
-  Widget _buildDottedLine() {
-    return SizedBox(
-      width: double.infinity,
-      height: 1,
-      child: CustomPaint(painter: DottedLinePainter()),
-    );
-  }
-}
-
-class DottedLinePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.grey.shade400
-      ..strokeWidth = 1;
-
-    const dashWidth = 4.0;
-    const dashSpace = 3.0;
-    double startX = 0;
-
-    while (startX < size.width) {
-      canvas.drawLine(Offset(startX, 0), Offset(startX + dashWidth, 0), paint);
-      startX += dashWidth + dashSpace;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

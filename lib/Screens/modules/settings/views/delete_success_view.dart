@@ -1,7 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../../routes/app_routes.dart';
 
-class DeleteSuccessView extends StatelessWidget {
+class DeleteSuccessView extends StatefulWidget {
   const DeleteSuccessView({Key? key}) : super(key: key);
+
+  @override
+  State<DeleteSuccessView> createState() => _DeleteSuccessViewState();
+}
+
+class _DeleteSuccessViewState extends State<DeleteSuccessView> {
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        Get.offAllNamed(Routes.LOGIN);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

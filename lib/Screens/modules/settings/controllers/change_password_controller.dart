@@ -1,3 +1,7 @@
+import 'package:airotrack/Configs/ApiConfigs.dart';
+import 'package:airotrack/Configs/DioClient.dart';
+import 'package:airotrack/Utils/ApiHelpers.dart';
+import 'package:airotrack/Utils/Utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -9,6 +13,7 @@ class ChangePasswordController extends GetxController {
   final RxBool obscureOld = true.obs;
   final RxBool obscureNew = true.obs;
   final RxBool obscureConfirm = true.obs;
+  final isLoading = false.obs;
 
   final oldPasswordError = ''.obs;
   final newPasswordError = ''.obs;
@@ -47,16 +52,47 @@ class ChangePasswordController extends GetxController {
     return isValid;
   }
 
-  void changePassword() {
-    if (validate()) {
-      Get.back();
-      Get.snackbar(
-        'Success',
-        'Password changed successfully',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
+  Future<void> changePassword() async {
+    if (!validate()) return;
+    try {
+      isLoading.value = true;
+      await ensureApiToken();
+      final response = await DioClient().post(
+        ApiEndPoints.changePassword,
+        body: {
+          'current_password': oldPasswordController.text.trim(),
+          'password': newPasswordController.text.trim(),
+          'password_confirmation': confirmPasswordController.text.trim(),
+        },
       );
+
+      final ok = response.data == null ||
+          response.data['status'] == true ||
+          response.data['success'] == true ||
+          response.statusCode == 200;
+
+      if (ok) {
+        Get.back();
+        Get.snackbar(
+          'Success',
+          response.data is Map && response.data['message'] != null
+              ? response.data['message'].toString()
+              : 'Password changed successfully',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+        );
+      } else {
+        showErrorMessage(
+          response.data is Map
+              ? (response.data['message'] ?? 'Failed to change password')
+              : 'Failed to change password',
+        );
+      }
+    } catch (e) {
+      showErrorMessage(e);
+    } finally {
+      isLoading.value = false;
     }
   }
 

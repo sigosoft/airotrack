@@ -1,167 +1,32 @@
+import 'package:airotrack/Models/ReportItem.dart';
+import 'package:airotrack/Screens/modules/reports/controllers/reports_controller.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_list_scaffold.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_map_view.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../controllers/reports_controller.dart';
-import 'report_map_view.dart';
 
-class IgnitionReportsView extends GetView<ReportsController> {
+class IgnitionReportsView extends StatelessWidget {
   const IgnitionReportsView({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 22),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          'Ignition Reports',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Image.asset(
-              'lib/Asset/Icons/download.png',
-              width: 32,
-              height: 32,
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Container(
-              height: 45,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: "Search Vehicles",
-                        border: InputBorder.none,
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                        contentPadding: EdgeInsets.only(bottom: 12),
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.search, color: Colors.grey, size: 24),
-                  const SizedBox(width: 16),
-                ],
-              ),
-            ),
-          ),
-          // Filter Tabs
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-            child: Row(
-              children: [
-                _buildFilterTab("Today", true),
-                const SizedBox(width: 8),
-                _buildFilterTab("Yesterday", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Week", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Month", false),
-                const SizedBox(width: 8),
-                Image.asset(
-                  'lib/Asset/Icons/Calender.png',
-                  height: 28,
-                  width: 28,
-                ),
-              ],
-            ),
-          ),
-          // List of Tiles
-          Expanded(
-            child: Obx(
-              () => ListView.separated(
-                controller: controller.scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.31,
-                  vertical: 10,
-                ),
-                itemCount:
-                    controller.items.length +
-                    (controller.isLoading.value && controller.hasMore.value
-                        ? 1
-                        : 0),
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  if (index < controller.items.length) {
-                    final isOn = index % 2 != 0;
-                    return GestureDetector(
-                      onTap: () =>
-                          Get.to(() => const ReportMapView(title: 'Ignition')),
-                      child: _buildIgnitionTile(context, isOn),
-                    );
-                  } else {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Color(0xFF009FE3),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
+    return ReportListScaffold(
+      type: ReportType.ignition,
+      title: 'Ignition Reports',
+      onTap: (_) => Get.to(() => const ReportMapView(title: 'Ignition')),
+      itemBuilder: (context, item, index) => _IgnitionTile(item: item),
     );
   }
+}
 
-  Widget _buildFilterTab(String text, bool isSelected) {
-    return Container(
-      width: 72.2,
-      height: 26.89,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFF009FE3) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isSelected ? Colors.white : Colors.black,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
+class _IgnitionTile extends StatelessWidget {
+  final ReportItem item;
+  const _IgnitionTile({required this.item});
 
-  Widget _buildIgnitionTile(BuildContext context, bool isOn) {
-    double screenWidth = MediaQuery.of(context).size.width;
+  @override
+  Widget build(BuildContext context) {
+    final isOn = item.ignitionOn;
+    final screenWidth = MediaQuery.of(context).size.width;
     return Container(
       width: screenWidth - 32.62,
       height: 90,
@@ -190,15 +55,17 @@ class IgnitionReportsView extends GetView<ReportsController> {
                 color: const Color(0xFF009FE3),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'KL 07 D 0518',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.black,
+              Expanded(
+                child: Text(
+                  reportDisplay(item.vehicleNumber, fallback: '—'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
@@ -212,7 +79,9 @@ class IgnitionReportsView extends GetView<ReportsController> {
                         : const Color(0xFFFF3D00),
                   ),
                   Text(
-                    isOn ? 'Ignition On' : 'Ignition Off',
+                    item.status.isNotEmpty
+                        ? item.status
+                        : (isOn ? 'Ignition On' : 'Ignition Off'),
                     style: TextStyle(
                       fontSize: 9,
                       color: Colors.grey[500],
@@ -233,9 +102,12 @@ class IgnitionReportsView extends GetView<ReportsController> {
                 color: const Color(0xFFFF5252),
               ),
               const SizedBox(width: 8),
-              Text(
-                'Oct 17, 2025 05:38:08 PM',
-                style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+              Expanded(
+                child: Text(
+                  reportDisplay(item.startTime),
+                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -251,7 +123,10 @@ class IgnitionReportsView extends GetView<ReportsController> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Puthiyakavu Junction, Karunagappally, Kerala 690539, India',
+                  reportDisplay(
+                    item.location,
+                    fallback: 'Location unavailable',
+                  ),
                   style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                   overflow: TextOverflow.ellipsis,
                 ),

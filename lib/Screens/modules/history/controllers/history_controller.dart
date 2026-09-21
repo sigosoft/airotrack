@@ -257,8 +257,8 @@ class HistoryController extends GetxController {
   var currentSpeed = "0 Kmph".obs;
   /// Elapsed time from `vehicle_timing.vehicle_start_time` → `vehicle_end_time`.
   var duration = "00:00:00".obs;
-  /// From `kilometer_statistics.total_kilometers_traveled`.
-  var totalDistance = "0.00 Km".obs;
+  /// From `kilometer_statistics.total_kilometers_traveled` only (no fallback).
+  var totalDistance = "–".obs;
   /// From `stop_analysis.total_stops`.
   var totalStops = "0".obs;
   /// From `stop_analysis.total_stop_duration`.
@@ -279,8 +279,8 @@ class HistoryController extends GetxController {
   void zoomIn() {
     try {
       final camera = mapController.camera;
+      // Keep follow enabled — HistoryMapLayer adopts the new zoom while tracking.
       mapController.move(camera.center, camera.zoom + 1);
-      disableFollowCamera();
     } catch (e) {
       debugPrint('[History] zoomIn failed: $e');
     }
@@ -289,8 +289,8 @@ class HistoryController extends GetxController {
   void zoomOut() {
     try {
       final camera = mapController.camera;
+      // Keep follow enabled — HistoryMapLayer adopts the new zoom while tracking.
       mapController.move(camera.center, camera.zoom - 1);
-      disableFollowCamera();
     } catch (e) {
       debugPrint('[History] zoomOut failed: $e');
     }
@@ -1264,10 +1264,26 @@ class HistoryController extends GetxController {
         '[History] Progressive: done. Total polyline points on map = ${_cachedPolylinePoints.length}',
       );
       _snapStopsToTraveledLine();
-      placeMovingMarkerAtStart();
-      if (_disposed) return;
-      update();
-      _tryFulfillPendingPlay();
+
+      // First-play bug: Mapbox used to call placeMovingMarkerAtStart() here,
+      // which stopped any in-progress playback. Keep playing and remap onto
+      // the snapped route; only reset to start when idle.
+      if (isPlaying.value) {
+        final savedProgress = progress.value.clamp(0.0, 1.0);
+        debugPrint(
+          '[History] Progressive: done during playback — '
+          'continue at progress=$savedProgress on snapped route',
+        );
+        _playbackRoutePoints = List<LatLng>.from(_cachedPolylinePoints);
+        seekToProgress(savedProgress);
+        startMovingMarker();
+      } else {
+        placeMovingMarkerAtStart();
+        if (_disposed) return;
+        update();
+        _tryFulfillPendingPlay();
+      }
+      if (!_disposed) update();
     });
   }
 
@@ -1453,7 +1469,7 @@ class HistoryController extends GetxController {
   }
 
   void _resetHistorySummaryStats() {
-    totalDistance.value = '0.00 Km';
+    totalDistance.value = '–';
     duration.value = '00:00:00';
     totalStops.value = '0';
     totalStopDuration.value = '0 h 0 m';
@@ -1959,7 +1975,7 @@ class HistoryController extends GetxController {
   }) {
     final km = data?.kilometerStatistics?.totalKilometersTraveled;
     if (km == null) {
-      totalDistance.value = '0.00 Km';
+      totalDistance.value = '–';
     } else {
       totalDistance.value = '${km.toStringAsFixed(2)} Km';
     }

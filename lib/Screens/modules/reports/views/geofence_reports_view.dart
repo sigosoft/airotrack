@@ -1,170 +1,38 @@
+import 'package:airotrack/Models/ReportItem.dart';
+import 'package:airotrack/Screens/modules/reports/controllers/reports_controller.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_list_scaffold.dart';
+import 'package:airotrack/Screens/modules/reports/views/report_map_view.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../controllers/reports_controller.dart';
-import 'report_map_view.dart';
 
-class GeofenceReportsView extends GetView<ReportsController> {
+class GeofenceReportsView extends StatelessWidget {
   const GeofenceReportsView({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 22),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          'Geofence Reports',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Image.asset(
-              'lib/Asset/Icons/download.png',
-              width: 32,
-              height: 32,
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Container(
-              height: 45,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: "Search Vehicles",
-                        border: InputBorder.none,
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                        contentPadding: EdgeInsets.only(bottom: 12),
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.search, color: Colors.grey, size: 24),
-                  const SizedBox(width: 16),
-                ],
-              ),
-            ),
-          ),
-          // Filter Tabs
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-            child: Row(
-              children: [
-                _buildFilterTab("Today", true),
-                const SizedBox(width: 8),
-                _buildFilterTab("Yesterday", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Week", false),
-                const SizedBox(width: 8),
-                _buildFilterTab("Month", false),
-                const SizedBox(width: 8),
-                Image.asset(
-                  'lib/Asset/Icons/Calender.png',
-                  height: 28,
-                  width: 28,
-                ),
-              ],
-            ),
-          ),
-          // List of Tiles
-          Expanded(
-            child: Obx(
-              () => ListView.separated(
-                controller: controller.scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.31,
-                  vertical: 10,
-                ),
-                itemCount:
-                    controller.items.length +
-                    (controller.isLoading.value && controller.hasMore.value
-                        ? 1
-                        : 0),
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  if (index < controller.items.length) {
-                    return GestureDetector(
-                      onTap: () =>
-                          Get.to(() => const ReportMapView(title: 'Geofence')),
-                      child: _buildGeofenceTile(context, index),
-                    );
-                  } else {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Color(0xFF009FE3),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
+    return ReportListScaffold(
+      type: ReportType.geofence,
+      title: 'Geofence Reports',
+      onTap: (_) => Get.to(() => const ReportMapView(title: 'Geofence')),
+      itemBuilder: (context, item, index) => _GeofenceTile(item: item),
     );
   }
+}
 
-  Widget _buildFilterTab(String text, bool isSelected) {
-    return Container(
-      width: 72.2,
-      height: 26.89,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFF009FE3) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isSelected ? Colors.white : Colors.black,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
+class _GeofenceTile extends StatelessWidget {
+  final ReportItem item;
+  const _GeofenceTile({required this.item});
 
-  Widget _buildGeofenceTile(BuildContext context, int index) {
-    double screenWidth = MediaQuery.of(context).size.width;
-    final bool isEnter = index % 2 == 0;
+  @override
+  Widget build(BuildContext context) {
+    final isEnter = item.isGeofenceEnter;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final locationText = item.location.isNotEmpty
+        ? item.location
+        : item.startLocation;
+
     return Container(
       width: screenWidth - 32.62,
-      height: 95,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -190,32 +58,34 @@ class GeofenceReportsView extends GetView<ReportsController> {
                 color: const Color(0xFF009FE3),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'KL 07 D 0518',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.black,
+              Expanded(
+                child: Text(
+                  reportDisplay(item.vehicleNumber, fallback: '—'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Image.asset(
                     'lib/Asset/Icons/Polygon.png',
-                    width: 24,
-                    height: 24,
+                    width: 22,
+                    height: 22,
                     color: isEnter
                         ? const Color(0xFF00C853)
                         : const Color(0xFFFF5252),
-                    colorBlendMode: BlendMode.srcIn,
                   ),
                   Text(
                     isEnter ? 'Geofence Enter' : 'Geofence Exit',
                     style: TextStyle(
                       fontSize: 8,
-                      color: Colors.grey.shade600,
+                      color: Colors.grey[500],
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -228,16 +98,16 @@ class GeofenceReportsView extends GetView<ReportsController> {
             children: [
               Image.asset(
                 'lib/Asset/Icons/Time.png',
-                width: 14,
-                height: 14,
+                width: 12,
+                height: 12,
                 color: const Color(0xFFFF5252),
               ),
-              const SizedBox(width: 6),
-              const Text(
-                'Oct 17, 2025 05:38:08 PM',
-                style: TextStyle(
-                  fontSize: 9,
-                  color: Color.fromARGB(255, 110, 109, 109),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  reportDisplay(item.startTime),
+                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -247,18 +117,18 @@ class GeofenceReportsView extends GetView<ReportsController> {
             children: [
               Image.asset(
                 'lib/Asset/Icons/location outlined.png',
-                width: 14,
-                height: 14,
+                width: 12,
+                height: 12,
                 color: const Color(0xFFFF5252),
               ),
-              const SizedBox(width: 6),
-              const Expanded(
+              const SizedBox(width: 8),
+              Expanded(
                 child: Text(
-                  'PuthiyakavuJunction,Karunagappalli, Kerala 690539, India',
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: Color.fromARGB(255, 110, 109, 109),
+                  reportDisplay(
+                    locationText,
+                    fallback: 'Location unavailable',
                   ),
+                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

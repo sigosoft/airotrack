@@ -67,6 +67,8 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
   bool _tileSourceLogged = false;
   bool _isProgrammaticCameraMove = false;
   bool _isMapReady = false;
+  ll.LatLng? _prevCameraCenter;
+  double _prevCameraZoom = 15.0;
 
   Ticker? _smoothTicker;
   ll.LatLng? _renderPosition;
@@ -432,19 +434,40 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
           }
         },
         onPositionChanged: (camera, hasGesture) {
-          if (camera.zoom.isFinite) {
-            _lastKnownZoom = camera.zoom;
-            if (hasGesture && !_isProgrammaticCameraMove) {
+          final zoom = camera.zoom.isFinite ? camera.zoom : _lastKnownZoom;
+          final center = camera.center;
+          final zoomDelta = (zoom - _prevCameraZoom).abs();
+          final centerDelta = _prevCameraCenter == null
+              ? 0.0
+              : (_prevCameraCenter!.latitude - center.latitude).abs() +
+                  (_prevCameraCenter!.longitude - center.longitude).abs();
+
+          if (!_isProgrammaticCameraMove) {
+            // Zoom in/out (buttons or pinch): keep follow, lock to new zoom.
+            if (zoomDelta > 0.05) {
               _usePlaybackFollowZoom = false;
+              _lastKnownZoom = zoom;
+            } else if (camera.zoom.isFinite) {
+              _lastKnownZoom = zoom;
             }
+
+            // Pan only (no meaningful zoom): stop following.
+            if (hasGesture &&
+                zoomDelta <= 0.05 &&
+                centerDelta > 0.0001 &&
+                widget.isPlaybackActive &&
+                widget.isFollowCameraEnabled) {
+              widget.onManualFollowDisable?.call();
+              debugPrint(
+                '[History] Camera: pan detected, follow disabled',
+              );
+            }
+          } else if (camera.zoom.isFinite) {
+            _lastKnownZoom = zoom;
           }
-          if (hasGesture &&
-              !_isProgrammaticCameraMove &&
-              widget.isPlaybackActive &&
-              widget.isFollowCameraEnabled) {
-            widget.onManualFollowDisable?.call();
-            debugPrint('[History] Camera: manual move detected, follow disabled');
-          }
+
+          _prevCameraCenter = center;
+          _prevCameraZoom = zoom;
         },
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.all & ~InteractiveFlag.rotate,

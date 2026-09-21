@@ -1,9 +1,17 @@
+import 'package:airotrack/Configs/ApiConfigs.dart';
+import 'package:airotrack/Configs/DioClient.dart';
+import 'package:airotrack/Models/ProfileModel.dart';
+import 'package:airotrack/Utils/ApiHelpers.dart';
+import 'package:airotrack/Utils/Utils.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../../routes/app_routes.dart';
 
 class SettingsController extends GetxController {
+  final profile = const ProfileModel().obs;
+  final isLoadingProfile = false.obs;
+
   Future<void> signOut() async {
     try {
       if (!Hive.isBoxOpen('userBox')) {
@@ -11,6 +19,8 @@ class SettingsController extends GetxController {
       }
       var box = Hive.box('userBox');
       await box.put('isLoggedIn', false);
+      await removename('token');
+      DioClient().dio.options.headers.remove('Authorization');
 
       Get.snackbar(
         'Success',
@@ -48,6 +58,7 @@ class SettingsController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    loadProfile();
     loadExpenses();
     loadSupportTickets();
 
@@ -68,6 +79,22 @@ class SettingsController extends GetxController {
         }
       }
     });
+  }
+
+  Future<void> loadProfile() async {
+    try {
+      isLoadingProfile.value = true;
+      await ensureApiToken();
+      final response = await DioClient().get(ApiEndPoints.profile);
+      if (response.data != null) {
+        final data = response.data['data'] ?? response.data;
+        profile.value = ProfileModel.fromJson(data);
+      }
+    } catch (e) {
+      showErrorMessage(e);
+    } finally {
+      isLoadingProfile.value = false;
+    }
   }
 
   void loadExpenses() {

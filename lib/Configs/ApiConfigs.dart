@@ -40,4 +40,25 @@ class ApiEndPoints {
   static String vehicleUnsyncedGeofences = "vehicle_unsynced_geofences";
   /// Linked geofences for a vehicle (full geometry for map display).
   static String vehicleGeofences = "vehicle_geofences";
+
+  // Profile / account
+  static String profile = "profile";
+  static String updateProfile = "update_profile";
+  static String changePassword = "change_password";
+  static String deleteAccount = "delete_account";
+
+  // Dashboard / statistics
+  static String dashboard = "dashboard";
+  static String statistics = "statistics";
+
+  // Reports
+  static String reportsIgnition = "reports/ignition";
+  /// Backend path spelling as provided by API.
+  static String reportsStoppage = "reports/stoppage";
+  static String reportsTrip = "reports/trip";
+  static String reportsDaily = "reports/daily";
+  static String reportsSummary = "reports/summary";
+  static String reportsOverspeed = "reports/overspeed";
+  static String reportsGeofence = "reports/geofence";
+  static String reportsAlerts = "reports/alerts";
 }

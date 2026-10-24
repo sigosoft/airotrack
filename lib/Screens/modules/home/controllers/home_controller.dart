@@ -49,6 +49,9 @@ class Vehicle {
     return !(lat == 0 && lng == 0);
   }
 
+  /// Status text shown to the user ('Inactive' is labelled 'Expired').
+  String get statusLabel => status == 'Inactive' ? 'Expired' : status;
+
   /// Display text from API `location` (no client reverse-geocode).
   String get locationLabel {
     final text = address.trim();
@@ -57,6 +60,7 @@ class Vehicle {
   }
 
   Vehicle copyWith({
+    String? status,
     String? address,
     double? latitude,
     double? longitude,
@@ -64,7 +68,7 @@ class Vehicle {
     return Vehicle(
       id: id,
       plateNumber: plateNumber,
-      status: status,
+      status: status ?? this.status,
       statusDuration: statusDuration,
       lastUpdated: lastUpdated,
       address: address ?? this.address,
@@ -238,30 +242,10 @@ class HomeController extends GetxController {
   /// Search query for filtering vehicles (plate number, address, device id).
   final searchQuery = ''.obs;
 
-  /// API type → status: 1 Stopped, 2 Running, 3 Idle, 4 Inactive.
-  String? get _selectedStatusFilter {
-    switch (selectedType.value) {
-      case 1:
-        return 'Stopped';
-      case 2:
-        return 'Running';
-      case 3:
-        return 'Idle';
-      case 4:
-        return 'Inactive';
-      default:
-        return null;
-    }
-  }
-
-  /// Vehicles for the selected tab (+ search). Always status-filtered on device
-  /// so Stopped never appears under Running even if the API mix is wrong.
+  /// Vehicles for the selected type (1 All, 2 Running, 3 Idle, 4 Stop,
+  /// 5 Expired) as returned by the API, narrowed by search only.
   List<Vehicle> get filteredVehicles {
     var list = vehicles.toList();
-    final status = _selectedStatusFilter;
-    if (status != null) {
-      list = list.where((v) => v.status == status).toList();
-    }
 
     final q = searchQuery.value.trim().toLowerCase();
     if (q.isEmpty) return list;
@@ -304,9 +288,77 @@ class HomeController extends GetxController {
 
   final selectedType = RxnInt();
 
+  /// Status word of each vehicle's status tab, keyed by vehicle id.
+  final _tabStatusById = <int, String>{};
+
+  /// Status shown by a tab (1 All has none, so returns null).
+  String? _tabStatusFor(int type) {
+    switch (type) {
+      case 2:
+        return 'Running';
+      case 3:
+        return 'Idle';
+      case 4:
+        return 'Stopped';
+      case 5:
+        return 'Inactive';
+      default:
+        return null;
+    }
+  }
+
+  void _recordTabStatuses(List<Vehicle> loaded, int type) {
+    final status = _tabStatusFor(type);
+    if (status == null) return;
+    for (final v in loaded) {
+      if (v.id != 0) _tabStatusById[v.id] = status;
+    }
+  }
+
+  Vehicle _withTabStatus(Vehicle v) {
+    final status = _tabStatusById[v.id];
+    return status == null ? v : v.copyWith(status: status);
+  }
+
+  /// Loads every page of the four status tabs so the All list shows the same
+  /// status word as the tab each vehicle is listed under.
+  Future<void> _loadTabStatuses() async {
+    final fresh = <int, String>{};
+    for (final type in const [2, 3, 4, 5]) {
+      final status = _tabStatusFor(type)!;
+      try {
+        var page = 1;
+        while (page <= 100) {
+          final response = await DioClient().get(
+            ApiEndPoints.home,
+            query: {'type': '$type', 'page': '$page', 'limit': '20'},
+          );
+          final data = response.data?['data'];
+          final rows = data is Map ? data['vehicles_data'] : null;
+          if (rows is! List || rows.isEmpty) break;
+          for (final row in rows) {
+            try {
+              final v = Vehicle.fromJson(Map<String, dynamic>.from(row as Map));
+              if (v.id != 0) fresh[v.id] = status;
+            } catch (e) {
+              debugPrint('[Home] skip tab vehicle parse error: $e');
+            }
+          }
+          if (rows.length < 20) break;
+          page++;
+        }
+      } catch (e) {
+        debugPrint('[Home] tab $type status load failed: $e');
+      }
+    }
+    _tabStatusById
+      ..clear()
+      ..addAll(fresh);
+  }
+
   Future<void> fetchVehicles({int? type}) async {
     try {
-      selectedType.value = type;
+      selectedType.value = type ?? 1;
       currentPage = 1;
       hasMore.value = true;
       isLoading.value = true;
@@ -315,7 +367,7 @@ class HomeController extends GetxController {
       final response = await DioClient().get(
         ApiEndPoints.home,
         query: {
-          'type': type != null ? type.toString() : '',
+          'type': '${selectedType.value}',
           'page': '1',
           'limit': '20',
         },
@@ -335,7 +387,13 @@ class HomeController extends GetxController {
               debugPrint('[Home] skip vehicle parse error: $e');
             }
           }
-          vehicles.value = _uniqueVehicles(parsed);
+          if (selectedType.value == 1) {
+            await _loadTabStatuses();
+          } else {
+            _recordTabStatuses(parsed, selectedType.value!);
+          }
+          vehicles.value =
+              _uniqueVehicles(parsed).map(_withTabStatus).toList();
           // No more pages when first page is shorter than the page size.
           hasMore.value = vehiclesList.length >= 20;
         } else {
@@ -386,9 +444,7 @@ class HomeController extends GetxController {
       final response = await DioClient().get(
         ApiEndPoints.home,
         query: {
-          'type': selectedType.value != null
-              ? selectedType.value.toString()
-              : '',
+          'type': '${selectedType.value ?? 1}',
           'page': nextPage.toString(),
           'limit': '20',
         },
@@ -413,12 +469,13 @@ class HomeController extends GetxController {
                 debugPrint('[Home] skip vehicle parse error: $e');
               }
             }
+            _recordTabStatuses(newVehicles, selectedType.value ?? 1);
             final unique = _dedupeVehicles(newVehicles);
             if (unique.isEmpty) {
               // API repeated page-1 vehicles — stop paging.
               hasMore.value = false;
             } else {
-              vehicles.addAll(unique);
+              vehicles.addAll(unique.map(_withTabStatus));
               currentPage = nextPage;
               if (newVehicles.length < 20) {
                 hasMore.value = false;

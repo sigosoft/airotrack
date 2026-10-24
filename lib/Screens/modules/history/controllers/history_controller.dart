@@ -159,6 +159,44 @@ List<List<double>> _processMapboxChunk(Map<String, dynamic> data) {
   return result;
 }
 
+/// What the user sees after tapping the blue route line.
+class RouteTapInfo {
+  const RouteTapInfo({
+    required this.time,
+    required this.point,
+    required this.speed,
+    this.address,
+  });
+
+  /// Interpolated GPS time at the tapped spot.
+  final DateTime time;
+  final LatLng point;
+  final String speed;
+
+  /// null while loading; empty when no place name was found.
+  final String? address;
+
+  RouteTapInfo withAddress(String value) => RouteTapInfo(
+    time: time,
+    point: point,
+    speed: speed,
+    address: value,
+  );
+}
+
+/// One recorded GPS sample from location_history (raw, not snapped).
+class _RouteSample {
+  const _RouteSample({
+    required this.time,
+    required this.point,
+    required this.speed,
+  });
+
+  final DateTime time;
+  final LatLng point;
+  final String speed;
+}
+
 class HistoryController extends GetxController {
   var showBottomSheet = true.obs;
   final List<String> dateRangeOptions = [
@@ -380,6 +418,91 @@ class HistoryController extends GetxController {
   void clearSelectedStop() {
     selectedStopIndex.value = null;
     selectedVehicleHistoryIndex.value = null;
+  }
+
+  /// Raw GPS samples in time order; the blue line is snapped, so taps use these.
+  List<_RouteSample> _routeSamples = <_RouteSample>[];
+
+  /// Shown after tapping the blue route line; null when nothing is selected.
+  final routeTapInfo = Rxn<RouteTapInfo>();
+
+  /// A tap counts as hitting the line when it is within this many screen pixels.
+  static const double _routeTapRadiusPx = 24.0;
+
+  void _setRouteSamples(List<Map<String, dynamic>> raw) {
+    final samples = <_RouteSample>[
+      for (final m in raw)
+        _RouteSample(
+          time: _parseDeviceTime(m['deviceTime'] as String?),
+          point: LatLng(m['lat'] as double, m['lng'] as double),
+          speed: m['speed']?.toString() ?? '0',
+        ),
+    ]..sort((a, b) => a.time.compareTo(b.time));
+    _routeSamples = samples;
+  }
+
+  void clearRouteTap() {
+    routeTapInfo.value = null;
+  }
+
+  double _currentZoom() {
+    try {
+      return mapController.camera.zoom;
+    } catch (_) {
+      return 15.0;
+    }
+  }
+
+  /// Map tap handler: if the tap lands on the blue line, shows the GPS time
+  /// and place where the vehicle passed that spot.
+  void onRouteTap(LatLng tapped) {
+    final route = polylinePoints;
+    if (route.length < 2 || _routeSamples.length < 2) {
+      clearRouteTap();
+      return;
+    }
+    final metersPerPixel =
+        156543.03392 *
+        math.cos(tapped.latitude * math.pi / 180.0) /
+        math.pow(2.0, _currentZoom());
+    final distanceToRoute =
+        getClosestPointOnPolyline(tapped, route)['distance'] as double;
+    if (distanceToRoute > metersPerPixel * _routeTapRadiusPx) {
+      clearRouteTap();
+      return;
+    }
+
+    // Find the raw GPS segment nearest the tap, then interpolate its time.
+    final hit = getClosestPointOnPolyline(
+      tapped,
+      _routeSamples.map((s) => s.point).toList(),
+    );
+    final segment = hit['segmentIndex'] as int;
+    final t = hit['t'] as double;
+    final a = _routeSamples[segment];
+    final b = _routeSamples[segment + 1];
+    final spanMs = b.time.millisecondsSinceEpoch - a.time.millisecondsSinceEpoch;
+    final time = DateTime.fromMillisecondsSinceEpoch(
+      a.time.millisecondsSinceEpoch + (spanMs * t).round(),
+    );
+
+    // Dot sits on the drawn blue route, not the raw GPS sample.
+    final info = RouteTapInfo(
+      time: time,
+      point: getClosestPointOnPolyline(tapped, route)['point'] as LatLng,
+      speed: t < 0.5 ? a.speed : b.speed,
+    );
+    routeTapInfo.value = info;
+    _lookupRouteTapAddress(info);
+  }
+
+  Future<void> _lookupRouteTapAddress(RouteTapInfo info) async {
+    final address = await ReverseGeocodeService.instance.reverse(
+      info.point.latitude,
+      info.point.longitude,
+    );
+    if (_disposed || !identical(routeTapInfo.value, info)) return;
+    routeTapInfo.value = info.withAddress(address ?? '');
   }
 
   static final _dateFormat = DateFormat('dd MMM yyyy');
@@ -1426,6 +1549,8 @@ class HistoryController extends GetxController {
         debugPrint(
           '[History] getHistory: rawPoints from isolate = ${rawPoints.length}',
         );
+        _setRouteSamples(rawPoints);
+        clearRouteTap();
         _buildPlaybackSpeedSeries(rawPoints);
         _applyDurationFallbackFromRawPoints(rawPoints);
         final cleanList = _applyPolylinePipeline(rawPoints);

@@ -6,6 +6,7 @@ import 'Widgets/history_side_button.dart';
 import 'Widgets/history_bottom_sheet.dart';
 import 'Widgets/history_expand_fab.dart';
 import 'Widgets/history_bottom_nav_bar.dart';
+import 'Widgets/history_route_info_card.dart';
 
 class HistoryView extends GetView<HistoryController> {
   const HistoryView({super.key, String? imei})
@@ -149,8 +150,23 @@ class HistoryView extends GetView<HistoryController> {
                       isPlaybackActive: controller.isPlaying.value,
                       bottomSheetVisible: controller.showBottomSheet.value,
                       onManualFollowDisable: controller.disableFollowCamera,
+                      onRouteTap: controller.onRouteTap,
+                      routeTapPoint: controller.routeTapInfo.value?.point,
                     ),
                   ),
+                  Obx(() {
+                    final info = controller.routeTapInfo.value;
+                    if (info == null) return const SizedBox.shrink();
+                    return Positioned(
+                      top: maxHeight * 0.12,
+                      left: horizontalPadding,
+                      right: width * 0.2,
+                      child: HistoryRouteInfoCard(
+                        info: info,
+                        onClose: controller.clearRouteTap,
+                      ),
+                    );
+                  }),
                   Positioned(
                     top: topPadding,
                     left: horizontalPadding,

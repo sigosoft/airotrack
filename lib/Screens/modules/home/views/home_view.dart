@@ -142,12 +142,12 @@ class HomeView extends GetView<HomeController> {
               padding: const EdgeInsets.only(left: 15.61, right: 16),
               children: [
                 GestureDetector(
-                  onTap: () => controller.fetchVehicles(type: null),
+                  onTap: () => controller.fetchVehicles(type: 1),
                   child: _buildStatusCard(
                     "All Vehicles",
                     controller.totalCount.value,
                     Colors.blue,
-                    controller.selectedType.value == null,
+                    controller.selectedType.value == 1,
                   ),
                 ),
                 const SizedBox(width: 11),
@@ -158,16 +158,6 @@ class HomeView extends GetView<HomeController> {
                     controller.runningCount.value,
                     const Color(0xFF00C853),
                     controller.selectedType.value == 2,
-                  ),
-                ),
-                const SizedBox(width: 11),
-                GestureDetector(
-                  onTap: () => controller.fetchVehicles(type: 1),
-                  child: _buildStatusCard(
-                    "Stopped",
-                    controller.stoppedCount.value,
-                    const Color(0xFFFF3D00),
-                    controller.selectedType.value == 1,
                   ),
                 ),
                 const SizedBox(width: 11),
@@ -184,10 +174,20 @@ class HomeView extends GetView<HomeController> {
                 GestureDetector(
                   onTap: () => controller.fetchVehicles(type: 4),
                   child: _buildStatusCard(
-                    "Inactive",
+                    "Stop",
+                    controller.stoppedCount.value,
+                    const Color(0xFFFF3D00),
+                    controller.selectedType.value == 4,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                GestureDetector(
+                  onTap: () => controller.fetchVehicles(type: 5),
+                  child: _buildStatusCard(
+                    "Expired",
                     controller.inactiveCount.value,
                     const Color.fromARGB(255, 21, 107, 178),
-                    controller.selectedType.value == 4,
+                    controller.selectedType.value == 5,
                   ),
                 ),
               ],
@@ -436,7 +436,7 @@ class HomeView extends GetView<HomeController> {
                             color: statusColor,
                             icon: null,
                             text:
-                                "${vehicle.status.toUpperCase()} since ${vehicle.statusDuration}",
+                                "${vehicle.statusLabel.toUpperCase()} since ${vehicle.statusDuration}",
                             isFirst: true,
                           ),
                           _buildTimelineItem(
@@ -628,7 +628,7 @@ class HomeView extends GetView<HomeController> {
                 const SizedBox(height: 8),
                 _buildDialogRow(
                   "Status:",
-                  "${vehicle.status}  Since ${vehicle.statusDuration}",
+                  "${vehicle.statusLabel}  Since ${vehicle.statusDuration}",
                 ),
                 const SizedBox(height: 8),
                 _buildDialogRow("Device Time:", vehicle.lastUpdated),

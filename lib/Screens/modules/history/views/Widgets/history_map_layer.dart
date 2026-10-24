@@ -28,6 +28,8 @@ class HistoryMapLayer extends StatefulWidget {
     this.isPlaybackActive = false,
     this.bottomSheetVisible = true,
     this.onManualFollowDisable,
+    this.onRouteTap,
+    this.routeTapPoint,
     this.movingMarkerAssetPath = 'lib/Asset/Images/marker2.png',
   }) : super(key: key);
 
@@ -46,6 +48,8 @@ class HistoryMapLayer extends StatefulWidget {
   final bool isPlaybackActive;
   final bool bottomSheetVisible;
   final VoidCallback? onManualFollowDisable;
+  final ValueChanged<ll.LatLng>? onRouteTap;
+  final ll.LatLng? routeTapPoint;
   final String movingMarkerAssetPath;
 
   @override
@@ -413,16 +417,34 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
       );
     }
 
+    if (widget.routeTapPoint != null) {
+      markers.add(
+        Marker(
+          point: widget.routeTapPoint!,
+          width: 18,
+          height: 18,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.primaryBlue, width: 4),
+            ),
+          ),
+        ),
+      );
+    }
+
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
         initialCenter: initialTarget,
         initialZoom: widget.initialZoom,
         initialRotation: 0.0,
-        onTap: (_, _) {
+        onTap: (_, point) {
           if (widget.selectedStopIndex != null) {
             widget.onStopTap?.call(-1);
           }
+          widget.onRouteTap?.call(point);
         },
         onMapReady: () {
           _isMapReady = true;

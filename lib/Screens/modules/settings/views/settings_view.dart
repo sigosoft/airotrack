@@ -182,7 +182,7 @@ class SettingsView extends GetView<SettingsController> {
                 width: 284,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: () => controller.signOut(),
+                  onPressed: () => _confirmLogout(),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009FE3),
                     shape: RoundedRectangleBorder(
@@ -217,6 +217,32 @@ class SettingsView extends GetView<SettingsController> {
         ),
       ),
     );
+  }
+
+  /// Asks before signing out. Only a "Logout" tap calls [SettingsController.signOut].
+  Future<void> _confirmLogout() async {
+    final confirmed = await Get.dialog<bool>(
+      AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(result: false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Get.back(result: true),
+            child: const Text(
+              'Logout',
+              style: TextStyle(color: Color(0xFF009FE3)),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await controller.signOut();
+    }
   }
 
   Widget _buildSettingTile({

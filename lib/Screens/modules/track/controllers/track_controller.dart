@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import '../../../../Configs/ApiConfigs.dart';
 import '../../../../Models/LiveTrackModel.dart';
 import '../../../../Configs/DioClient.dart';
@@ -13,7 +13,6 @@ import '../../../../Utils/vehicle_geofence_map_overlay.dart';
 import '../../../../Services/LiveTrackWebSocketService.dart';
 import '../../../../Services/DirectionsService.dart';
 import '../../home/controllers/home_controller.dart';
-import '../../../../widgets/map_widget.dart';
 
 /// Live tracking flow (snapshot once + WebSocket only):
 /// 1. User selects vehicle on live track screen (IMEI from route).
@@ -33,15 +32,17 @@ import '../../../../widgets/map_widget.dart';
 ///   forward along the Mapbox polyline, so it physically cannot jitter
 ///   sideways or backwards.
 /// * There is NO second EMA on position. Smoothing is applied to SPEED only.
-/// * Route replacements never teleport. The visual difference is stored in
-///   [_corrLat]/[_corrLng] and decays to zero, so the car slides onto the new
-///   geometry over ~0.4s instead of snapping.
+/// * The car is always ON the road polyline. Route replacements re-project the
+///   car onto the new geometry, so it never floats beside the road.
 /// * A vsync Ticker drives the loop. Ticker callbacks run in the transient
 ///   phase, before build and paint, so the marker point and the camera centre
 ///   always commit in the same frame. Timer.periodic could not guarantee that
 ///   and caused the car to shift one frame against the map.
 /// * While locked, the camera centre IS the marker point. Any residual noise
 ///   cancels out visually because both move together.
+/// * The car is a native Google Maps marker, not a Flutter overlay. The map
+///   engine draws it in the same pass as the road tiles, so it can never
+///   drift off the road even when a platform camera update lands late.
 class TrackController extends GetxController {
   final vehicleImei = ''.obs;
   final vehiclePlate = ''.obs;
@@ -53,11 +54,18 @@ class TrackController extends GetxController {
   final animatedLat = 0.0.obs;
   final animatedLng = 0.0.obs;
   final animatedRotation = 0.0.obs;
-  final reactiveMarkers = <Marker>[].obs;
+
+  /// Screen position (map-local, logical px) of the car centre.
+  ///
+  /// The car is a Flutter widget over the map, not a native Google marker.
+  /// The native marker re-applies its bitmap on every position update, which
+  /// made the car blink at 60 fps. A Flutter overlay keeps the exact same
+  /// image, size and rotation as before and never reloads.
+  final ValueNotifier<Offset?> vehicleScreenOffset = ValueNotifier<Offset?>(null);
 
   /// Linked geofences drawn on the live map (`GET vehicle_geofences`).
-  final vehicleGeofenceCircles = <CircleMarker>[].obs;
-  final vehicleGeofencePolygons = <Polygon>[].obs;
+  final vehicleGeofenceCircles = <gmaps.Circle>[].obs;
+  final vehicleGeofencePolygons = <gmaps.Polygon>[].obs;
 
   // ---------------------------------------------------------------------
   // Single motion state
@@ -67,11 +75,6 @@ class TrackController extends GetxController {
   double _pathLat = 0.0;
   double _pathLng = 0.0;
 
-  /// Decaying visual offset applied on top of [_pathLat]/[_pathLng].
-  /// Set whenever we adopt new road geometry so the swap is invisible.
-  double _corrLat = 0.0;
-  double _corrLng = 0.0;
-
   /// Raw travel bearing from the road ahead.
   double _lockedBearing = 0.0;
 
@@ -80,21 +83,59 @@ class TrackController extends GetxController {
   bool _hasHeading = false;
   final ValueNotifier<double> _headingNotifier = ValueNotifier<double>(0);
 
-  final MapController mapController = MapController();
+  gmaps.GoogleMapController? _mapController;
   final showBottomSheet = true.obs;
   final isLocked = true.obs;
 
-  static const double _followZoom = 18.0;
+  static const double _followZoom = 17.2;
   bool _userAdjustedZoom = false;
   bool _hasInitialCameraFocus = false;
 
+  /// Camera the map is showing. While locked this is what we pushed; while
+  /// the user pans it comes from onCameraMove. Used to place the car overlay.
+  double _cameraZoom = _followZoom;
+  LatLng? _cameraTarget;
+
+  /// Size of the map viewport, reported by the view's LayoutBuilder.
+  Size _mapSize = Size.zero;
+
+  /// World size at zoom 0, in dp. Starts at Google's documented 256 and is
+  /// corrected from Google's own projection, so the car overlay lands exactly
+  /// where Google draws that coordinate.
+  double _tileSize = 256.0;
+  bool _calibBusy = false;
+  DateTime? _lastCalibAt;
+
+  /// Last camera we pushed, so an idle car does not spam the platform channel.
+  LatLng? _lastSentCameraTarget;
+  double? _lastSentCameraZoom;
+
+  /// Pointer tracking used to tell user pans/pinches from our own follow moves.
+  final Map<int, Offset> _mapPointerDown = {};
+  static const double _panSlopPx = 10.0;
+
+  /// True from the moment a second finger touches until all fingers lift, so
+  /// the finger left after a pinch never counts as a pan.
+  bool _pinching = false;
+
+  /// Two-finger zoom is done by the app, not by Google Maps (its zoom gesture
+  /// is off), so it zooms around the car exactly like + and -. The view turns
+  /// Google's two-finger scroll off while this is true.
+  final pinchActive = false.obs;
+  final Map<int, Offset> _pointerNow = {};
+  double? _pinchStartDist;
+  double _pinchStartZoom = _followZoom;
+
+  /// Stable marker child. Rebuilding Image/Obx every frame causes flicker.
+  Widget? _vehicleMarkerChild;
+
   /// Streets map by default; user can switch to satellite via the map button.
-  final mapStyle = AiroMapStyle.mapboxStreets.obs;
+  final mapType = gmaps.MapType.normal.obs;
 
   void toggleMapStyle() {
-    mapStyle.value = mapStyle.value == AiroMapStyle.mapboxStreets
-        ? AiroMapStyle.mapboxSatellite
-        : AiroMapStyle.mapboxStreets;
+    mapType.value = mapType.value == gmaps.MapType.normal
+        ? gmaps.MapType.hybrid
+        : gmaps.MapType.normal;
   }
 
   bool _isFetchingSnapshot = false;
@@ -118,13 +159,6 @@ class TrackController extends GetxController {
   /// Speed low pass time constant. Higher is smoother, lower is more reactive.
   static const double _speedTau = 0.50;
 
-  /// How fast a road correction offset fades out.
-  static const double _correctionTau = 0.40;
-
-  /// Never slide more than this to reach new geometry. Beyond it we teleport.
-  static const double _maxCorrectionM = 30.0;
-  static const double _teleportCorrectionM = 90.0;
-
   static const double _maxGlideSpeedMs = 45.0;
 
   /// Minimum roll while the device reports movement (~2.2 km/h).
@@ -139,7 +173,8 @@ class TrackController extends GetxController {
   /// Heading is taken this far down the road, not from the next vertex.
   /// Looking ahead is what removes the per-vertex rotation twitch.
   static const double _headingLookAheadM = 14.0;
-  static const double _maxUiHeadingDegPerSec = 60.0;
+  static const double _headingTau = 0.22;
+  static const double _maxUiHeadingDegPerSec = 120.0;
 
   /// Minimum spacing between road waypoints.
   static const double _roadWaypointMinM = 4.0;
@@ -148,8 +183,24 @@ class TrackController extends GetxController {
   static const double _minRoadRouteMeters = 8.0;
 
   static const double _maxBackwardBearingDeg = 95.0;
+
+  /// Consecutive GPS fixes that landed behind the car. One or two are stale or
+  /// late fixes and are ignored; this many in a row is real reversing.
+  static const int _reverseConfirmFixes = 3;
+
+  /// Fix-to-fix movement against the heading that counts as real reversing.
+  static const double _reverseGpsStepMeters = 6.0;
+  int _behindStreak = 0;
+  bool get _reverseConfirmed => _behindStreak >= _reverseConfirmFixes;
+
+  /// A road whose first stretch runs this far off the travel heading is a
+  /// backward road, not the way the car is going.
+  static const double _maxRoadTurnBackDeg = 100.0;
+
+  /// GPS target whose road was rejected. Mapbox gives the same answer again,
+  /// so it is not re-requested every frame; the next fix asks fresh.
+  LatLng? _rejectedRoadTarget;
   static const double _snapBackMinLagMeters = 4.0;
-  static const double _reverseGpsStepMeters = 4.0;
   static const double _reconnectSnapMeters = 150.0;
   static const double _minGpsBearingMoveM = 10.0;
   static const int _gpsTraceMaxPoints = 8;
@@ -181,12 +232,8 @@ class TrackController extends GetxController {
   bool _isMovingVehicle = false;
   DateTime? _lastGpsTime;
 
-  DateTime? _ignoreMapGestureUntil;
   DateTime? _lastReadoutAt;
   DateTime? _lastRotationReadoutAt;
-
-  /// Stable marker child. Rebuilding Image/Obx every frame causes flicker.
-  Widget? _vehicleMarkerChild;
 
   final fenceNameController = TextEditingController();
   final fenceNameError = RxnString();
@@ -506,6 +553,20 @@ class TrackController extends GetxController {
       return;
     }
 
+    if (_hasHeading && _pathLat != 0.0) {
+      final behind = _isBehind(LatLng(_pathLat, _pathLng), location);
+      _behindStreak = behind ? _behindStreak + 1 : 0;
+
+      // A late fix still moves forward from the previous fix. Real reversing
+      // or a U-turn moves backward from fix to fix, so accept it at once.
+      if (behind &&
+          previousGps != null &&
+          _calculateDistance(previousGps, location) >= _reverseGpsStepMeters &&
+          !_isForwardOf(location, previousGps)) {
+        _behindStreak = _reverseConfirmFixes;
+      }
+    }
+
     if (previousGps != null && _isLikelySnapBack(location, previousGps)) {
       _lastGpsTime = now;
       return;
@@ -527,7 +588,7 @@ class TrackController extends GetxController {
   void _snapMarkerTo(LatLng location, double speedKmH) {
     _roadQueue.clear();
     _gpsTrace.clear();
-    _setPathPosition(location);
+    _setPathPosition(_snapToKnownRoad(location));
     _liveTarget = location;
     _lastAcceptedGps = location;
     _lastGpsTime = DateTime.now();
@@ -538,15 +599,21 @@ class TrackController extends GetxController {
     _publishFrame(force: true);
   }
 
-  /// Hard reset of the animated position. Clears any pending correction.
+  /// A raw GPS fix can sit beside the road. When we already know the road
+  /// nearby, start from its closest point instead of the raw fix.
+  LatLng _snapToKnownRoad(LatLng p) {
+    if (_lastRoadCorridor.length < 2) return p;
+    final onRoad = _closestPointOnPolyline(p, _lastRoadCorridor);
+    return _calculateDistance(p, onRoad) <= 60.0 ? onRoad : p;
+  }
+
+  /// Hard reset of the animated position.
   void _setPathPosition(LatLng p) {
     _pathLat = p.latitude;
     _pathLng = p.longitude;
-    _corrLat = 0.0;
-    _corrLng = 0.0;
   }
 
-  LatLng _publishedPoint() => LatLng(_pathLat + _corrLat, _pathLng + _corrLng);
+  LatLng _publishedPoint() => LatLng(_pathLat, _pathLng);
 
   // ---------------------------------------------------------------------
   // Frame loop
@@ -584,8 +651,6 @@ class TrackController extends GetxController {
     if (_pathLat == 0.0 && _pathLng == 0.0) return;
     if (_liveTarget == null) return;
 
-    _decayCorrection(dt);
-
     if (_isMovingVehicle) {
       final pos = LatLng(_pathLat, _pathLng);
       final remaining = _remainingPathMeters(pos);
@@ -603,12 +668,12 @@ class TrackController extends GetxController {
       var step = _glideSpeedMs * dt;
       if (step > remaining) step = remaining;
 
-      if (step > 0.0005) {
-        if (_roadQueue.isNotEmpty) {
-          _advanceAlongRoad(step);
-        } else {
-          _bridgeForward(step);
-        }
+      if (_roadQueue.isEmpty) _reseedQueueFromCorridor();
+      if (_roadQueue.isEmpty && !_roadFetchInFlight) {
+        _fallbackPathTo(_liveTarget!);
+      }
+      if (step > 0.0005 && _roadQueue.isNotEmpty) {
+        _advanceAlongRoad(step);
       }
 
       _maybePrefetchRoad(remaining);
@@ -618,15 +683,6 @@ class TrackController extends GetxController {
 
     _updateHeading(dt);
     _publishFrame();
-  }
-
-  void _decayCorrection(double dt) {
-    if (_corrLat == 0.0 && _corrLng == 0.0) return;
-    final k = math.exp(-dt / _correctionTau);
-    _corrLat *= k;
-    _corrLng *= k;
-    if (_corrLat.abs() < 1e-9) _corrLat = 0.0;
-    if (_corrLng.abs() < 1e-9) _corrLng = 0.0;
   }
 
   /// Target speed = how fast we must move to consume the buffered road before
@@ -687,26 +743,11 @@ class TrackController extends GetxController {
     _pathLng = pos.longitude;
   }
 
-  /// Mapbox is still in flight. Roll straight ahead so the car never freezes,
-  /// but never past the latest known GPS.
-  void _bridgeForward(double step) {
-    final t = _liveTarget;
-    if (t == null) return;
-
-    final pos = LatLng(_pathLat, _pathLng);
-    final dist = _calculateDistance(pos, t);
-    if (dist < 1.0) return;
-    if (_isBehind(pos, t)) return;
-
-    final bearing = _hasHeading ? _lockedBearing : _getBearing(pos, t);
-    final s = math.min(step, dist * 0.6);
-    final next = _offsetMeters(pos, bearing, s);
-    _pathLat = next.latitude;
-    _pathLng = next.longitude;
-  }
-
   void _creepWhileStopped(double dt) {
     _glideSpeedMs = 0.0;
+    if (_roadQueue.isEmpty && !_roadFetchInFlight) {
+      _fallbackPathTo(_liveTarget!);
+    }
     if (_roadQueue.isEmpty) return;
 
     final pos = LatLng(_pathLat, _pathLng);
@@ -741,9 +782,13 @@ class TrackController extends GetxController {
 
     if (!_hasHeading) return;
 
+    // Ease toward the road bearing with a low pass, then cap the turn rate.
+    // Together these turn the car like a real vehicle instead of snapping at
+    // each road vertex.
     final delta = _shortestBearingDelta(_uiHeading, _lockedBearing);
+    final alpha = 1.0 - math.exp(-dt / _headingTau);
     final maxStep = _maxUiHeadingDegPerSec * dt;
-    final step = delta.clamp(-maxStep, maxStep);
+    final step = (delta * alpha).clamp(-maxStep, maxStep);
     if (step.abs() < 0.02) return;
 
     _uiHeading = _normalizeBearing(_uiHeading + step);
@@ -841,8 +886,9 @@ class TrackController extends GetxController {
 
     final point = _publishedPoint();
 
-    _syncMarkerPosition(point);
+    // Camera first, so the overlay projects against this frame's camera.
     if (isLocked.value) _followCamera(point);
+    _syncMarkerPosition(point);
     _publishReadouts(point, force: force);
   }
 
@@ -862,11 +908,39 @@ class TrackController extends GetxController {
       target = LatLng(point.latitude - latOffset, point.longitude);
     }
 
-    try {
-      _ignoreMapGestureUntil =
-          DateTime.now().add(const Duration(milliseconds: 120));
-      mapController.move(target, zoom);
-    } catch (_) {}
+    _moveCamera(target, zoom);
+  }
+
+  /// Instant (non-animated) north-up, top-down camera move. Skipped when
+  /// nothing changed so a parked car does not flood the platform channel.
+  void _moveCamera(LatLng target, double zoom) {
+    final controller = _mapController;
+    if (controller == null) return;
+
+    _cameraTarget = target;
+    _cameraZoom = zoom;
+
+    final last = _lastSentCameraTarget;
+    if (last != null &&
+        _lastSentCameraZoom == zoom &&
+        (last.latitude - target.latitude).abs() < 1e-9 &&
+        (last.longitude - target.longitude).abs() < 1e-9) {
+      return;
+    }
+    _lastSentCameraTarget = target;
+    _lastSentCameraZoom = zoom;
+    _cameraZoom = zoom;
+
+    controller
+        .moveCamera(
+          gmaps.CameraUpdate.newCameraPosition(
+            gmaps.CameraPosition(
+              target: gmaps.LatLng(target.latitude, target.longitude),
+              zoom: zoom,
+            ),
+          ),
+        )
+        .catchError((_) {});
   }
 
   void _publishReadouts(LatLng point, {bool force = false}) {
@@ -891,13 +965,7 @@ class TrackController extends GetxController {
     }
   }
 
-  double _readMapZoom() {
-    try {
-      return mapController.camera.zoom;
-    } catch (_) {
-      return _followZoom;
-    }
-  }
+  double _readMapZoom() => _cameraZoom;
 
   void setInputSheetOpen(bool open) {
     _pauseMarkerUi = open;
@@ -943,6 +1011,9 @@ class TrackController extends GetxController {
 
     if (_roadFetchInFlight) return;
 
+    final rejected = _rejectedRoadTarget;
+    if (rejected != null && _calculateDistance(rejected, to) < 1.0) return;
+
     final now = DateTime.now();
     final queueEmpty = _roadQueue.length < 2;
     final minGapMs = queueEmpty ? 250 : 700;
@@ -960,7 +1031,14 @@ class TrackController extends GetxController {
     if (!queueEmpty && straightM < 15.0 && _remainingPathMeters(from) > 20.0) {
       return;
     }
-    if (_hasHeading && _isBehind(from, to) && straightM < 50.0) return;
+    // Never ask for a road back to a point behind the car, at any distance,
+    // unless the car is really reversing.
+    if (_hasHeading &&
+        _isMovingVehicle &&
+        !_reverseConfirmed &&
+        _isBehind(from, to)) {
+      return;
+    }
 
     _lastRoadFetchAt = now;
     _roadFetchInFlight = true;
@@ -975,11 +1053,15 @@ class TrackController extends GetxController {
 
         road = await _directionsService.getRoute(fromPt, toPt, smooth: false);
 
-        if (road.length < 2 && traceCopy.length >= 2) {
-          road = await _directionsService.matchTrace(
+        // No road, or a route that U-turns (typical on a divided highway when
+        // the car sits on the other carriageway): follow the GPS trace instead.
+        if (traceCopy.length >= 2 &&
+            (road.length < 2 || _roadStartsBackward(road))) {
+          final matched = await _directionsService.matchTrace(
             traceCopy,
             radiusMeters: 25,
           );
+          if (matched.length >= 2) road = matched;
         }
 
         if (_disposed) return;
@@ -1005,17 +1087,19 @@ class TrackController extends GetxController {
           return;
         }
 
-        _lastRoadCorridor
-          ..clear()
-          ..addAll(road);
-
-        var prepared = _orientPathWithTravel(road);
+        final oriented = _orientPathWithTravel(road);
+        var prepared = oriented;
         prepared = _decimatePath(prepared, _roadWaypointMinM);
         final trimmed = _trimRouteToUpdate(prepared, toPt);
         if (trimmed.length >= 2) prepared = trimmed;
         if (prepared.length < 2) return;
 
-        _adoptRoadQueue(prepared);
+        if (_adoptRoadQueue(prepared, target: toPt)) {
+          // Remember the road in travel direction, never the raw one.
+          _lastRoadCorridor
+            ..clear()
+            ..addAll(oriented);
+        }
       } catch (e) {
         debugPrint('[LiveTrack] Mapbox road path failed: $e');
       } finally {
@@ -1032,17 +1116,26 @@ class TrackController extends GetxController {
 
   /// Swap in new geometry without a single pixel of snap.
   ///
-  /// The visible point stays exactly where it was; the difference between it
-  /// and the projection onto the new road is parked in the correction offset
-  /// and bled off over [_correctionTau]. That is the whole trick that replaced
-  /// the old blend / hard-snap ladder.
-  void _adoptRoadQueue(List<LatLng> path) {
-    if (path.length < 2) return;
+  /// The car is re-projected onto the new road line, so it stays on the road.
+  /// Only the along-road distance matters; no lateral offset is ever kept.
+  /// Returns true when the road was taken, false when it was rejected.
+  bool _adoptRoadQueue(List<LatLng> path, {LatLng? target}) {
+    if (path.length < 2) return false;
 
     final published = _publishedPoint();
     final onNew = _closestPointOnPolyline(published, path);
     final ahead = _trimRouteAhead(onNew, path);
-    if (ahead.length < 2) return;
+    if (ahead.length < 2) return false;
+
+    // A road that starts out backward is a U-turn route, not the way the car
+    // is going. Never take it: the frame loop carries the car forward to the
+    // fix along the known road instead (see [_fallbackPathTo]).
+    if (_runsBackward(ahead)) {
+      _rejectedRoadTarget = target;
+      debugPrint('[LiveTrack] backward road ignored');
+      return false;
+    }
+    _rejectedRoadTarget = null;
 
     // Ignore stale or shorter replacements while we still have good road left.
     if (_roadQueue.length >= 2) {
@@ -1051,34 +1144,85 @@ class TrackController extends GetxController {
       if (remainingNow > 20.0 &&
           newRemaining + 1.0 < remainingNow &&
           _calculateDistance(published, onNew) < 3.0) {
-        return;
+        return false;
       }
     }
-
-    final offsetM = _calculateDistance(published, onNew);
 
     _roadQueue
       ..clear()
       ..addAll(ahead);
 
+    // Always land on the new road line. The car never floats off the road.
     _pathLat = onNew.latitude;
     _pathLng = onNew.longitude;
+    return true;
+  }
 
-    if (offsetM > _teleportCorrectionM) {
-      _corrLat = 0.0;
-      _corrLng = 0.0;
-      return;
+  /// True when [path] heads against the car's travel direction while the
+  /// device says it is moving forward.
+  bool _runsBackward(List<LatLng> path) {
+    if (!_hasHeading || !_isMovingVehicle || _reverseConfirmed) return false;
+    final b = _pathBearingOverMeters(path, 15.0);
+    if (b == null) return false;
+    return _shortestBearingDelta(_lockedBearing, b).abs() > _maxRoadTurnBackDeg;
+  }
+
+  /// [_runsBackward] for a raw Mapbox road, measured from where the car is.
+  bool _roadStartsBackward(List<LatLng> road) {
+    final onRoad = _closestPointOnPolyline(_publishedPoint(), road);
+    final ahead = _trimRouteAhead(onRoad, road);
+    return ahead.length >= 2 && _runsBackward(ahead);
+  }
+
+  /// No road is queued (Mapbox still in flight). Continue along the last road
+  /// we received, from the car's current position, instead of driving straight
+  /// toward GPS across buildings and off the road.
+  void _reseedQueueFromCorridor() {
+    if (_lastRoadCorridor.length < 2) return;
+    final pos = LatLng(_pathLat, _pathLng);
+    final onRoad = _closestPointOnPolyline(pos, _lastRoadCorridor);
+    final ahead = _trimRouteAhead(onRoad, _lastRoadCorridor);
+    if (ahead.length < 2) return;
+    if (_runsBackward(ahead)) return;
+    _roadQueue
+      ..clear()
+      ..addAll(ahead);
+  }
+
+  /// Mapbox gave no usable road for the latest device.update. The car still
+  /// goes there instead of stopping: along the last known road when the fix
+  /// lies on it, otherwise straight to the fix.
+  void _fallbackPathTo(LatLng target) {
+    final pos = _publishedPoint();
+    if (_calculateDistance(pos, target) < _minRoadRouteMeters) return;
+
+    // A fix behind the car is a late fix, not a reason to back up. Wait for
+    // the car's next fix instead, unless it is really reversing.
+    if (_hasHeading && !_reverseConfirmed && _isBehind(pos, target)) return;
+
+    // Mapbox already answered for this fix; do not ask again every frame.
+    _rejectedRoadTarget = target;
+
+    if (_lastRoadCorridor.length >= 2) {
+      final onRoad = _snapToKnownRoad(target);
+      if (!identical(onRoad, target)) {
+        final ahead = _trimRouteAhead(
+          _closestPointOnPolyline(pos, _lastRoadCorridor),
+          _lastRoadCorridor,
+        );
+        final along = _trimRouteToUpdate(ahead, onRoad);
+        if (along.length >= 2 && _calculateDistance(along.last, onRoad) < 15.0) {
+          _roadQueue
+            ..clear()
+            ..addAll(along);
+          return;
+        }
+      }
     }
 
-    var dLat = published.latitude - onNew.latitude;
-    var dLng = published.longitude - onNew.longitude;
-    if (offsetM > _maxCorrectionM && offsetM > 0) {
-      final k = _maxCorrectionM / offsetM;
-      dLat *= k;
-      dLng *= k;
-    }
-    _corrLat = dLat;
-    _corrLng = dLng;
+    _roadQueue
+      ..clear()
+      ..add(target);
   }
 
   double _pathLengthMeters(List<LatLng> path) {
@@ -1172,15 +1316,15 @@ class TrackController extends GetxController {
     final pathBearing = _pathBearingOverMeters(path, 30.0);
     if (pathBearing == null) return path;
 
-    double? travelBearing;
-    if (_gpsTrace.length >= 2) {
+    // The locked heading is steadier than the last two GPS fixes, which jitter.
+    double? travelBearing = _hasHeading ? _lockedBearing : null;
+    if (travelBearing == null && _gpsTrace.length >= 2) {
       final prev = _gpsTrace[_gpsTrace.length - 2];
       final curr = _gpsTrace.last;
       if (_calculateDistance(prev, curr) >= 5.0) {
         travelBearing = _getBearing(prev, curr);
       }
     }
-    travelBearing ??= _hasHeading ? _lockedBearing : null;
     if (travelBearing == null) return path;
 
     final vsTravel = _shortestBearingDelta(travelBearing, pathBearing).abs();
@@ -1280,17 +1424,6 @@ class TrackController extends GetxController {
     return out;
   }
 
-  LatLng _offsetMeters(LatLng from, double bearingDeg, double meters) {
-    const metersPerLat = 111320.0;
-    final latRad = from.latitude * math.pi / 180;
-    final metersPerLng = 111320.0 * math.cos(latRad);
-    final rad = bearingDeg * math.pi / 180;
-    return LatLng(
-      from.latitude + (meters * math.cos(rad)) / metersPerLat,
-      from.longitude + (meters * math.sin(rad)) / metersPerLng,
-    );
-  }
-
   bool _isForwardOf(LatLng point, LatLng origin) {
     if (!_hasHeading) return true;
     final bearing = _getBearing(origin, point);
@@ -1316,12 +1449,8 @@ class TrackController extends GetxController {
     final lagM = _calculateDistance(animated, location);
     if (lagM < _snapBackMinLagMeters) return false;
 
-    final gpsStepM = _calculateDistance(previousGps, location);
-    if (gpsStepM < 1.0) return true;
-
-    final gpsMovingBackward = !_isForwardOf(location, previousGps) &&
-        gpsStepM >= _reverseGpsStepMeters;
-    return !gpsMovingBackward;
+    // Behind the car: stale or late unless several fixes in a row say so.
+    return !_reverseConfirmed;
   }
 
   double _shortestBearingDelta(double from, double to) {
@@ -1375,37 +1504,112 @@ class TrackController extends GetxController {
   // Map gestures / camera controls
   // ---------------------------------------------------------------------
 
-  /// Called when the user manually pans or zooms the map.
+  void onMapCreated(gmaps.GoogleMapController controller) {
+    _mapController = controller;
+    _lastSentCameraTarget = null;
+    _lastSentCameraZoom = null;
+    if (_disposed) return;
+    if (isLocked.value && !(_pathLat == 0.0 && _pathLng == 0.0)) {
+      _followCamera(_publishedPoint());
+    }
+  }
+
+  /// Mirrors the live camera so zoom reads stay synchronous. Also catches
+  /// gestures with no pointer travel (double tap zoom) while locked.
   ///
-  /// Do NOT apply the [_ignoreMapGestureUntil] filter here. While locked the
-  /// camera moves every frame and keeps extending that window, which would
-  /// stop the user from ever unlocking follow mode.
+  /// While locked, the camera state is what we pushed; echoes of our own
+  /// moves arrive late and would drag the car backwards, so they are not
+  /// adopted. Once unlocked, the reported camera drives the car overlay.
+  /// While following, the camera is what we push, so its echoes are ignored.
+  /// Once unlocked, the reported camera drives the car overlay.
+  void onCameraMove(gmaps.CameraPosition position) {
+    if (isLocked.value) return;
+    _cameraZoom = position.zoom;
+    _cameraTarget = LatLng(position.target.latitude, position.target.longitude);
+    _syncMarkerPosition(_publishedPoint());
+  }
+
+  void onMapPointerDown(PointerDownEvent e) {
+    _mapPointerDown[e.pointer] = e.position;
+    _pointerNow[e.pointer] = e.position;
+    if (_pointerNow.length >= 2) {
+      _pinching = true;
+      _startPinch();
+    }
+  }
+
+  void _startPinch() {
+    final d = _pinchDistance();
+    if (d == null || d < 10) return;
+    _pinchStartDist = d;
+    _pinchStartZoom = _cameraZoom;
+    pinchActive.value = true;
+  }
+
+  double? _pinchDistance() {
+    if (_pointerNow.length < 2) return null;
+    final p = _pointerNow.values.take(2).toList();
+    return (p[0] - p[1]).distance;
+  }
+
+  /// Two fingers: zoom by the change in finger spread, through the same path
+  /// as + and -, so the car stays centred and the map does not shake.
+  /// One finger past the touch slop: a pan, which stops following.
+  /// A plain tap is neither, so tapping the map still only hides the sheet.
+  void onMapPointerMove(PointerMoveEvent e) {
+    if (!_pointerNow.containsKey(e.pointer)) return;
+    _pointerNow[e.pointer] = e.position;
+
+    if (pinchActive.value) {
+      final start = _pinchStartDist;
+      final d = _pinchDistance();
+      if (start != null && d != null && d > 0) {
+        final z = (_pinchStartZoom + math.log(d / start) / math.ln2)
+            .clamp(3.0, 20.0)
+            .toDouble();
+        _setZoom(z);
+      }
+      return;
+    }
+
+    if (_pinching) return;
+    final start = _mapPointerDown[e.pointer];
+    if (start != null && (e.position - start).distance > _panSlopPx) {
+      onUserMapGesture();
+    }
+  }
+
+  void onMapPointerUp(PointerEvent e) {
+    _mapPointerDown.remove(e.pointer);
+    _pointerNow.remove(e.pointer);
+    if (_pointerNow.length < 2 && pinchActive.value) {
+      pinchActive.value = false;
+      _pinchStartDist = null;
+    }
+    if (_pointerNow.isEmpty) _pinching = false;
+  }
+
+  /// Zoom without moving the centre. While following, the follow loop applies
+  /// it centred on the car on the next frame, exactly like + and -.
+  void _setZoom(double z) {
+    if ((z - _cameraZoom).abs() < 0.001) return;
+    _userAdjustedZoom = true;
+    _cameraZoom = z;
+    if (isLocked.value) {
+      _publishFrame(force: true);
+      return;
+    }
+    _mapController
+        ?.moveCamera(gmaps.CameraUpdate.zoomTo(z))
+        .catchError((_) {});
+  }
+
+  /// Called when the user manually pans or zooms the map.
   void onUserMapGesture() {
     if (isLocked.value) {
       isLocked.value = false;
     }
     _userAdjustedZoom = true;
-    _ensureNorthUp();
-  }
-
-  void onMapGesture() {
-    final until = _ignoreMapGestureUntil;
-    if (until != null && DateTime.now().isBefore(until)) return;
-    if (isLocked.value) {
-      isLocked.value = false;
-    }
-    _userAdjustedZoom = true;
-    _ensureNorthUp();
-  }
-
-  void _ensureNorthUp() {
-    try {
-      final cam = mapController.camera;
-      if (cam.rotation.abs() < 0.05) return;
-      _ignoreMapGestureUntil =
-          DateTime.now().add(const Duration(milliseconds: 200));
-      mapController.moveAndRotate(cam.center, cam.zoom, 0);
-    } catch (_) {}
   }
 
   void zoomIn() => _applyZoomDelta(1.0);
@@ -1413,14 +1617,17 @@ class TrackController extends GetxController {
   void zoomOut() => _applyZoomDelta(-1.0);
 
   void _applyZoomDelta(double delta) {
-    try {
-      final camera = mapController.camera;
-      final nextZoom = (camera.zoom + delta).clamp(3.0, 20.0);
-      _userAdjustedZoom = true;
-      _ignoreMapGestureUntil =
-          DateTime.now().add(const Duration(milliseconds: 200));
-      mapController.moveAndRotate(camera.center, nextZoom, 0);
-    } catch (_) {}
+    final controller = _mapController;
+    if (controller == null) return;
+    final nextZoom = (_cameraZoom + delta).clamp(3.0, 20.0);
+    _userAdjustedZoom = true;
+    _cameraZoom = nextZoom;
+    _lastSentCameraZoom = nextZoom;
+    _lastSentCameraTarget = null;
+    controller
+        .moveCamera(gmaps.CameraUpdate.zoomTo(nextZoom))
+        .catchError((_) {});
+    if (isLocked.value) _publishFrame(force: true);
   }
 
   void moveMapToVehicle({bool snap = false, bool resetZoom = false}) {
@@ -1461,8 +1668,8 @@ class TrackController extends GetxController {
         ApiEndPoints.vehicleGeofences,
         query: {'vehicle_id': vehicleId.toString()},
       );
-      final circles = <CircleMarker>[];
-      final polygons = <Polygon>[];
+      final circles = <gmaps.Circle>[];
+      final polygons = <gmaps.Polygon>[];
       VehicleGeofenceMapOverlay.parseApiResponse(
         response.data,
         circles: circles,
@@ -1601,31 +1808,106 @@ class TrackController extends GetxController {
   // Marker
   // ---------------------------------------------------------------------
 
+  static const double _vehicleMarkerSize = 48.0;
+
+  /// Called from the view's build. Only stores the size; the next frame
+  /// publishes the car position, so nothing notifies during build.
+  void setMapSize(Size size) {
+    _mapSize = size;
+  }
+
   void _syncMarkerPosition(LatLng point) {
     if (point.latitude == 0.0 && point.longitude == 0.0) {
-      if (reactiveMarkers.isNotEmpty) reactiveMarkers.clear();
-      _vehicleMarkerChild = null;
+      vehicleScreenOffset.value = null;
       return;
     }
+    vehicleScreenOffset.value = _projectToScreen(point);
+    _calibrateProjection(point);
+  }
 
-    _vehicleMarkerChild ??= _buildStableVehicleMarkerChild();
+  /// Asks Google where it draws [point] and corrects [_tileSize] to match. Needs
+  /// the point to be away from the screen centre to measure the scale, which is
+  /// the case while the bottom sheet shifts the camera, or after a pan.
+  void _calibrateProjection(LatLng point) {
+    final controller = _mapController;
+    final cam = _cameraTarget;
+    if (controller == null || cam == null || _mapSize.isEmpty) return;
+    final now = DateTime.now();
+    final last = _lastCalibAt;
+    if (_calibBusy || (last != null && now.difference(last).inMilliseconds < 1500)) {
+      return;
+    }
+    final mine = _projectToScreen(point);
+    if (mine == null) return;
+    final centre = Offset(_mapSize.width / 2, _mapSize.height / 2);
+    final mineVec = mine - centre;
+    if (mineVec.distance < 15) return;
 
-    final marker = Marker(
-      key: const ValueKey('live_vehicle_marker'),
-      point: point,
-      width: 48,
-      height: 48,
-      alignment: Alignment.center,
-      child: _vehicleMarkerChild!,
+    _calibBusy = true;
+    _lastCalibAt = now;
+    final tileAtAsk = _tileSize;
+    controller
+        .getScreenCoordinate(gmaps.LatLng(point.latitude, point.longitude))
+        .then((sc) {
+      final dpr =
+          WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+      final nativeVec = Offset(sc.x / dpr, sc.y / dpr) - centre;
+      final ratio = nativeVec.distance / mineVec.distance;
+      if (!ratio.isFinite || ratio < 0.4 || ratio > 2.6) {
+        debugPrint('[LiveTrack] projection check skipped ratio=$ratio dpr=$dpr '
+            'native=(${sc.x},${sc.y}) mine=$mine');
+        return;
+      }
+      if ((ratio - 1).abs() > 0.03 && tileAtAsk == _tileSize) {
+        debugPrint('[LiveTrack] projection corrected tile='
+            '${_tileSize.toStringAsFixed(1)} ratio=${ratio.toStringAsFixed(3)}');
+        _tileSize = (_tileSize * (0.5 + 0.5 * ratio)).clamp(100.0, 1100.0);
+      }
+    }).catchError((_) {}).whenComplete(() => _calibBusy = false);
+  }
+
+  /// Web Mercator, the same projection Google Maps renders with (256 dp world
+  /// tile at zoom 0, camera target at the viewport centre, north-up, no tilt).
+  Offset? _projectToScreen(LatLng p) {
+    final cam = _cameraTarget;
+    if (cam == null || _mapSize.isEmpty) return null;
+
+    final scale = _tileSize * math.pow(2, _cameraZoom).toDouble();
+    double worldX(double lng) => (lng + 180.0) / 360.0 * scale;
+    double worldY(double lat) {
+      final s = math.sin(lat * math.pi / 180).clamp(-0.9999, 0.9999);
+      return (0.5 - math.log((1 + s) / (1 - s)) / (4 * math.pi)) * scale;
+    }
+
+    return Offset(
+      _mapSize.width / 2 + (worldX(p.longitude) - worldX(cam.longitude)),
+      _mapSize.height / 2 + (worldY(p.latitude) - worldY(cam.latitude)),
     );
+  }
 
-    if (reactiveMarkers.isEmpty) {
-      reactiveMarkers.add(marker);
-      return;
-    }
-
-    // Index assign notifies Obx once. An extra refresh() would double rebuild.
-    reactiveMarkers[0] = marker;
+  /// Car layer stacked over the GoogleMap. Only the Positioned is rebuilt per
+  /// frame; the image and its rotation live in a stable child.
+  Widget buildVehicleOverlay() {
+    _vehicleMarkerChild ??= _buildStableVehicleMarkerChild();
+    return ValueListenableBuilder<Offset?>(
+      valueListenable: vehicleScreenOffset,
+      child: _vehicleMarkerChild,
+      builder: (context, offset, child) {
+        if (offset == null) return const SizedBox.shrink();
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Positioned(
+              left: offset.dx - _vehicleMarkerSize / 2,
+              top: offset.dy - _vehicleMarkerSize / 2,
+              width: _vehicleMarkerSize,
+              height: _vehicleMarkerSize,
+              child: child!,
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// Built once and reused. Rotation runs off a ValueNotifier inside a
@@ -1657,8 +1939,6 @@ class TrackController extends GetxController {
       ),
     );
   }
-
-  RxList<Marker> get mapMarkers => reactiveMarkers;
 
   // ---------------------------------------------------------------------
   // Geometry helpers
@@ -1785,14 +2065,19 @@ class TrackController extends GetxController {
 
     _pathLat = 0;
     _pathLng = 0;
-    _corrLat = 0;
-    _corrLng = 0;
     _lockedBearing = 0;
     _uiHeading = 0;
     _hasHeading = false;
+    _behindStreak = 0;
+    _rejectedRoadTarget = null;
     _headingNotifier.value = 0;
 
+    vehicleScreenOffset.value = null;
     _vehicleMarkerChild = null;
+    _cameraTarget = null;
+    _lastSentCameraTarget = null;
+    _lastSentCameraZoom = null;
+    _cameraZoom = _followZoom;
     _lastReadoutAt = null;
     _lastRotationReadoutAt = null;
     _pauseMarkerUi = false;
@@ -1808,7 +2093,9 @@ class TrackController extends GetxController {
   void onClose() {
     _disposed = true;
     _stopAnimationLoop();
+    _mapController = null;
     _headingNotifier.dispose();
+    vehicleScreenOffset.dispose();
     unawaited(_webSocketService.disconnect());
     fenceNameController.dispose();
     super.onClose();

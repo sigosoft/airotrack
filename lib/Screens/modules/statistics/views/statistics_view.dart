@@ -3,233 +3,221 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/statistics_controller.dart';
 import '../../../routes/app_routes.dart';
+import '../../../../widgets/app_bottom_nav_bar.dart';
 
 class StatisticsView extends GetView<StatisticsController> {
-  const StatisticsView({Key? key}) : super(key: key);
+  const StatisticsView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text(
-          'Statistics',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: false,
+    return SafeArea(
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
-          onPressed: () => Get.toNamed(Routes.TRACK),
-        ),
-        actions: [
-          GestureDetector(
-            onTap: () => _showVehiclePicker(context),
-            child: Container(
-              width: 128.38,
-              height: 33.88,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              margin: const EdgeInsets.only(top: 9.38, right: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(5),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Obx(
-                      () => Text(
-                        controller.selectedPlate.value,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.black,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.arrow_drop_down, color: Color(0xFF009FE3)),
-                ],
-              ),
+        appBar: AppBar(
+          title: const Text(
+            'Statistics',
+            style: TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
             ),
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Obx(
-              () => Row(
-                children: [
-                  for (final label in ['Today', 'Yesterday', 'Week', 'Month']) ...[
-                    _buildFilterTab(
-                      label,
-                      controller.selectedPeriod.value == label,
-                      () => controller.setPeriod(label),
+          centerTitle: false,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
+            onPressed: () => Get.toNamed(Routes.TRACK),
+          ),
+          actions: [
+            GestureDetector(
+              onTap: () => _showVehiclePicker(context),
+              child: Container(
+                width: 128.38,
+                height: 33.88,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                margin: const EdgeInsets.only(top: 9.38, right: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Obx(
+                        () => Text(
+                          controller.selectedPlate.value,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Colors.black,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_drop_down, color: Color(0xFF009FE3)),
                   ],
-                  GestureDetector(
-                    onTap: () => _pickCustomRange(context),
-                    child: Image.asset(
-                      'lib/Asset/Icons/Calender.png',
-                      height: 28,
-                      width: 28,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: Obx(() {
-              final s = controller.stats.value;
-              if (controller.isLoading.value &&
-                  s.routeLength == '—' &&
-                  s.moveDuration == '—') {
-                return const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF009FE3)),
-                );
-              }
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/Route_length.png',
-                          "Route Length",
-                          s.routeLength,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/Move_duration.png',
-                          "Move Duration",
-                          s.moveDuration,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/stop duration.png',
-                          "Stop Duration",
-                          s.stopDuration,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/Idle duration.png',
-                          "Idle Duration",
-                          s.idleDuration,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/Top speed.png',
-                          "Top Speed",
-                          s.topSpeed,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/Average speed.png',
-                          "Average Speed",
-                          s.averageSpeed,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/over_speed.png',
-                          "Over Speed Count",
-                          s.overSpeedCount,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/stop_count.png',
-                          "Stop Count",
-                          s.stopCount,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/Engine.png',
-                          "Engine Hours",
-                          s.engineHours,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _buildStatCard(
-                          'lib/Asset/Icons/Odometer.png',
-                          "Odometer",
-                          s.odometer,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              );
-            }),
-          ),
-        ],
-      ),
-      bottomNavigationBar: Container(
-        height: 80,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.2),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
             ),
           ],
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+        body: Column(
           children: [
-            _buildNavItem('lib/Asset/Icons/Location.png', "Track", false),
-            _buildNavItem('lib/Asset/Icons/history.png', "History", false),
-            _buildNavItem('lib/Asset/Icons/notification.png', "Alerts", false),
-            _buildNavItem('lib/Asset/Icons/statistics.png', "Statistics", true),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Obx(
+                () => Row(
+                  children: [
+                    for (final label in ['Today', 'Yesterday', 'Week', 'Month']) ...[
+                      _buildFilterTab(
+                        label,
+                        controller.selectedPeriod.value == label,
+                        () => controller.setPeriod(label),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    GestureDetector(
+                      onTap: () => _pickCustomRange(context),
+                      child: Image.asset(
+                        'lib/Asset/Icons/Calender.png',
+                        height: 28,
+                        width: 28,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: Obx(() {
+                final s = controller.stats.value;
+                if (controller.isLoading.value &&
+                    s.routeLength == '—' &&
+                    s.moveDuration == '—') {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF009FE3)),
+                  );
+                }
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/Route_length.png',
+                            "Route Length",
+                            s.routeLength,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/Move_duration.png',
+                            "Move Duration",
+                            s.moveDuration,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/stop duration.png',
+                            "Stop Duration",
+                            s.stopDuration,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/Idle duration.png',
+                            "Idle Duration",
+                            s.idleDuration,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/Top speed.png',
+                            "Top Speed",
+                            s.topSpeed,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/Average speed.png',
+                            "Average Speed",
+                            s.averageSpeed,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/over_speed.png',
+                            "Over Speed Count",
+                            s.overSpeedCount,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/stop_count.png',
+                            "Stop Count",
+                            s.stopCount,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/Engine.png',
+                            "Engine Hours",
+                            s.engineHours,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildStatCard(
+                            'lib/Asset/Icons/Odometer.png',
+                            "Odometer",
+                            s.odometer,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }),
+            ),
           ],
+        ),
+        bottomNavigationBar: Obx(
+          () => AppBottomNavBar(
+            selected: AppNavTab.statistics,
+            imei: controller.selectedImei.value,
+            plate: controller.selectedPlate.value,
+          ),
         ),
       ),
     );
@@ -364,40 +352,6 @@ class StatisticsView extends GetView<StatisticsController> {
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(String assetPath, String label, bool isSelected) {
-    return GestureDetector(
-      onTap: () {
-        if (label == 'Alerts') {
-          Get.toNamed(Routes.ALERTS);
-        } else if (label == 'History') {
-          Get.toNamed(Routes.HISTORY);
-        } else if (label == 'Track') {
-          Get.toNamed(Routes.TRACK);
-        }
-      },
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset(
-            assetPath,
-            width: 24,
-            height: 24,
-            color: isSelected ? const Color(0xFF009FE3) : Colors.black,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? const Color(0xFF009FE3) : Colors.black,
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         ],

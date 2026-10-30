@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'dart:math' as math;
-import '../../../../widgets/map_widget.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../controllers/track_controller.dart';
 import '../../../routes/app_routes.dart';
 import 'lock_command_view.dart';
 import 'widgets/select_geofence_sheet.dart';
+import '../../../../widgets/app_bottom_nav_bar.dart';
 
 class TrackView extends GetView<TrackController> {
   const TrackView({Key? key}) : super(key: key);
@@ -21,32 +22,56 @@ class TrackView extends GetView<TrackController> {
         resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
-            // 1. Map Background — top-down overhead (north-up)
-            Obx(
-              () => AiroMapWidget(
-                key: ValueKey(
-                  '${controller.vehicleImei.value}-${controller.mapStyle.value}',
-                ),
-                mapController: controller.mapController,
-                initialZoom: 18,
-                mapStyle: controller.mapStyle.value,
-                lockNorthUp: true,
-                onTap: () => controller.showBottomSheet.value = false,
-                markers: controller.mapMarkers,
-                circles: controller.vehicleGeofenceCircles,
-                polygons: controller.vehicleGeofencePolygons,
-                onPositionChanged: (position, hasGesture) {
-                  // Keep a true top-down view (never tilted / spun).
-                  if (position.rotation.abs() > 0.05) {
-                    controller.mapController.moveAndRotate(
-                      position.center,
-                      position.zoom,
-                      0,
-                    );
-                  }
-                  if (hasGesture) {
-                    controller.onUserMapGesture();
-                  }
+            // 1. Map Background — Google Maps, top-down overhead (north-up).
+            // The car is drawn above the map, placed from the same camera.
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  controller.setMapSize(constraints.biggest);
+                  return Stack(
+                    children: [
+                      Listener(
+                        onPointerDown: controller.onMapPointerDown,
+                        onPointerMove: controller.onMapPointerMove,
+                        onPointerUp: controller.onMapPointerUp,
+                        onPointerCancel: controller.onMapPointerUp,
+                        child: Obx(
+                          () => GoogleMap(
+                            key: ValueKey(
+                              'live-map-${controller.vehicleImei.value}',
+                            ),
+                            initialCameraPosition: const CameraPosition(
+                              target: LatLng(11.8745, 75.3704),
+                              zoom: 18,
+                            ),
+                            mapType: controller.mapType.value,
+                            onMapCreated: controller.onMapCreated,
+                            onCameraMove: controller.onCameraMove,
+                            onTap: (_) => controller.showBottomSheet.value = false,
+                            circles: controller.vehicleGeofenceCircles.toSet(),
+                            polygons: controller.vehicleGeofencePolygons.toSet(),
+                            // Keep a true top-down view (never tilted / spun).
+                            rotateGesturesEnabled: false,
+                            // Pinch zoom is done by the app so it zooms around
+                            // the car like + and -, without fighting follow.
+                            zoomGesturesEnabled: false,
+                            scrollGesturesEnabled:
+                                !controller.pinchActive.value,
+                            tiltGesturesEnabled: false,
+                            buildingsEnabled: false,
+                            compassEnabled: false,
+                            zoomControlsEnabled: false,
+                            myLocationButtonEnabled: false,
+                            mapToolbarEnabled: false,
+                            indoorViewEnabled: false,
+                            minMaxZoomPreference:
+                                const MinMaxZoomPreference(3, 20),
+                          ),
+                        ),
+                      ),
+                      controller.buildVehicleOverlay(),
+                    ],
+                  );
                 },
               ),
             ),
@@ -65,38 +90,6 @@ class TrackView extends GetView<TrackController> {
                       size: width * 0.055,
                       color: Colors.black87,
                     ),
-                  ),
-                ),
-
-                // Left Control Group
-                Positioned(
-                  top: height * 0.21,
-                  left: width * 0.04,
-                  child: Column(
-                    children: [
-                      _buildMapControl(
-                        'lib/Asset/Icons/routes detail.png',
-                        context,
-                      ),
-                      SizedBox(height: height * 0.012),
-                      _buildMapControl(
-                        'lib/Asset/Icons/Focus.png',
-                        context,
-                        onTap: () =>
-                            controller.moveMapToVehicle(snap: true, resetZoom: true),
-                      ),
-                      SizedBox(height: height * 0.012),
-                      _buildMapControl(
-                        'lib/Asset/Icons/Customer service.png',
-                        context,
-                      ),
-                      SizedBox(height: height * 0.012),
-                      _buildMapControl(
-                        'lib/Asset/Icons/zoomin.png',
-                        context,
-                        onTap: controller.zoomIn,
-                      ),
-                    ],
                   ),
                 ),
 
@@ -119,17 +112,6 @@ class TrackView extends GetView<TrackController> {
                           context,
                         ),
                       ),
-                      SizedBox(height: height * 0.012),
-                      _buildMapControl(
-                        null,
-                        context,
-                        text: 'P',
-                        textColor: Colors.red,
-                      ),
-                      SizedBox(height: height * 0.012),
-                      _buildMapControl('lib/Asset/Icons/Video.png', context),
-                      SizedBox(height: height * 0.012),
-                      _buildMapControl('lib/Asset/Icons/profile.png', context),
                       SizedBox(height: height * 0.012),
                       _buildMapControl(
                         'lib/Asset/Icons/Locations.png',
@@ -167,7 +149,18 @@ class TrackView extends GetView<TrackController> {
               bottom: 0,
               left: 0,
               right: 0,
-              child: _buildBottomNavBar(),
+              child: Obx(
+                () => AppBottomNavBar(
+                  selected: AppNavTab.track,
+                  imei: controller.vehicleImei.value,
+                  plate: controller.displayPlate,
+                  // Tapping Track on Track refreshes the live vehicle.
+                  onSelectedTap: () => controller.startTrackingForImei(
+                    controller.vehicleImei.value,
+                    plate: controller.displayPlate,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -1512,98 +1505,6 @@ class TrackView extends GetView<TrackController> {
           style: TextStyle(fontSize: width * 0.025, color: Colors.black87),
         ),
       ],
-    );
-  }
-
-  Widget _buildBottomNavBar() {
-    final height = MediaQuery.of(Get.context!).size.height;
-    return Container(
-      height: height * 0.1,
-      padding: EdgeInsets.only(bottom: height * 0.015),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 12,
-            offset: Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildBottomNavItem(
-            "Track",
-            'lib/Asset/Icons/Location.png',
-            true,
-            onTap: () {
-              controller.startTrackingForImei(
-                controller.vehicleImei.value,
-                plate: controller.displayPlate,
-              );
-            },
-          ),
-          _buildBottomNavItem(
-            "History",
-            'lib/Asset/Icons/history.png',
-            false,
-            onTap: () => Get.offNamed(
-              Routes.HISTORY,
-              parameters: {
-                'imei': controller.vehicleImei.value,
-                'vehicleId': controller.displayPlate,
-              },
-            ),
-          ),
-          _buildBottomNavItem(
-            "Alerts",
-            'lib/Asset/Icons/notification.png',
-            false,
-            onTap: () => Get.offNamed(Routes.ALERTS),
-          ),
-          _buildBottomNavItem(
-            "Statistics",
-            'lib/Asset/Icons/statistics.png',
-            false,
-            onTap: () => Get.toNamed(Routes.STATISTICS),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBottomNavItem(
-    String label,
-    String iconPath,
-    bool isSelected, {
-    VoidCallback? onTap,
-  }) {
-    final width = MediaQuery.of(Get.context!).size.width;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset(
-            iconPath,
-            width: width * 0.063,
-            height: width * 0.063,
-            color: isSelected ? const Color(0xFF009FE3) : Colors.black,
-          ),
-          SizedBox(height: width * 0.015),
-          Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? const Color(0xFF009FE3) : Colors.black,
-              fontSize: width * 0.032,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

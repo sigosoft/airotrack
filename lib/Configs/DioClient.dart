@@ -117,6 +117,11 @@ class DioClient {
     dio.options.headers["Authorization"] = "Bearer $token";
   }
 
+  /// Drop the Bearer token from the client after sign-out.
+  void clearToken() {
+    dio.options.headers.remove("Authorization");
+  }
+
   // GLOBAL ERROR HANDLING
   String _handleError(DioException e) {
     if (e.response != null) {

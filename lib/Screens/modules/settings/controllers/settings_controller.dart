@@ -1,8 +1,10 @@
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
 import 'package:airotrack/Models/ProfileModel.dart';
+import 'package:airotrack/Services/FcmService.dart';
 import 'package:airotrack/Utils/ApiHelpers.dart';
 import 'package:airotrack/Utils/Utils.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -14,13 +16,31 @@ class SettingsController extends GetxController {
 
   Future<void> signOut() async {
     try {
+      final saved = await getSavedObject('token');
+      final token = saved?.toString().trim();
+      if (token == null || token.isEmpty) {
+        throw Exception('No active session');
+      }
+
+      // Signing out depends on the server. If the call fails, the user stays
+      // signed in and sees an error, so the phone and server never disagree.
+      await DioClient()
+          .get(
+            ApiEndPoints.logout,
+            options: Options(headers: {'Authorization': 'Bearer $token'}),
+          )
+          .timeout(const Duration(seconds: 3));
+
+      await removename('token');
+      DioClient().clearToken();
+      // Runs after the session is cleared, so a token refresh cannot re-register.
+      await FcmService.instance.removeDeviceToken();
+
       if (!Hive.isBoxOpen('userBox')) {
         await Hive.openBox('userBox');
       }
       var box = Hive.box('userBox');
       await box.put('isLoggedIn', false);
-      await removename('token');
-      DioClient().dio.options.headers.remove('Authorization');
 
       Get.snackbar(
         'Success',
@@ -32,9 +52,10 @@ class SettingsController extends GetxController {
 
       Get.offAllNamed(Routes.LOGIN);
     } catch (e) {
+      debugPrint('Logout failed: $e');
       Get.snackbar(
         'Error',
-        'Sign out failed: $e',
+        'Could not sign out. Check your connection and try again.',
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.red,
         colorText: Colors.white,

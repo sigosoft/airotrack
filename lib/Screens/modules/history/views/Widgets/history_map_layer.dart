@@ -71,8 +71,13 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
   bool _tileSourceLogged = false;
   bool _isProgrammaticCameraMove = false;
   bool _isMapReady = false;
-  ll.LatLng? _prevCameraCenter;
-  double _prevCameraZoom = 15.0;
+
+  /// Pointer tracking. Only a single-finger drag stops follow. A pinch or any
+  /// two-finger gesture keeps the car in focus while the zoom changes.
+  final Map<int, Offset> _pointerDownAt = {};
+  bool _multiTouch = false;
+  bool _singleFingerDrag = false;
+  static const double _panSlopPx = 10.0;
 
   Ticker? _smoothTicker;
   ll.LatLng? _renderPosition;
@@ -119,8 +124,7 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
 
     final latDelta = target.latitude - _renderPosition!.latitude;
     final lngDelta = target.longitude - _renderPosition!.longitude;
-    final bearingDelta =
-        _shortestBearingDelta(_renderBearing, targetBearing);
+    final bearingDelta = _shortestBearingDelta(_renderBearing, targetBearing);
 
     if (latDelta.abs() < 1e-8 &&
         lngDelta.abs() < 1e-8 &&
@@ -138,8 +142,7 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
         _renderPosition!.latitude + latDelta * positionAlpha,
         _renderPosition!.longitude + lngDelta * positionAlpha,
       );
-      _renderBearing =
-          (_renderBearing + bearingDelta * bearingAlpha) % 360;
+      _renderBearing = (_renderBearing + bearingDelta * bearingAlpha) % 360;
     });
 
     if (widget.isFollowCameraEnabled && widget.isPlaybackActive) {
@@ -198,7 +201,11 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
       _lastFollowTarget = target;
       _isProgrammaticCameraMove = true;
       try {
-        _mapController.moveAndRotate(target, _playbackFollowZoom, _fixedBearing);
+        _mapController.moveAndRotate(
+          target,
+          _playbackFollowZoom,
+          _fixedBearing,
+        );
       } finally {
         _isProgrammaticCameraMove = false;
       }
@@ -237,11 +244,7 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
     _lastFollowTarget = _smoothCameraCenter;
     _isProgrammaticCameraMove = true;
     try {
-      _mapController.moveAndRotate(
-        _smoothCameraCenter!,
-        zoom,
-        _fixedBearing,
-      );
+      _mapController.moveAndRotate(_smoothCameraCenter!, zoom, _fixedBearing);
     } finally {
       _isProgrammaticCameraMove = false;
     }
@@ -255,7 +258,8 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
     final offsetPx = heightPx * _followVerticalOffsetFraction;
     final zoom = _activeFollowZoom();
     final metersPerPixel =
-        156543.03392 * math.cos(marker.latitude * math.pi / 180.0) /
+        156543.03392 *
+        math.cos(marker.latitude * math.pi / 180.0) /
         math.pow(2.0, zoom);
     final offsetMeters = offsetPx * metersPerPixel;
     final deltaLat = offsetMeters / 111320.0;
@@ -269,7 +273,8 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
     final bounds = LatLngBounds.fromPoints(points);
 
     // If the bounds are zero-area (e.g. all points same), fitCamera can crash on non-finite zoom calculation.
-    final isZeroArea = bounds.southWest.latitude == bounds.northEast.latitude &&
+    final isZeroArea =
+        bounds.southWest.latitude == bounds.northEast.latitude &&
         bounds.southWest.longitude == bounds.northEast.longitude;
 
     _isProgrammaticCameraMove = true;
@@ -434,77 +439,95 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
       );
     }
 
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: initialTarget,
-        initialZoom: widget.initialZoom,
-        initialRotation: 0.0,
-        onTap: (_, point) {
-          if (widget.selectedStopIndex != null) {
-            widget.onStopTap?.call(-1);
-          }
-          widget.onRouteTap?.call(point);
-        },
-        onMapReady: () {
-          _isMapReady = true;
-          _lastKnownZoom = widget.initialZoom;
-          _fixedBearing = 0.0;
-          if (widget.polylinePoints.length >= 2 && !_hasAutoFittedCurrentRoute) {
-            _fitToPolyline();
-            _hasAutoFittedCurrentRoute = true;
-          }
-        },
-        onPositionChanged: (camera, hasGesture) {
-          final zoom = camera.zoom.isFinite ? camera.zoom : _lastKnownZoom;
-          final center = camera.center;
-          final zoomDelta = (zoom - _prevCameraZoom).abs();
-          final centerDelta = _prevCameraCenter == null
-              ? 0.0
-              : (_prevCameraCenter!.latitude - center.latitude).abs() +
-                  (_prevCameraCenter!.longitude - center.longitude).abs();
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerUp,
+      child: FlutterMap(
+        mapController: _mapController,
+        options: MapOptions(
+          initialCenter: initialTarget,
+          initialZoom: widget.initialZoom,
+          initialRotation: 0.0,
+          onTap: (_, point) {
+            if (widget.selectedStopIndex != null) {
+              widget.onStopTap?.call(-1);
+            }
+            widget.onRouteTap?.call(point);
+          },
+          onMapReady: () {
+            _isMapReady = true;
+            _lastKnownZoom = widget.initialZoom;
+            _fixedBearing = 0.0;
+            if (widget.polylinePoints.length >= 2 &&
+                !_hasAutoFittedCurrentRoute) {
+              _fitToPolyline();
+              _hasAutoFittedCurrentRoute = true;
+            }
+          },
+          onPositionChanged: (camera, hasGesture) {
+            final zoom = camera.zoom.isFinite ? camera.zoom : _lastKnownZoom;
 
-          if (!_isProgrammaticCameraMove) {
-            // Zoom in/out (buttons or pinch): keep follow, lock to new zoom.
-            if (zoomDelta > 0.05) {
-              _usePlaybackFollowZoom = false;
+            if (!_isProgrammaticCameraMove) {
+              // Zoom in/out (buttons or pinch): keep follow, lock to new zoom.
+              if ((zoom - _lastKnownZoom).abs() > 0.001) {
+                _usePlaybackFollowZoom = false;
+              }
               _lastKnownZoom = zoom;
+
+              // A one-finger drag stops follow. Pinch and two-finger gestures never do.
+              if (hasGesture &&
+                  _singleFingerDrag &&
+                  !_multiTouch &&
+                  widget.isPlaybackActive &&
+                  widget.isFollowCameraEnabled) {
+                widget.onManualFollowDisable?.call();
+                debugPrint('[History] Camera: pan detected, follow disabled');
+              }
             } else if (camera.zoom.isFinite) {
               _lastKnownZoom = zoom;
             }
-
-            // Pan only (no meaningful zoom): stop following.
-            if (hasGesture &&
-                zoomDelta <= 0.05 &&
-                centerDelta > 0.0001 &&
-                widget.isPlaybackActive &&
-                widget.isFollowCameraEnabled) {
-              widget.onManualFollowDisable?.call();
-              debugPrint(
-                '[History] Camera: pan detected, follow disabled',
-              );
-            }
-          } else if (camera.zoom.isFinite) {
-            _lastKnownZoom = zoom;
-          }
-
-          _prevCameraCenter = center;
-          _prevCameraZoom = zoom;
-        },
-        interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+          },
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+          ),
         ),
+        children: [
+          TileLayer(
+            urlTemplate: _mapboxTileUrl(),
+            userAgentPackageName: 'com.airotrack.app',
+            fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          ),
+          PolylineLayer(polylines: polylines),
+          MarkerLayer(markers: markers),
+        ],
       ),
-      children: [
-        TileLayer(
-          urlTemplate: _mapboxTileUrl(),
-          userAgentPackageName: 'com.airotrack.app',
-          fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        ),
-        PolylineLayer(polylines: polylines),
-        MarkerLayer(markers: markers),
-      ],
     );
+  }
+
+  void _onPointerDown(PointerDownEvent e) {
+    _pointerDownAt[e.pointer] = e.position;
+    if (_pointerDownAt.length > 1) {
+      _multiTouch = true;
+      _singleFingerDrag = false;
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    final start = _pointerDownAt[e.pointer];
+    if (start == null || _multiTouch || _pointerDownAt.length != 1) return;
+    if ((e.position - start).distance > _panSlopPx) {
+      _singleFingerDrag = true;
+    }
+  }
+
+  void _onPointerUp(PointerEvent e) {
+    _pointerDownAt.remove(e.pointer);
+    if (_pointerDownAt.isEmpty) {
+      _multiTouch = false;
+      _singleFingerDrag = false;
+    }
   }
 }
 
@@ -659,8 +682,9 @@ class _HistoryStopMarker extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               color: valueColor ?? Colors.black87,
-              fontWeight:
-                  valueColor != null ? FontWeight.w600 : FontWeight.normal,
+              fontWeight: valueColor != null
+                  ? FontWeight.w600
+                  : FontWeight.normal,
             ),
           ),
         ),

@@ -5,6 +5,10 @@ class ApiConfig {
       //"https://api.airotrack.in/website/";
       //"https://dev-api.airotrack.in/airotrack-api/public/website/";
 
+  // Push notification server. Only push notification traffic uses this domain;
+  // every other API keeps using [baseUrl].
+  static const String pushBaseUrl = "https://device.airotrack.in/";
+
   // TCP server base URL — used for real-time device position (live tracking)
   static const String tcpBaseUrl =
       "https://dev-api.airotrack.in/airotrack-tcp/public";
@@ -20,8 +24,13 @@ class ApiConfig {
 
 class ApiEndPoints {
   static String login = "login";
+  static String logout = "logout";
   static String home = "home";
   static String alerts = "alerts";
+  /// Sends this device's FCM token to the website API (base URL).
+  static String updateFcmToken = "update_fcm_token";
+  /// Push notifications are read from the push server ([ApiConfig.pushBaseUrl]).
+  static String get pushNotificationsUrl => "${ApiConfig.pushBaseUrl}notifications";
   static String vehicleHistory = "track_vehicle";
   static String liveTrack = "live_track";
   static String liveTrackSnapshot = "live_track_snapshot";

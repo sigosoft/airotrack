@@ -2,6 +2,7 @@ import 'package:airotrack/Screens/routes/app_routes.dart';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../../alerts/controllers/alerts_controller.dart';
 import '../controllers/notification_controller.dart';
 import 'widgets/notification_filter_sheet.dart';
 
@@ -141,8 +142,10 @@ class NotificationView extends GetView<NotificationController> {
                         : 0),
                 itemBuilder: (context, index) {
                   if (index < controller.notifications.length) {
-                    final type = index % 3; // 0: On, 1: Off, 2: Speed
-                    return _buildNotificationCard(context, type);
+                    return _buildNotificationCard(
+                      context,
+                      controller.notifications[index],
+                    );
                   } else {
                     return const Center(
                       child: Padding(
@@ -211,27 +214,30 @@ class NotificationView extends GetView<NotificationController> {
     );
   }
 
-  Widget _buildNotificationCard(BuildContext context, int type) {
+  Widget _buildNotificationCard(BuildContext context, AlertModel item) {
     double screenWidth = MediaQuery.of(context).size.width;
     Widget iconWidget;
     String statusText;
 
-    if (type == 0) {
+    final typeLower = item.type.toLowerCase();
+    if (typeLower.contains('ignition on') || typeLower.contains('moving')) {
       iconWidget = Image.asset(
         'lib/Asset/Icons/power.png',
         width: 28,
         height: 28,
         color: Color(0xFF00C853), // Green
       );
-      statusText = "Ignition On";
-    } else if (type == 1) {
+      statusText = item.type;
+    } else if (typeLower.contains('ignition off') ||
+        typeLower.contains('stopped') ||
+        typeLower.contains('offline')) {
       iconWidget = Image.asset(
         'lib/Asset/Icons/power.png',
         width: 28,
         height: 28,
         color: Color(0xFFD50000), // Red
       );
-      statusText = "Ignition Off";
+      statusText = item.type;
     } else {
       iconWidget = Image.asset(
         'lib/Asset/Icons/Speed.png',
@@ -239,7 +245,7 @@ class NotificationView extends GetView<NotificationController> {
         height: 28,
         color: const Color(0xFF009FE3), // Blue
       );
-      statusText = "Device Overspeed";
+      statusText = item.type;
     }
 
     return Container(
@@ -277,9 +283,9 @@ class NotificationView extends GetView<NotificationController> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Flexible(
+                    Flexible(
                       child: Text(
-                        "KL 07 D 0518",
+                        item.plateNumber,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
@@ -291,7 +297,7 @@ class NotificationView extends GetView<NotificationController> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      "Oct 17, 2025 5:38:08 PM",
+                      item.date,
                       style: TextStyle(
                         fontSize: 9,
                         color: Colors.grey[500],
@@ -310,7 +316,7 @@ class NotificationView extends GetView<NotificationController> {
                   ),
                 ),
                 Text(
-                  "PuthiyakavuJunction, Karunagappalli, Kollam, Kerala",
+                  item.address,
                   style: TextStyle(
                     fontSize: 10,
                     color: Colors.grey[600],

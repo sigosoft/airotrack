@@ -1,6 +1,13 @@
+import 'dart:developer';
+
+import 'package:airotrack/Configs/ApiConfigs.dart';
+import 'package:airotrack/Configs/DioClient.dart';
+import 'package:airotrack/Utils/Utils.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+import '../../alerts/controllers/alerts_controller.dart';
 import '../../home/controllers/home_controller.dart';
 
 enum NotificationFilterCategory { eventTypes, vehicles, date }
@@ -8,7 +15,9 @@ enum NotificationFilterCategory { eventTypes, vehicles, date }
 class NotificationController extends GetxController {
   final RxString selectedTab = 'Alerts'.obs;
   final ScrollController scrollController = ScrollController();
-  var notifications = <int>[].obs;
+  /// Notifications shown on screen (after the local filters).
+  final notifications = <AlertModel>[].obs;
+  final List<AlertModel> _all = [];
   var isLoading = false.obs;
   var hasMore = true.obs;
   var currentPage = 1;
@@ -109,10 +118,7 @@ class NotificationController extends GetxController {
     toDate.value = draftToDate.value;
     selectedEventTypes.refresh();
     selectedVehicles.refresh();
-    // Reload list with filters (UI-ready; hook API later).
-    currentPage = 1;
-    hasMore.value = true;
-    loadNotifications();
+    _applyLocalFilters();
   }
 
   void toggleDraftEventType(String option) {
@@ -165,24 +171,105 @@ class NotificationController extends GetxController {
     if (picked != null) draftToDate.value = picked;
   }
 
-  void loadNotifications() {
-    isLoading.value = true;
-    Future.delayed(const Duration(seconds: 1), () {
-      notifications.assignAll(List.generate(10, (index) => index));
-      isLoading.value = false;
-    });
+  static const int _pageSize = 20;
+
+  /// Push notifications only: read from the push server ([ApiConfig.pushBaseUrl]).
+  Future<List<AlertModel>?> _fetchPage(int page) async {
+    try {
+      final token = await getSavedObject('token');
+      if (token != null) DioClient().updateToken(token.toString().trim());
+
+      final response = await DioClient().get(
+        ApiEndPoints.pushNotificationsUrl,
+        query: {'limit': '$_pageSize', 'page': '$page'},
+        options: Options(
+          headers: {'Accept': 'application/json'},
+          validateStatus: (status) => true,
+        ),
+      );
+
+      final data = response.data;
+      final list = (response.statusCode == 200 && data is Map)
+          ? (data['data'] is Map ? data['data']['alerts'] : null)
+          : null;
+      if (list is! List) {
+        log('[Notifications] unexpected response, status=${response.statusCode}');
+        return null;
+      }
+      return list
+          .whereType<Map>()
+          .map((e) => AlertModel.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (e) {
+      log('[Notifications] load failed: $e');
+      return null;
+    }
   }
 
-  void loadMoreNotifications() {
+  Future<void> loadNotifications() async {
     isLoading.value = true;
-    currentPage++;
-    Future.delayed(const Duration(seconds: 1), () {
-      notifications.addAll(List.generate(10, (index) => index));
-      if (currentPage >= 5) {
-        hasMore.value = false;
+    currentPage = 1;
+    hasMore.value = true;
+    final page = await _fetchPage(1);
+    _all
+      ..clear()
+      ..addAll(page ?? const [])
+      ..sort((a, b) => b.date.compareTo(a.date));
+    if (page == null || page.length < _pageSize) hasMore.value = false;
+    _applyLocalFilters();
+    isLoading.value = false;
+  }
+
+  Future<void> loadMoreNotifications() async {
+    if (isLoading.value || !hasMore.value) return;
+    isLoading.value = true;
+    final page = await _fetchPage(currentPage + 1);
+    if (page == null || page.isEmpty) {
+      hasMore.value = false;
+    } else {
+      currentPage++;
+      _all.addAll(page);
+      if (page.length < _pageSize) hasMore.value = false;
+      _applyLocalFilters();
+    }
+    isLoading.value = false;
+  }
+
+  /// Event type, vehicle and date filters, applied to what has been loaded.
+  void _applyLocalFilters() {
+    final types = selectedEventTypes.contains('All Events')
+        ? <String>{}
+        : selectedEventTypes.map((e) => e.toLowerCase()).toSet();
+    final from = fromDate.value;
+    final to = toDate.value;
+
+    bool matches(AlertModel a) {
+      if (types.isNotEmpty) {
+        final t = a.type.toLowerCase();
+        final ok = types.any(
+          (o) => t.contains(o) || t.contains(o.replaceFirst('device ', '')),
+        );
+        if (!ok) return false;
       }
-      isLoading.value = false;
-    });
+      if (selectedVehicles.isNotEmpty &&
+          !selectedVehicles.contains(a.plateNumber)) {
+        return false;
+      }
+      if (from != null || to != null) {
+        final d = DateTime.tryParse(a.date);
+        if (d != null) {
+          if (from != null && d.isBefore(DateTime(from.year, from.month, from.day))) {
+            return false;
+          }
+          if (to != null && !d.isBefore(DateTime(to.year, to.month, to.day + 1))) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    notifications.assignAll(_all.where(matches));
   }
 
   void changeTab(String tab) {

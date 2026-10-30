@@ -51,7 +51,15 @@ class HistoryBottomNavBar extends StatelessWidget {
             assetPath: 'lib/Asset/Icons/notification.png',
             label: "Alerts",
             isSelected: false,
-            onTap: () => Get.offNamed(Routes.ALERTS),
+            onTap: () => Get.offNamed(
+              Routes.ALERTS,
+              // Lets Alerts return to this History screen, not to Home.
+              parameters: {
+                'trackImei': imei,
+                'trackPlate': vehicle,
+                'from': 'history',
+              },
+            ),
           ),
           HistoryNavItem(
             assetPath: 'lib/Asset/Icons/statistics.png',

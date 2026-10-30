@@ -53,7 +53,9 @@ dependencies:
   firebase_core: ^4.14.0
   firebase_messaging: ^16.6.0
   flutter_local_notifications: ^22.3.0
-
+  pdf: ^3.13.1
+  path_provider: ^2.1.6
+  share_plus: ^13.3.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

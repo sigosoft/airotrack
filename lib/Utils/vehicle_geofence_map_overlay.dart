@@ -2,8 +2,7 @@ import 'dart:math' as math;
 
 import 'package:airotrack/Utils/app_colors.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Builds map circles/polygons from `GET vehicle_geofences` response.
 class VehicleGeofenceMapOverlay {
@@ -19,7 +18,7 @@ class VehicleGeofenceMapOverlay {
 
   static void parseApiResponse(
     dynamic raw, {
-    required List<CircleMarker> circles,
+    required List<Circle> circles,
     required List<Polygon> polygons,
   }) {
     circles.clear();
@@ -32,18 +31,21 @@ class VehicleGeofenceMapOverlay {
     final list = data['geofences'];
     if (list is! List) return;
 
-    for (final item in list) {
+    for (var i = 0; i < list.length; i++) {
+      final item = list[i];
       if (item is! Map) continue;
-      _addOverlay(item, circles: circles, polygons: polygons);
+      _addOverlay(item, i, circles: circles, polygons: polygons);
     }
   }
 
   static void _addOverlay(
-    Map item, {
-    required List<CircleMarker> circles,
+    Map item,
+    int index, {
+    required List<Circle> circles,
     required List<Polygon> polygons,
   }) {
     final type = item['type']?.toString().toLowerCase() ?? 'circle';
+    final id = 'geofence_${item['id'] ?? index}_$index';
 
     if (type == 'circle') {
       final lat = double.tryParse(item['latitude']?.toString() ?? '');
@@ -53,13 +55,13 @@ class VehicleGeofenceMapOverlay {
         return;
       }
       circles.add(
-        CircleMarker(
-          point: LatLng(lat, lng),
+        Circle(
+          circleId: CircleId(id),
+          center: LatLng(lat, lng),
           radius: radiusKm * 1000,
-          useRadiusInMeter: true,
-          color: _fill,
-          borderStrokeWidth: 2,
-          borderColor: _border,
+          fillColor: _fill,
+          strokeWidth: 2,
+          strokeColor: _border,
         ),
       );
       return;
@@ -76,10 +78,11 @@ class VehicleGeofenceMapOverlay {
 
     polygons.add(
       Polygon(
+        polygonId: PolygonId(id),
         points: points,
-        color: _fill,
-        borderStrokeWidth: 2,
-        borderColor: _border,
+        fillColor: _fill,
+        strokeWidth: 2,
+        strokeColor: _border,
       ),
     );
   }

@@ -185,9 +185,29 @@ class HomeView extends GetView<HomeController> {
                   onTap: () => controller.fetchVehicles(type: 5),
                   child: _buildStatusCard(
                     "Expired",
-                    controller.inactiveCount.value,
-                    const Color.fromARGB(255, 21, 107, 178),
+                    controller.expiredCount.value,
+                    const Color(0xFFFF9100),
                     controller.selectedType.value == 5,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                GestureDetector(
+                  onTap: () => controller.fetchVehicles(type: 6),
+                  child: _buildStatusCard(
+                    "Inactive",
+                    controller.inactiveVehiclesCount.value,
+                    Colors.blue,
+                    controller.selectedType.value == 6,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                GestureDetector(
+                  onTap: () => controller.fetchVehicles(type: 7),
+                  child: _buildStatusCard(
+                    "No Data",
+                    controller.noDataCount.value,
+                    Colors.grey,
+                    controller.selectedType.value == 7,
                   ),
                 ),
               ],
@@ -315,13 +335,47 @@ class HomeView extends GetView<HomeController> {
     );
   }
 
+  /// Car picture for each status, matching the status colours.
+  String _statusCarImage(String status) {
+    switch (status) {
+      case 'Running':
+        return 'lib/Asset/Images/Green right Car.png';
+      case 'Idle':
+        return 'lib/Asset/Images/Idle_yellow_rightcar.png';
+      case 'Expired':
+        return 'lib/Asset/Images/Expired_GlossyOrange_rightcar.png';
+      case 'Inactive':
+        return 'lib/Asset/Images/Inactive_blue_rightcar.png';
+      case 'No data':
+        return 'lib/Asset/Images/No data_grey_rightcar.png';
+      default:
+        return 'lib/Asset/Images/Red right Car.png';
+    }
+  }
+
+  /// Same colours as the status cards at the top of Home.
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'Running':
+        return const Color(0xFF00C853);
+      case 'Idle':
+        return const Color(0xFFFFD600);
+      case 'Expired':
+        return const Color(0xFFFF9100);
+      case 'Inactive':
+        return Colors.blue;
+      case 'No data':
+        return Colors.grey;
+      default:
+        return const Color(0xFFFF3D00);
+    }
+  }
+
   Widget _buildVehicleCard(BuildContext context, Vehicle vehicle) {
     // Both 'Running' and 'Idle' (Moving or Ignition-On) should show as Active (Green).
     final isStatusActive =
         vehicle.status == 'Running' || vehicle.status == 'Idle';
-    final statusColor = isStatusActive
-        ? const Color(0xFF00C853)
-        : const Color(0xFFFF3D00);
+    final statusColor = _statusColor(vehicle.status);
 
     return GestureDetector(
       onTap: () => _showVehicleDialog(context, vehicle),
@@ -374,9 +428,7 @@ class HomeView extends GetView<HomeController> {
                           SizedBox(
                             height: 48,
                             child: Image.asset(
-                              vehicle.isIgnitionOn
-                                  ? 'lib/Asset/Images/Green right Car.png'
-                                  : 'lib/Asset/Images/Red right Car.png',
+                              _statusCarImage(vehicle.status),
                               fit: BoxFit.contain,
                             ),
                           ),

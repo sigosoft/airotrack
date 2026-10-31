@@ -51,6 +51,11 @@ class ApiEndPoints {
   static String vehicleGeofences = "vehicle_geofences";
 
   // Profile / account
+  static String vehicles = "vehicles";
+  static String vehicleAlerts = "vehicle_alerts";
+  static String alertTypes = "alert_types";
+  static String updateVehicleAlerts = "update_vehicle_alerts";
+
   static String profile = "profile";
   static String updateProfile = "update_profile";
   static String changePassword = "change_password";

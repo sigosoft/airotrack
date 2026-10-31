@@ -50,6 +50,7 @@ import '../modules/settings/views/raise_ticket_view.dart';
 import '../modules/settings/views/support_ticket_view.dart';
 import '../modules/settings/views/change_password_view.dart';
 import '../modules/settings/views/configure_alerts_view.dart';
+import '../modules/settings/bindings/configure_alerts_binding.dart';
 import '../modules/settings/views/expenses_view.dart';
 import '../modules/settings/views/add_expense_view.dart';
 import '../modules/settings/views/general_settings_view.dart';
@@ -203,6 +204,7 @@ class AppPages {
     GetPage(
       name: Routes.CONFIGURE_ALERTS,
       page: () => const ConfigureAlertsView(),
+      binding: ConfigureAlertsBinding(),
     ),
     GetPage(
       name: Routes.EXPENSES,

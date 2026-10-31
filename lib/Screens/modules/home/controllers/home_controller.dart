@@ -7,7 +7,7 @@ import 'package:airotrack/Utils/Utils.dart';
 class Vehicle {
   final int id;
   final String plateNumber;
-  final String status; // 'Running', 'Stopped', 'Idle', 'Inactive'
+  final String status; // 'Running', 'Stopped', 'Idle', 'Expired', 'Inactive', 'No data'
   final String statusDuration;
   final String lastUpdated;
   /// Place name from API `location` (home endpoint).
@@ -49,8 +49,8 @@ class Vehicle {
     return !(lat == 0 && lng == 0);
   }
 
-  /// Status text shown to the user ('Inactive' is labelled 'Expired').
-  String get statusLabel => status == 'Inactive' ? 'Expired' : status;
+  /// Status text shown to the user.
+  String get statusLabel => status;
 
   /// Display text from API `location` (no client reverse-geocode).
   String get locationLabel {
@@ -200,14 +200,17 @@ class Vehicle {
   }) {
     if (apiStatus != null && apiStatus.isNotEmpty) {
       final s = apiStatus.toLowerCase();
-      if (s.contains('inactive') || s.contains('expired')) return 'Inactive';
+      if (s.contains('expired')) return 'Expired';
+      if (s.contains('inactive')) return 'Inactive';
+      if (s.contains('no data') || s.contains('nodata')) return 'No data';
       if (s.contains('run') || s.contains('mov')) return 'Running';
       if (s.contains('idle')) return 'Idle';
       if (s.contains('stop')) return 'Stopped';
     }
 
     final m = mode?.toUpperCase();
-    if (m == 'INACTIVE' || m == 'EXPIRED') return 'Inactive';
+    if (m == 'EXPIRED') return 'Expired';
+    if (m == 'INACTIVE') return 'Inactive';
     // Mode is authoritative — do not override Stopped with noisy speed.
     if (m == 'M' || m == 'R' || m == 'RUNNING' || m == 'MOVING') {
       return 'Running';
@@ -237,7 +240,9 @@ class HomeController extends GetxController {
   final runningCount = "0".obs;
   final stoppedCount = "0".obs;
   final idleCount = "0".obs;
-  final inactiveCount = "0".obs;
+  final expiredCount = "0".obs;
+  final inactiveVehiclesCount = "0".obs;
+  final noDataCount = "0".obs;
 
   /// Search query for filtering vehicles (plate number, address, device id).
   final searchQuery = ''.obs;
@@ -289,7 +294,7 @@ class HomeController extends GetxController {
   final selectedType = RxnInt();
 
   /// Status word of each vehicle's status tab, keyed by vehicle id.
-  final _tabStatusById = <int, String>{};
+  final _tabStatusById = <String, String>{};
 
   /// Status shown by a tab (1 All has none, so returns null).
   String? _tabStatusFor(int type) {
@@ -301,7 +306,11 @@ class HomeController extends GetxController {
       case 4:
         return 'Stopped';
       case 5:
+        return 'Expired';
+      case 6:
         return 'Inactive';
+      case 7:
+        return 'No data';
       default:
         return null;
     }
@@ -311,20 +320,20 @@ class HomeController extends GetxController {
     final status = _tabStatusFor(type);
     if (status == null) return;
     for (final v in loaded) {
-      if (v.id != 0) _tabStatusById[v.id] = status;
+      _tabStatusById[_vehicleKey(v)] = status;
     }
   }
 
   Vehicle _withTabStatus(Vehicle v) {
-    final status = _tabStatusById[v.id];
+    final status = _tabStatusById[_vehicleKey(v)];
     return status == null ? v : v.copyWith(status: status);
   }
 
   /// Loads every page of the four status tabs so the All list shows the same
   /// status word as the tab each vehicle is listed under.
   Future<void> _loadTabStatuses() async {
-    final fresh = <int, String>{};
-    for (final type in const [2, 3, 4, 5]) {
+    final fresh = <String, String>{};
+    for (final type in const [2, 3, 4, 5, 6, 7]) {
       final status = _tabStatusFor(type)!;
       try {
         var page = 1;
@@ -339,7 +348,7 @@ class HomeController extends GetxController {
           for (final row in rows) {
             try {
               final v = Vehicle.fromJson(Map<String, dynamic>.from(row as Map));
-              if (v.id != 0) fresh[v.id] = status;
+              fresh[_vehicleKey(v)] = status;
             } catch (e) {
               debugPrint('[Home] skip tab vehicle parse error: $e');
             }
@@ -406,7 +415,11 @@ class HomeController extends GetxController {
           runningCount.value = stats['running_vehicles']?.toString() ?? "0";
           stoppedCount.value = stats['stopped_vehicles']?.toString() ?? "0";
           idleCount.value = stats['idle_vehicles']?.toString() ?? "0";
-          inactiveCount.value = stats['expired_vehicles']?.toString() ?? "0";
+          expiredCount.value = stats['expired_vehicles']?.toString() ?? "0";
+          // Key names below are not confirmed by the backend yet.
+          inactiveVehiclesCount.value =
+              stats['inactive_vehicles']?.toString() ?? "0";
+          noDataCount.value = stats['no_data_vehicles']?.toString() ?? "0";
         } else {
           totalCount.value = vehicles.length.toString();
           runningCount.value = vehicles
@@ -421,8 +434,16 @@ class HomeController extends GetxController {
               .where((v) => v.status == 'Idle')
               .length
               .toString();
-          inactiveCount.value = vehicles
+          expiredCount.value = vehicles
+              .where((v) => v.status == 'Expired')
+              .length
+              .toString();
+          inactiveVehiclesCount.value = vehicles
               .where((v) => v.status == 'Inactive')
+              .length
+              .toString();
+          noDataCount.value = vehicles
+              .where((v) => v.status == 'No data')
               .length
               .toString();
         }

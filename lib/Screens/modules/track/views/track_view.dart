@@ -316,13 +316,20 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildDraggableBottomSheet() {
+    // Peek = the bottom nav (10% of the height, see AppBottomNavBar) plus a
+    // fixed ~95 dp for the plate and odometer. That is ~20% on the design
+    // phone, but more on short phones, where a flat 20% left the odometer
+    // hidden behind the nav bar.
+    final screenH = MediaQuery.of(Get.context!).size.height;
+    final peek = (0.10 + 95 / screenH).clamp(0.20, 0.40).toDouble();
+    final mid = math.max(0.45, peek + 0.05);
     return DraggableScrollableSheet(
       // Peek by default so the map stays dominant; drag up for full details.
-      initialChildSize: 0.20,
-      minChildSize: 0.18,
+      initialChildSize: peek,
+      minChildSize: peek - 0.02,
       maxChildSize: 0.92,
       snap: true,
-      snapSizes: const [0.20, 0.45, 0.92],
+      snapSizes: [peek, mid, 0.92],
       builder: (context, scrollController) {
         final height = MediaQuery.of(context).size.height;
         final width = MediaQuery.of(context).size.width;

@@ -148,7 +148,7 @@ class AddExpenseView extends GetView<AddExpenseController> {
               _buildLabel('Expense Description'),
               const SizedBox(height: 9),
               Container(
-                width: 358,
+                width: double.infinity,
                 height: 94,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -199,7 +199,7 @@ class AddExpenseView extends GetView<AddExpenseController> {
 
               const SizedBox(height: 40),
               SizedBox(
-                width: 360,
+                width: double.infinity,
                 height: 45,
                 child: ElevatedButton(
                   onPressed: controller.submitExpense,
@@ -247,7 +247,7 @@ class AddExpenseView extends GetView<AddExpenseController> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 358,
+        width: double.infinity,
         height: 40,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
@@ -283,7 +283,7 @@ class AddExpenseView extends GetView<AddExpenseController> {
 
   Widget _buildDateField(String date) {
     return Container(
-      width: 358,
+      width: double.infinity,
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
@@ -303,7 +303,7 @@ class AddExpenseView extends GetView<AddExpenseController> {
 
   Widget _buildTextField(String hint, TextEditingController fieldController) {
     return Container(
-      width: 358,
+      width: double.infinity,
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(

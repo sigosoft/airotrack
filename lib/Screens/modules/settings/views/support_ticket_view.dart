@@ -36,7 +36,7 @@ class SupportTicketView extends GetView<SettingsController> {
                 const SizedBox(height: 15),
                 // Search Bar
                 Container(
-                  width: 356.6,
+                  width: double.infinity,
                   height: 45,
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                   decoration: BoxDecoration(

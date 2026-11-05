@@ -107,11 +107,11 @@ class ResetPasswordView extends GetView<ResetPasswordController> {
 
                     // Button
                     Padding(
-                      padding: const EdgeInsets.only(left: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: SizedBox(
-                          width: AppStyles.buttonWidth,
+                          width: double.infinity,
                           height: AppStyles.buttonHeight,
                           child: ElevatedButton(
                             onPressed: controller.resetPassword,

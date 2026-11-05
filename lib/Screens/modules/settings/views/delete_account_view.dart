@@ -26,15 +26,16 @@ class DeleteAccountView extends GetView<DeleteAccountController> {
         ),
         centerTitle: false,
       ),
-      body: Padding(
+      // Scrolls so the keyboard never pushes the buttons into an overflow on
+      // short phones.
+      body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           children: [
             const SizedBox(height: 35), // Top 119 approx
-            SizedBox(
-              width: 356.9,
-              height: 44,
-              child: const Text(
+            const SizedBox(
+              width: double.infinity,
+              child: Text(
                 'Please enter your phone number and password to  delete your account!',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -61,11 +62,12 @@ class DeleteAccountView extends GetView<DeleteAccountController> {
               controller.passwordError,
             ),
             const SizedBox(height: 40),
+            // Two equal buttons that share the row's width on any phone.
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                SizedBox(
-                  width: 165,
+                Expanded(
+                  child: SizedBox(
                   height: 45,
                   child: OutlinedButton(
                     onPressed: () => Get.back(),
@@ -84,9 +86,10 @@ class DeleteAccountView extends GetView<DeleteAccountController> {
                     ),
                   ),
                 ),
+                ),
                 const SizedBox(width: 10),
-                SizedBox(
-                  width: 165,
+                Expanded(
+                  child: SizedBox(
                   height: 45,
                   child: ElevatedButton(
                     onPressed: () {
@@ -101,15 +104,19 @@ class DeleteAccountView extends GetView<DeleteAccountController> {
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      'Delete Account',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                    child: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Delete Account',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ),
+                ),
                 ),
               ],
             ),
@@ -130,7 +137,7 @@ class DeleteAccountView extends GetView<DeleteAccountController> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 358,
+          width: double.infinity,
           height: 50,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(

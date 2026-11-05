@@ -108,7 +108,7 @@ class GeneralSettingsView extends GetView<GeneralSettingsController> {
     required Widget trailing,
   }) {
     return Container(
-      width: 358,
+      width: double.infinity,
       height: 50,
       padding: const EdgeInsets.only(top: 9, right: 11, bottom: 9, left: 11),
       decoration: BoxDecoration(
@@ -164,7 +164,7 @@ class GeneralSettingsView extends GetView<GeneralSettingsController> {
 
   Widget _buildVehicleIconSizeOptions() {
     return Container(
-      width: 358,
+      width: double.infinity,
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       decoration: BoxDecoration(

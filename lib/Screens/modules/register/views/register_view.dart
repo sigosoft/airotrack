@@ -238,15 +238,11 @@ class RegisterView extends GetView<RegisterController> {
 
                     // Sign Up Button
                     Padding(
-                      padding: const EdgeInsets.only(left: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: SizedBox(
-                          width:
-                              MediaQuery.of(context).size.width <
-                                  AppStyles.buttonWidth + 32
-                              ? MediaQuery.of(context).size.width - 32
-                              : AppStyles.buttonWidth,
+                          width: double.infinity,
                           height: AppStyles.buttonHeight,
                           child: ElevatedButton(
                             onPressed: controller.signUp,

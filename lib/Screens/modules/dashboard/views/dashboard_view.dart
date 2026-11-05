@@ -23,7 +23,9 @@ class DashboardView extends GetView<DashboardController> {
             padding: const EdgeInsets.only(bottom: 120),
             child: Column(
               children: [
-                const SizedBox(height: 15),
+                // Home turns the top SafeArea off, so start below the
+                // status bar here or the logo sits under the clock.
+                SizedBox(height: MediaQuery.paddingOf(context).top + 8),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Padding(

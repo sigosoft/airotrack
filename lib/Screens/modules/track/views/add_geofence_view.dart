@@ -80,7 +80,7 @@ class AddGeofenceView extends GetView<TrackController> {
                     ),
                     const SizedBox(height: 10),
                     Container(
-                      width: 358,
+                      width: double.infinity,
                       height: 50,
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -138,7 +138,7 @@ class AddGeofenceView extends GetView<TrackController> {
                     GestureDetector(
                       onTap: () => Get.toNamed(Routes.ADD_LOCATION_PICKER),
                       child: Container(
-                        width: 358,
+                        width: double.infinity,
                         height: 50,
                         decoration: BoxDecoration(
                           color: Colors.white,

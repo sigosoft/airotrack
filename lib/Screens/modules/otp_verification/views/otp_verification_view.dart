@@ -84,11 +84,11 @@ class OTPVerificationView extends GetView<OTPVerificationController> {
                     const SizedBox(height: 50), // Gap to reach button at 470
                     // Button
                     Padding(
-                      padding: const EdgeInsets.only(left: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: SizedBox(
-                          width: AppStyles.buttonWidth,
+                          width: double.infinity,
                           height: AppStyles.buttonHeight,
                           child: ElevatedButton(
                             onPressed: controller.verify,

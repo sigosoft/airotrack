@@ -54,11 +54,16 @@ class SplashView extends GetView<SplashController> {
               ),
 
             // 3. The Animating Square/Circle/Background Expansion
+            // Its positions are in the 390x844 design frame around the
+            // centred logo; shift them by this screen's centre offset so the
+            // circle lands on the logo on every phone size.
             AnimatedPositioned(
               duration: const Duration(milliseconds: 600),
               curve: Curves.easeInOut,
-              top: controller.squareTop.value,
-              left: controller.squareLeft.value,
+              top: controller.squareTop.value +
+                  (MediaQuery.sizeOf(context).height - 844) / 2,
+              left: controller.squareLeft.value +
+                  (MediaQuery.sizeOf(context).width - 390) / 2,
               child: AnimatedScale(
                 duration: const Duration(milliseconds: 1500),
                 scale: controller.circleScale.value,

@@ -255,7 +255,7 @@ class SettingsView extends GetView<SettingsController> {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          width: 358,
+          width: double.infinity,
           height: 45,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(

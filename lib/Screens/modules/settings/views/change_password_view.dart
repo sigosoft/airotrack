@@ -58,7 +58,7 @@ class ChangePasswordView extends GetView<ChangePasswordController> {
               const SizedBox(height: 300), // Spacing to match "top 607" approx
               Obx(
                 () => SizedBox(
-                  width: 357,
+                  width: double.infinity,
                   height: 45,
                   child: ElevatedButton(
                     onPressed: controller.isLoading.value
@@ -110,7 +110,7 @@ class ChangePasswordView extends GetView<ChangePasswordController> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 357,
+          width: double.infinity,
           height: 40,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(

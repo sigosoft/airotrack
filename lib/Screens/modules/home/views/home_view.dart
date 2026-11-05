@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/home_controller.dart';
@@ -57,16 +59,22 @@ class HomeView extends GetView<HomeController> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Header Area
-        const SizedBox(height: 69),
+        // 1. Header Area. Keep the design's gap, but never less than the
+        // status bar plus a margin (tall notches).
+        Builder(
+          builder: (context) => SizedBox(
+            height: math.max(69.0, MediaQuery.paddingOf(context).top + 24),
+          ),
+        ),
         Padding(
-          padding: const EdgeInsets.only(left: 16.41),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Search Bar
-              Container(
-                width: 297.8,
+              // Search Bar takes whatever width the bell leaves, so the row
+              // fits every phone width.
+              Expanded(
+                child: Container(
                 height: 45,
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -100,6 +108,7 @@ class HomeView extends GetView<HomeController> {
                     const Icon(Icons.search, color: Colors.grey),
                     const SizedBox(width: 16),
                   ],
+                ),
                 ),
               ),
               const SizedBox(width: 6.99),
@@ -648,13 +657,18 @@ class HomeView extends GetView<HomeController> {
           children: [
             Icon(icon, size: 12, color: Colors.grey),
             const SizedBox(width: 2),
+            // Shrink the value to fit narrow cards instead of cutting it
+            // ("85.77 …"), so the whole number stays readable.
             Flexible(
-              child: Text(
-                text,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -673,11 +687,13 @@ class HomeView extends GetView<HomeController> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
+          // Height follows the content (long addresses wrap) instead of a
+          // fixed 250 that clipped on narrow phones.
           child: Container(
             width: 380,
-            height: 250,
             padding: const EdgeInsets.all(20),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildDialogRow("Name:", vehicle.plateNumber),
@@ -694,7 +710,7 @@ class HomeView extends GetView<HomeController> {
                 _buildDialogRow("Engine:", vehicle.isIgnitionOn ? "On" : "Off"),
                 const SizedBox(height: 8),
                 _buildDialogRow("Voltage:", "13.78 V"),
-                const Spacer(),
+                const SizedBox(height: 20),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Row(

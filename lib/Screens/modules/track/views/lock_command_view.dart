@@ -39,7 +39,7 @@ class LockCommandView extends StatelessWidget {
             top:
                 20, // Strictly following user spec (assuming relative to body/stack)
             left: 16,
-            width: 358,
+            right: 16, // fill the width between margins on any phone
             height: 252,
             child: Container(
               decoration: BoxDecoration(
@@ -103,7 +103,7 @@ class LockCommandView extends StatelessWidget {
                     left: 16,
                     right: 16,
                     child: Text(
-                      "Note: For emergency use only. Please do not use in areas where\nGSM network connectivity is poor.",
+                      "Note: For emergency use only. Please do not use in areas where GSM network connectivity is poor.",
                       style: TextStyle(fontSize: 10, color: Colors.grey),
                       textAlign: TextAlign.start,
                     ),
@@ -132,7 +132,7 @@ class LockCommandView extends StatelessWidget {
           Positioned(
             top: 340,
             left: 16,
-            width: 357.96,
+            right: 16,
             height: 85.56,
             child: _buildHistoryTile(
               title: "Stop Engine",
@@ -147,7 +147,7 @@ class LockCommandView extends StatelessWidget {
           Positioned(
             top: 430,
             left: 16,
-            width: 357.96,
+            right: 16,
             height: 85.56,
             child: _buildHistoryTile(
               title: "Resume Engine",
@@ -281,13 +281,13 @@ class LockCommandView extends StatelessWidget {
           ),
           child: Container(
             width: 357,
-            height: 170,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text(
@@ -313,11 +313,10 @@ class LockCommandView extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // No Button
-                    GestureDetector(
+                    Expanded(child: GestureDetector(
                       onTap: () => Get.back(),
                       child: Container(
-                        width:
-                            120, // Adjusted to fit within 357 width with spacing
+                        width: double.infinity,
                         height: 40,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -340,10 +339,10 @@ class LockCommandView extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ),
+                    )),
                     const SizedBox(width: 15),
                     // Yes Button
-                    GestureDetector(
+                    Expanded(child: GestureDetector(
                       onTap: () {
                         // Add logic here if needed
                         Get.back();
@@ -354,7 +353,7 @@ class LockCommandView extends StatelessWidget {
                         );
                       },
                       child: Container(
-                        width: 120, // Adjusted to fit
+                        width: double.infinity,
                         height: 40,
                         decoration: BoxDecoration(
                           color: const Color(0xFF009FE3),
@@ -369,7 +368,7 @@ class LockCommandView extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ),
+                    )),
                   ],
                 ),
               ],
@@ -391,13 +390,13 @@ class LockCommandView extends StatelessWidget {
           ),
           child: Container(
             width: 357,
-            height: 170,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text(
@@ -423,10 +422,10 @@ class LockCommandView extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // No Button
-                    GestureDetector(
+                    Expanded(child: GestureDetector(
                       onTap: () => Get.back(),
                       child: Container(
-                        width: 120,
+                        width: double.infinity,
                         height: 40,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -449,9 +448,10 @@ class LockCommandView extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ),
+                    )),
+                    const SizedBox(width: 15),
                     // Yes Button
-                    GestureDetector(
+                    Expanded(child: GestureDetector(
                       onTap: () {
                         // Add logic here if needed
                         Get.back();
@@ -462,7 +462,7 @@ class LockCommandView extends StatelessWidget {
                         );
                       },
                       child: Container(
-                        width: 120,
+                        width: double.infinity,
                         height: 40,
                         decoration: BoxDecoration(
                           color: const Color(0xFF009FE3),
@@ -477,7 +477,7 @@ class LockCommandView extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ),
+                    )),
                   ],
                 ),
               ],
@@ -497,70 +497,56 @@ class LockCommandView extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
+          // A centred column sized by its content, so the icon, text and
+          // button stay centred and inside the dialog on every width.
           child: Container(
             width: 357,
-            height: 203,
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 17),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Stack(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 // Success Image/Icon
-                Positioned(
-                  top: 7.78,
-                  left: 120,
-                  child: Container(
-                    width: 50,
-                    height: 50,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white,
-                    ),
-                    child: Image.asset('lib/Asset/Icons/Success.png'),
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                  ),
+                  child: Image.asset('lib/Asset/Icons/Success.png'),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
                   ),
                 ),
-
-                // Text Content
-                Positioned(
-                  top: 70,
-                  left: 0,
-                  right: 0,
-                  child: Column(
-                    children: [
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Text(
-                          message,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
                   ),
                 ),
+                const SizedBox(height: 20),
 
                 // OK Button
-                Positioned(
-                  top: 146,
-                  left: 35,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 230),
                   child: GestureDetector(
                     onTap: () => Get.back(),
                     child: Container(
-                      width: 230,
+                      width: double.infinity,
                       height: 40,
                       decoration: BoxDecoration(
                         color: const Color(0xFF009FE3),

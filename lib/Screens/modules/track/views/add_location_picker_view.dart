@@ -188,7 +188,7 @@ class AddLocationPickerView extends GetView<TrackController> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 17),
                       child: Container(
-                        width: 357,
+                        width: double.infinity,
                         height: 137,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -288,7 +288,7 @@ class AddLocationPickerView extends GetView<TrackController> {
                           Get.back(); // Assuming it returns location
                         },
                         child: Container(
-                          width: 358,
+                          width: double.infinity,
                           height: 45,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(

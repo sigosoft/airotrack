@@ -41,8 +41,9 @@ class NotificationView extends GetView<NotificationController> {
             ), // Adjusted top to separate from AppBar, left as requested
             child: Row(
               children: [
-                Container(
-                  width: 297,
+                // Search takes the width the filter button leaves.
+                Expanded(
+                  child: Container(
                   height: 45,
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -69,6 +70,7 @@ class NotificationView extends GetView<NotificationController> {
                       suffixIcon: Icon(Icons.search, color: Colors.grey),
                     ),
                   ),
+                ),
                 ),
                 const SizedBox(width: 12),
                 GestureDetector(
@@ -106,9 +108,9 @@ class NotificationView extends GetView<NotificationController> {
           // Tabs
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(
-              left: 13.97,
-            ), // Align with search bar
+            padding: const EdgeInsets.symmetric(
+              horizontal: 13.97,
+            ), // Align with search bar; right margin when scrolled to end
             child: Obx(
               () => Row(
                 mainAxisAlignment: MainAxisAlignment.start,

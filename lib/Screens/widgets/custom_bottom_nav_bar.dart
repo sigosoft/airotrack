@@ -67,9 +67,13 @@ class CustomBottomNavBar extends GetView<HomeController> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        // Label stays in navbar
-                        Text(
+                        // Label stays in navbar. One line, shrunk to fit on
+                        // narrow phones instead of wrapping ("Dashboar/d").
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
                           item['label']!,
+                          maxLines: 1,
                           style: TextStyle(
                             fontSize: 13,
                             color: isSelected
@@ -79,6 +83,7 @@ class CustomBottomNavBar extends GetView<HomeController> {
                                 ? FontWeight.bold
                                 : FontWeight.normal,
                           ),
+                        ),
                         ),
                       ],
                     ),

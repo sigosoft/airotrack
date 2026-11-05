@@ -39,7 +39,7 @@ class RemindersView extends GetView<RemindersController> {
                 ), // Adjust to match visual spacing ~114px from top including AppBar
                 // Search Bar
                 Container(
-                  width: 358,
+                  width: double.infinity,
                   height: 45,
                   decoration: BoxDecoration(
                     color: Colors.white,

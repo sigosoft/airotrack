@@ -50,7 +50,7 @@ class RaiseTicketView extends GetView<RaiseTicketController> {
                   controller.selectedVehicle.value = 'KL 07 D 0518';
                 },
                 child: Container(
-                  width: 358,
+                  width: double.infinity,
                   height: 40,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
@@ -115,7 +115,7 @@ class RaiseTicketView extends GetView<RaiseTicketController> {
                   controller.selectedType.value = 'General Issue';
                 },
                 child: Container(
-                  width: 358,
+                  width: double.infinity,
                   height: 40,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
@@ -175,7 +175,7 @@ class RaiseTicketView extends GetView<RaiseTicketController> {
               ),
               const SizedBox(height: 9),
               Container(
-                width: 358,
+                width: double.infinity,
                 height: 94,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -247,7 +247,7 @@ class RaiseTicketView extends GetView<RaiseTicketController> {
               const SizedBox(height: 50),
               // Submit Button
               SizedBox(
-                width: 359.54,
+                width: double.infinity,
                 height: 45,
                 child: ElevatedButton(
                   onPressed: controller.submitTicket,
@@ -268,7 +268,10 @@ class RaiseTicketView extends GetView<RaiseTicketController> {
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
+              // Room for the call / WhatsApp buttons (2 x 40 + gap, the FAB
+              // margin and the system nav inset), so Submit always ends above
+              // them, scrolled or not.
+              SizedBox(height: 130 + MediaQuery.paddingOf(context).bottom),
             ],
           ),
         ),

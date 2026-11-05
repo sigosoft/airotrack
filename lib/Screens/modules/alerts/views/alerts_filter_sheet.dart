@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
@@ -26,24 +27,6 @@ class _AlertOption {
   const _AlertOption(this.key, this.label);
 }
 
-const List<_AlertOption> _alertOptions = [
-  _AlertOption('ignitionOn', 'Ignition On'),
-  _AlertOption('ignitionOff', 'Ignition Off'),
-  _AlertOption('emergencyOn', 'Emergency On'),
-  _AlertOption('emergencyOff', 'Emergency Off'),
-  _AlertOption('wireDisconnect', 'Wire Disconnect'),
-  _AlertOption('powerDisconnect', 'Power Disconnect'),
-  _AlertOption('powerRestored', 'Power Restored'),
-  _AlertOption('tilt', 'Tilt'),
-  _AlertOption('boxOpen', 'Box Open'),
-  _AlertOption('rashTurning', 'Rash Turning'),
-  _AlertOption('deviceOverspeed', 'Device Overspeed'),
-  _AlertOption('geofenceEntry', 'Geofence Entry'),
-  _AlertOption('geofenceExit', 'Geofence Exit'),
-  _AlertOption('geofenceOverspeed', 'Geofence Overspeed'),
-  _AlertOption('impactCrash', 'Impact Crash'),
-];
-
 class AlertsFilterSheet extends StatefulWidget {
   const AlertsFilterSheet({super.key});
 
@@ -67,7 +50,20 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
   late DateTime? _from = _controller.fromDate.value;
   late DateTime? _to = _controller.toDate.value;
 
-  void _apply() {
+  Future<void> _apply() async {
+    // For a vehicle, Apply also saves the ticked event types to it with
+    // update_vehicle_alerts (only when they changed). A failed save keeps the
+    // sheet open so nothing is lost.
+    if (_controller.vehicleTypesChanged(_types)) {
+      final ok = await _controller.saveVehicleAlertTypes({..._types});
+      if (!ok || !mounted) return;
+      final plate = _controller.vehiclePlate;
+      Fluttertoast.showToast(
+        msg: plate.isEmpty ? 'Alerts updated' : 'Alerts updated for $plate',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    }
     _controller.selectedTypes
       ..clear()
       ..addAll(_types);
@@ -159,10 +155,14 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
   Widget _content() {
     switch (_tab) {
       case _FilterTab.eventTypes:
-        return _checkList(
-          allLabel: 'All Events',
-          options: _alertOptions,
-          selected: _types,
+        // Always every type from alert_types. Obx: the list can still be
+        // arriving from the server when the sheet opens.
+        return Obx(
+          () => _eventTypeList(
+            _controller.alertTypeOptions
+                .map((o) => _AlertOption(o.key, o.label))
+                .toList(),
+          ),
         );
       case _FilterTab.vehicles:
         return _checkList(
@@ -177,7 +177,34 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
     }
   }
 
-  /// "All" is checked when nothing specific is selected.
+  /// Event types: "All Events" is ticked when every type is ticked, and
+  /// tapping it ticks every type (or clears them all when all are ticked).
+  Widget _eventTypeList(List<_AlertOption> options) {
+    final allTicked =
+        options.isNotEmpty && options.every((o) => _types.contains(o.key));
+    return ListView(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      children: [
+        _checkRow('All Events', allTicked, () {
+          setState(() {
+            if (allTicked) {
+              _types.clear();
+            } else {
+              _types.addAll(options.map((o) => o.key));
+            }
+          });
+        }),
+        for (final o in options)
+          _checkRow(o.label, _types.contains(o.key), () {
+            setState(() {
+              if (!_types.remove(o.key)) _types.add(o.key);
+            });
+          }),
+      ],
+    );
+  }
+
+  /// Vehicles: "All" is checked when nothing specific is selected.
   Widget _checkList({
     required String allLabel,
     required List<_AlertOption> options,
@@ -368,19 +395,35 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
           Expanded(
             child: SizedBox(
               height: 48,
-              child: ElevatedButton(
-                onPressed: _apply,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _accent,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+              // Disabled with a spinner while update_vehicle_alerts runs.
+              child: Obx(
+                () => ElevatedButton(
+                  onPressed: _controller.isSavingTypes.value ? null : _apply,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _accent,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: _accent.withOpacity(0.6),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                ),
-                child: const Text(
-                  'Apply',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  child: _controller.isSavingTypes.value
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Apply',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),

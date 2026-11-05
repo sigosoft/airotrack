@@ -52,6 +52,46 @@ class Vehicle {
   /// Status text shown to the user.
   String get statusLabel => status;
 
+  /// Type number from the rules table; 0 when the status has no type.
+  int get typeNumber {
+    switch (status) {
+      case 'Running':
+        return 2;
+      case 'Idle':
+        return 3;
+      case 'Stopped':
+        return 4;
+      case 'Expired':
+        return 5;
+      case 'Inactive':
+        return 6;
+      case 'No data':
+        return 7;
+      default:
+        return 0;
+    }
+  }
+
+  /// The table rule that gives this vehicle its status.
+  String get ruleText {
+    switch (status) {
+      case 'Running':
+        return 'ignition = 1, speed > 0, last_update within 5 min';
+      case 'Idle':
+        return 'ignition = 1 and not running';
+      case 'Stopped':
+        return 'ignition = 0';
+      case 'Inactive':
+        return 'last_update older than 45 min';
+      case 'No data':
+        return 'no last_update in the cache';
+      case 'Expired':
+        return 'expirationtime in the past';
+      default:
+        return '';
+    }
+  }
+
   /// Display text from API `location` (no client reverse-geocode).
   String get locationLabel {
     final text = address.trim();
@@ -85,23 +125,18 @@ class Vehicle {
   }
 
   factory Vehicle.fromJson(Map<String, dynamic> json) {
-    final mode = json['mode']?.toString().toUpperCase();
     final speed = double.tryParse(json['speed']?.toString() ?? '0') ?? 0;
     final ignitionRaw = json['ignition'];
     final ignition = ignitionRaw == 1 ||
         ignitionRaw == true ||
         ignitionRaw?.toString() == '1';
 
-    // Prefer explicit status string from API when present (not bool flags).
-    final rawStatus =
-        json['current_status'] ?? json['vehicle_status'] ?? json['status'];
-    final apiStatus = rawStatus is String ? rawStatus.trim() : null;
-
-    final derivedStatus = _resolveVehicleStatus(
-      apiStatus: apiStatus,
-      mode: mode,
+    final derivedStatus = statusByRule(
+      lastUpdate: (json['last_update'] ?? '').toString(),
+      expiry: _parseExpirationDate(json['expirationtime']),
       speed: speed,
       ignition: ignition,
+      now: DateTime.now(),
     );
 
     final lat = double.tryParse(json['latitude']?.toString() ?? '');
@@ -191,35 +226,27 @@ class Vehicle {
     return DateTime.tryParse(normalized) ?? DateTime.tryParse(text);
   }
 
-  /// Aligns with live-track modes: M/R = Running, H/I = Idle, S = Stopped.
-  static String _resolveVehicleStatus({
-    String? apiStatus,
-    String? mode,
+  /// Status from the table's rules, checked in this order:
+  /// No data, Expired, Inactive, Running, Idle, Stopped.
+  /// The table does not give an order; Inactive is checked before Stopped
+  /// because an old update with ignition off is Inactive.
+  static String statusByRule({
+    required String lastUpdate,
+    required DateTime? expiry,
     required double speed,
     required bool ignition,
+    required DateTime now,
   }) {
-    if (apiStatus != null && apiStatus.isNotEmpty) {
-      final s = apiStatus.toLowerCase();
-      if (s.contains('expired')) return 'Expired';
-      if (s.contains('inactive')) return 'Inactive';
-      if (s.contains('no data') || s.contains('nodata')) return 'No data';
-      if (s.contains('run') || s.contains('mov')) return 'Running';
-      if (s.contains('idle')) return 'Idle';
-      if (s.contains('stop')) return 'Stopped';
-    }
+    final text = lastUpdate.trim();
+    final updated = text.isEmpty ? null : DateTime.tryParse(text);
+    if (updated == null) return 'No data';
+    if (expiry != null && expiry.isBefore(now)) return 'Expired';
 
-    final m = mode?.toUpperCase();
-    if (m == 'EXPIRED') return 'Expired';
-    if (m == 'INACTIVE') return 'Inactive';
-    // Mode is authoritative — do not override Stopped with noisy speed.
-    if (m == 'M' || m == 'R' || m == 'RUNNING' || m == 'MOVING') {
+    final age = now.difference(updated);
+    if (age > const Duration(minutes: 45)) return 'Inactive';
+    if (ignition && speed > 0 && age <= const Duration(minutes: 5)) {
       return 'Running';
     }
-    if (m == 'H' || m == 'I' || m == 'IDLE') return 'Idle';
-    if (m == 'S' || m == 'STOPPED' || m == 'STOP') return 'Stopped';
-
-    // Fallback when mode is missing.
-    if (speed > 1.0) return 'Running';
     if (ignition) return 'Idle';
     return 'Stopped';
   }
@@ -293,78 +320,6 @@ class HomeController extends GetxController {
 
   final selectedType = RxnInt();
 
-  /// Status word of each vehicle's status tab, keyed by vehicle id.
-  final _tabStatusById = <String, String>{};
-
-  /// Status shown by a tab (1 All has none, so returns null).
-  String? _tabStatusFor(int type) {
-    switch (type) {
-      case 2:
-        return 'Running';
-      case 3:
-        return 'Idle';
-      case 4:
-        return 'Stopped';
-      case 5:
-        return 'Expired';
-      case 6:
-        return 'Inactive';
-      case 7:
-        return 'No data';
-      default:
-        return null;
-    }
-  }
-
-  void _recordTabStatuses(List<Vehicle> loaded, int type) {
-    final status = _tabStatusFor(type);
-    if (status == null) return;
-    for (final v in loaded) {
-      _tabStatusById[_vehicleKey(v)] = status;
-    }
-  }
-
-  Vehicle _withTabStatus(Vehicle v) {
-    final status = _tabStatusById[_vehicleKey(v)];
-    return status == null ? v : v.copyWith(status: status);
-  }
-
-  /// Loads every page of the four status tabs so the All list shows the same
-  /// status word as the tab each vehicle is listed under.
-  Future<void> _loadTabStatuses() async {
-    final fresh = <String, String>{};
-    for (final type in const [2, 3, 4, 5, 6, 7]) {
-      final status = _tabStatusFor(type)!;
-      try {
-        var page = 1;
-        while (page <= 100) {
-          final response = await DioClient().get(
-            ApiEndPoints.home,
-            query: {'type': '$type', 'page': '$page', 'limit': '20'},
-          );
-          final data = response.data?['data'];
-          final rows = data is Map ? data['vehicles_data'] : null;
-          if (rows is! List || rows.isEmpty) break;
-          for (final row in rows) {
-            try {
-              final v = Vehicle.fromJson(Map<String, dynamic>.from(row as Map));
-              fresh[_vehicleKey(v)] = status;
-            } catch (e) {
-              debugPrint('[Home] skip tab vehicle parse error: $e');
-            }
-          }
-          if (rows.length < 20) break;
-          page++;
-        }
-      } catch (e) {
-        debugPrint('[Home] tab $type status load failed: $e');
-      }
-    }
-    _tabStatusById
-      ..clear()
-      ..addAll(fresh);
-  }
-
   Future<void> fetchVehicles({int? type}) async {
     try {
       selectedType.value = type ?? 1;
@@ -396,13 +351,7 @@ class HomeController extends GetxController {
               debugPrint('[Home] skip vehicle parse error: $e');
             }
           }
-          if (selectedType.value == 1) {
-            await _loadTabStatuses();
-          } else {
-            _recordTabStatuses(parsed, selectedType.value!);
-          }
-          vehicles.value =
-              _uniqueVehicles(parsed).map(_withTabStatus).toList();
+          vehicles.value = _uniqueVehicles(parsed);
           // No more pages when first page is shorter than the page size.
           hasMore.value = vehiclesList.length >= 20;
         } else {
@@ -490,13 +439,12 @@ class HomeController extends GetxController {
                 debugPrint('[Home] skip vehicle parse error: $e');
               }
             }
-            _recordTabStatuses(newVehicles, selectedType.value ?? 1);
             final unique = _dedupeVehicles(newVehicles);
             if (unique.isEmpty) {
               // API repeated page-1 vehicles — stop paging.
               hasMore.value = false;
             } else {
-              vehicles.addAll(unique.map(_withTabStatus));
+              vehicles.addAll(unique);
               currentPage = nextPage;
               if (newVehicles.length < 20) {
                 hasMore.value = false;

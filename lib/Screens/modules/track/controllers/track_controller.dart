@@ -110,14 +110,6 @@ class TrackController extends GetxController {
   LatLng? _lastSentCameraTarget;
   double? _lastSentCameraZoom;
 
-  /// Pointer tracking used to tell user pans/pinches from our own follow moves.
-  final Map<int, Offset> _mapPointerDown = {};
-  static const double _panSlopPx = 10.0;
-
-  /// True from the moment a second finger touches until all fingers lift, so
-  /// the finger left after a pinch never counts as a pan.
-  bool _pinching = false;
-
   /// Two-finger zoom is done by the app, not by Google Maps (its zoom gesture
   /// is off), so it zooms around the car exactly like + and -. The view turns
   /// Google's two-finger scroll off while this is true.
@@ -1530,10 +1522,8 @@ class TrackController extends GetxController {
   }
 
   void onMapPointerDown(PointerDownEvent e) {
-    _mapPointerDown[e.pointer] = e.position;
     _pointerNow[e.pointer] = e.position;
     if (_pointerNow.length >= 2) {
-      _pinching = true;
       _startPinch();
     }
   }
@@ -1572,21 +1562,15 @@ class TrackController extends GetxController {
       return;
     }
 
-    if (_pinching) return;
-    final start = _mapPointerDown[e.pointer];
-    if (start != null && (e.position - start).distance > _panSlopPx) {
-      onUserMapGesture();
-    }
+    // One-finger drags do not stop following; the car stays centred.
   }
 
   void onMapPointerUp(PointerEvent e) {
-    _mapPointerDown.remove(e.pointer);
     _pointerNow.remove(e.pointer);
     if (_pointerNow.length < 2 && pinchActive.value) {
       pinchActive.value = false;
       _pinchStartDist = null;
     }
-    if (_pointerNow.isEmpty) _pinching = false;
   }
 
   /// Zoom without moving the centre. While following, the follow loop applies

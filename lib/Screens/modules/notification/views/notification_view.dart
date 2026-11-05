@@ -134,7 +134,16 @@ class NotificationView extends GetView<NotificationController> {
           // List
           Expanded(
             child: Obx(
-              () => ListView.builder(
+              // No announcements API yet: don't repeat the alerts under
+              // this tab.
+              () => controller.selectedTab.value == 'Announcements'
+                  ? const Center(
+                      child: Text(
+                        'No announcements',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  : ListView.builder(
                 controller: controller.scrollController,
                 padding: const EdgeInsets.only(left: 17, right: 17, top: 0),
                 itemCount:
@@ -170,15 +179,16 @@ class NotificationView extends GetView<NotificationController> {
     );
   }
 
-  // ... (in _buildTab)
+  // Tab chip: Alerts / Announcements switch in place, Reminders opens its page.
   Widget _buildTab(String text, bool isSelected) {
     return GestureDetector(
       onTap: () {
         if (text == 'Reminders') {
           Get.toNamed(Routes.REMINDERS);
-        } else if (text == 'Alerts') {
-          Get.toNamed(Routes.ALERTS);
         } else {
+          // Alerts and Announcements switch in place. Alerts used to open the
+          // separate Alerts page, which reloaded everything like a new page;
+          // the alerts are already loaded here, so just show them again.
           controller.changeTab(text);
         }
       },

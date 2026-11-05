@@ -173,14 +173,17 @@ class NotificationController extends GetxController {
 
   static const int _pageSize = 20;
 
-  /// Push notifications only: read from the push server ([ApiConfig.pushBaseUrl]).
-  Future<List<AlertModel>?> _fetchPage(int page) async {
+  /// Alerts for all of the user's vehicles from the main API
+  /// (`GET website/alerts`, the same endpoint the Alerts page uses, without an
+  /// imei so every vehicle is included). Returns the page's alerts and whether
+  /// the server says another page exists, or null when the request failed.
+  Future<({List<AlertModel> items, bool hasMore})?> _fetchPage(int page) async {
     try {
       final token = await getSavedObject('token');
       if (token != null) DioClient().updateToken(token.toString().trim());
 
       final response = await DioClient().get(
-        ApiEndPoints.pushNotificationsUrl,
+        ApiEndPoints.alerts,
         query: {'limit': '$_pageSize', 'page': '$page'},
         options: Options(
           headers: {'Accept': 'application/json'},
@@ -188,18 +191,29 @@ class NotificationController extends GetxController {
         ),
       );
 
-      final data = response.data;
+      final body = response.data;
+      final data = body is Map ? body['data'] : null;
       final list = (response.statusCode == 200 && data is Map)
-          ? (data['data'] is Map ? data['data']['alerts'] : null)
+          ? data['alerts']
           : null;
       if (list is! List) {
         log('[Notifications] unexpected response, status=${response.statusCode}');
         return null;
       }
-      return list
+      final items = list
           .whereType<Map>()
           .map((e) => AlertModel.fromJson(Map<String, dynamic>.from(e)))
           .toList();
+
+      // Prefer the server's pagination block; fall back to a short page.
+      var more = items.length >= _pageSize;
+      final pagination = (data as Map)['pagination'];
+      if (pagination is Map) {
+        final current = int.tryParse('${pagination['current_page']}');
+        final last = int.tryParse('${pagination['last_page']}');
+        if (current != null && last != null) more = current < last;
+      }
+      return (items: items, hasMore: more);
     } catch (e) {
       log('[Notifications] load failed: $e');
       return null;
@@ -213,9 +227,9 @@ class NotificationController extends GetxController {
     final page = await _fetchPage(1);
     _all
       ..clear()
-      ..addAll(page ?? const [])
+      ..addAll(page?.items ?? const [])
       ..sort((a, b) => b.date.compareTo(a.date));
-    if (page == null || page.length < _pageSize) hasMore.value = false;
+    hasMore.value = page?.hasMore ?? false;
     _applyLocalFilters();
     isLoading.value = false;
   }
@@ -224,12 +238,12 @@ class NotificationController extends GetxController {
     if (isLoading.value || !hasMore.value) return;
     isLoading.value = true;
     final page = await _fetchPage(currentPage + 1);
-    if (page == null || page.isEmpty) {
+    if (page == null || page.items.isEmpty) {
       hasMore.value = false;
     } else {
       currentPage++;
-      _all.addAll(page);
-      if (page.length < _pageSize) hasMore.value = false;
+      _all.addAll(page.items);
+      hasMore.value = page.hasMore;
       _applyLocalFilters();
     }
     isLoading.value = false;

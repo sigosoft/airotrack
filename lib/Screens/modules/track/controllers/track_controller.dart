@@ -203,6 +203,10 @@ class TrackController extends GetxController {
   /// GPS target whose road was rejected. Mapbox gives the same answer again,
   /// so it is not re-requested every frame; the next fix asks fresh.
   LatLng? _rejectedRoadTarget;
+
+  /// A raw fix this close to the known road is GPS noise on that road, so the
+  /// car follows the road to it instead of cutting across to the raw point.
+  static const double _fixOnKnownRoadMeters = 25.0;
   static const double _snapBackMinLagMeters = 4.0;
   static const double _reconnectSnapMeters = 150.0;
   static const double _minGpsBearingMoveM = 10.0;
@@ -1252,22 +1256,32 @@ class TrackController extends GetxController {
     _rejectedRoadTarget = target;
 
     if (_lastRoadCorridor.length >= 2) {
-      final onRoad = _snapToKnownRoad(target);
-      if (!identical(onRoad, target)) {
+      final onRoad = _closestPointOnPolyline(target, _lastRoadCorridor);
+      final offRoadM = _calculateDistance(target, onRoad);
+
+      // The fix lies on the road we already know; raw GPS just sits beside
+      // it. Go along the road to the fix's road point, never sideways to the
+      // raw point (that drove the car off the road until the next fix).
+      if (offRoadM <= _fixOnKnownRoadMeters) {
         final ahead = _trimRouteAhead(
           _closestPointOnPolyline(pos, _lastRoadCorridor),
           _lastRoadCorridor,
         );
         final along = _trimRouteToUpdate(ahead, onRoad);
-        if (along.length >= 2 && _calculateDistance(along.last, onRoad) < 15.0) {
+        if (along.length >= 2 &&
+            _calculateDistance(along.last, onRoad) < 15.0 &&
+            _pathLengthMeters([pos, ...along]) >= 1.0) {
           _roadQueue
             ..clear()
             ..addAll(along);
-          return;
         }
+        // Already at the fix's road point: hold on the road for the next fix.
+        return;
       }
     }
 
+    // The fix is off every road we know (new road, car park): head straight
+    // for it until Mapbox gives the road.
     _roadQueue
       ..clear()
       ..add(target);

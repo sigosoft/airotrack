@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:airotrack/Configs/ApiConfigs.dart';
@@ -71,6 +73,26 @@ class Vehicle {
         return 0;
     }
   }
+
+  /// Everything the home card shows. Equal signatures mean nothing visible
+  /// changed, so a background refresh can skip the rebuild.
+  String get signature => [
+        id,
+        plateNumber,
+        status,
+        statusDuration,
+        lastUpdated,
+        address,
+        latitude,
+        longitude,
+        speed,
+        distance,
+        todayKm,
+        validityDays,
+        isIgnitionOn,
+        isLocked,
+        deviceId,
+      ].join('|');
 
   /// The table rule that gives this vehicle its status.
   String get ruleText {
@@ -252,7 +274,17 @@ class Vehicle {
   }
 }
 
-class HomeController extends GetxController {
+class HomeController extends GetxController with WidgetsBindingObserver {
+  /// How often the home list refreshes itself in the background.
+  /// A tick is skipped while the previous request is still in flight, so a
+  /// slow server never stacks requests.
+  static const Duration autoRefreshInterval = Duration(seconds: 3);
+  static const int _pageSize = 20;
+
+  Timer? _autoRefreshTimer;
+  bool _silentRefreshBusy = false;
+  bool _appInForeground = true;
+
   final vehicles = <Vehicle>[].obs;
   final isLoading = false.obs;
   final isMoreLoading = false.obs;
@@ -294,7 +326,9 @@ class HomeController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this);
     _initializeAndFetch();
+    _startAutoRefresh();
     scrollController.addListener(() {
       try {
         if (!scrollController.hasClients) return;
@@ -320,6 +354,133 @@ class HomeController extends GetxController {
 
   final selectedType = RxnInt();
 
+  // ---------------------------------------------------------------------
+  // Automatic refresh
+  // ---------------------------------------------------------------------
+
+  void _startAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer =
+        Timer.periodic(autoRefreshInterval, (_) => refreshSilently());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final foreground = state == AppLifecycleState.resumed;
+    if (foreground == _appInForeground) return;
+    _appInForeground = foreground;
+    if (foreground) {
+      // Back in the app: show fresh data now, then keep the timer going.
+      refreshSilently();
+      _startAutoRefresh();
+    } else {
+      _autoRefreshTimer?.cancel();
+      _autoRefreshTimer = null;
+    }
+  }
+
+  /// Re-reads page 1 without the loading spinner and only touches the
+  /// observable list when something visible changed, so the screen never
+  /// blinks. Rows already loaded from later pages are kept as they are.
+  /// Errors keep the current list.
+  Future<void> refreshSilently() async {
+    if (!_appInForeground) return;
+    if (_silentRefreshBusy || isLoading.value || isMoreLoading.value) return;
+    _silentRefreshBusy = true;
+    final typeAtAsk = selectedType.value ?? 1;
+    try {
+      final response = await DioClient().get(
+        ApiEndPoints.home,
+        query: {
+          'type': '$typeAtAsk',
+          'page': '1',
+          'limit': '$_pageSize',
+        },
+      );
+      // The user switched tab or pulled to refresh meanwhile: drop this.
+      if (isClosed ||
+          isLoading.value ||
+          isMoreLoading.value ||
+          (selectedType.value ?? 1) != typeAtAsk) {
+        return;
+      }
+      final data = response.data is Map ? response.data['data'] : null;
+      if (data is! Map) return;
+
+      final rows = data['vehicles_data'];
+      if (rows is List) {
+        final firstPage = _uniqueVehicles(_parseVehicles(rows));
+        final next = <Vehicle>[...firstPage];
+        if (currentPage > 1) {
+          // Keep later pages the user scrolled to; drop any now on page 1.
+          final seen = firstPage.map(_vehicleKey).toSet();
+          next.addAll(
+            vehicles.skip(_pageSize).where((v) => seen.add(_vehicleKey(v))),
+          );
+        } else {
+          hasMore.value = rows.length >= _pageSize;
+        }
+        if (!_sameVehicles(vehicles, next)) {
+          vehicles.assignAll(next);
+        }
+      }
+      _applyStatistics(data['statistics']);
+    } catch (e) {
+      debugPrint('[Home] auto refresh skipped: $e');
+    } finally {
+      _silentRefreshBusy = false;
+    }
+  }
+
+  List<Vehicle> _parseVehicles(List<dynamic> rows) {
+    final parsed = <Vehicle>[];
+    for (final row in rows) {
+      try {
+        final map = row is Map<String, dynamic>
+            ? row
+            : Map<String, dynamic>.from(row as Map);
+        parsed.add(Vehicle.fromJson(map));
+      } catch (e) {
+        debugPrint('[Home] skip vehicle parse error: $e');
+      }
+    }
+    return parsed;
+  }
+
+  bool _sameVehicles(List<Vehicle> a, List<Vehicle> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].signature != b[i].signature) return false;
+    }
+    return true;
+  }
+
+  /// RxString only notifies on a real change, so unchanged counts never
+  /// rebuild the status cards.
+  void _applyStatistics(dynamic stats) {
+    if (stats is Map) {
+      totalCount.value = stats['total_vehicles']?.toString() ?? "0";
+      runningCount.value = stats['running_vehicles']?.toString() ?? "0";
+      stoppedCount.value = stats['stopped_vehicles']?.toString() ?? "0";
+      idleCount.value = stats['idle_vehicles']?.toString() ?? "0";
+      expiredCount.value = stats['expired_vehicles']?.toString() ?? "0";
+      // Key names below are not confirmed by the backend yet.
+      inactiveVehiclesCount.value =
+          stats['inactive_vehicles']?.toString() ?? "0";
+      noDataCount.value = stats['no_data_vehicles']?.toString() ?? "0";
+      return;
+    }
+    String countOf(String status) =>
+        vehicles.where((v) => v.status == status).length.toString();
+    totalCount.value = vehicles.length.toString();
+    runningCount.value = countOf('Running');
+    stoppedCount.value = countOf('Stopped');
+    idleCount.value = countOf('Idle');
+    expiredCount.value = countOf('Expired');
+    inactiveVehiclesCount.value = countOf('Inactive');
+    noDataCount.value = countOf('No data');
+  }
+
   Future<void> fetchVehicles({int? type}) async {
     try {
       selectedType.value = type ?? 1;
@@ -340,62 +501,14 @@ class HomeController extends GetxController {
         final data = response.data['data'];
         if (data['vehicles_data'] != null) {
           final List<dynamic> vehiclesList = data['vehicles_data'];
-          final parsed = <Vehicle>[];
-          for (final row in vehiclesList) {
-            try {
-              final map = row is Map<String, dynamic>
-                  ? row
-                  : Map<String, dynamic>.from(row as Map);
-              parsed.add(Vehicle.fromJson(map));
-            } catch (e) {
-              debugPrint('[Home] skip vehicle parse error: $e');
-            }
-          }
-          vehicles.value = _uniqueVehicles(parsed);
+          vehicles.value = _uniqueVehicles(_parseVehicles(vehiclesList));
           // No more pages when first page is shorter than the page size.
-          hasMore.value = vehiclesList.length >= 20;
+          hasMore.value = vehiclesList.length >= _pageSize;
         } else {
           vehicles.clear();
           hasMore.value = false;
         }
-        if (data['statistics'] != null) {
-          final stats = data['statistics'];
-          totalCount.value = stats['total_vehicles']?.toString() ?? "0";
-          runningCount.value = stats['running_vehicles']?.toString() ?? "0";
-          stoppedCount.value = stats['stopped_vehicles']?.toString() ?? "0";
-          idleCount.value = stats['idle_vehicles']?.toString() ?? "0";
-          expiredCount.value = stats['expired_vehicles']?.toString() ?? "0";
-          // Key names below are not confirmed by the backend yet.
-          inactiveVehiclesCount.value =
-              stats['inactive_vehicles']?.toString() ?? "0";
-          noDataCount.value = stats['no_data_vehicles']?.toString() ?? "0";
-        } else {
-          totalCount.value = vehicles.length.toString();
-          runningCount.value = vehicles
-              .where((v) => v.status == 'Running')
-              .length
-              .toString();
-          stoppedCount.value = vehicles
-              .where((v) => v.status == 'Stopped')
-              .length
-              .toString();
-          idleCount.value = vehicles
-              .where((v) => v.status == 'Idle')
-              .length
-              .toString();
-          expiredCount.value = vehicles
-              .where((v) => v.status == 'Expired')
-              .length
-              .toString();
-          inactiveVehiclesCount.value = vehicles
-              .where((v) => v.status == 'Inactive')
-              .length
-              .toString();
-          noDataCount.value = vehicles
-              .where((v) => v.status == 'No data')
-              .length
-              .toString();
-        }
+        _applyStatistics(data['statistics']);
       }
     } catch (e) {
       errorMessage.value = "An error occurred: $e";
@@ -491,6 +604,9 @@ class HomeController extends GetxController {
 
   @override
   void onClose() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+    WidgetsBinding.instance.removeObserver(this);
     scrollController.dispose();
     super.onClose();
   }

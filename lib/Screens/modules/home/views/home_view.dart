@@ -378,6 +378,7 @@ class HomeView extends GetView<HomeController> {
     final statusColor = _statusColor(vehicle.status);
 
     return GestureDetector(
+      key: ValueKey('vehicle-${vehicle.id}-${vehicle.deviceId}'),
       onTap: () => _showVehicleDialog(context, vehicle),
       child: Container(
         width: 358,
@@ -430,6 +431,9 @@ class HomeView extends GetView<HomeController> {
                             child: Image.asset(
                               _statusCarImage(vehicle.status),
                               fit: BoxFit.contain,
+                              // Keep the old picture until the new status
+                              // picture is ready: no blank frame on refresh.
+                              gaplessPlayback: true,
                             ),
                           ),
                           const SizedBox(height: 2),

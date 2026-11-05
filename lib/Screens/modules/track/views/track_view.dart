@@ -22,7 +22,8 @@ class TrackView extends GetView<TrackController> {
         resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
-            // 1. Map Background — Google Maps, top-down overhead (north-up).
+            // 1. Map Background — Google Maps, top-down, heading-up (the
+            // camera bearing follows the car so it always drives up-screen).
             // The car is drawn above the map, placed from the same camera.
             Positioned.fill(
               child: LayoutBuilder(
@@ -50,7 +51,8 @@ class TrackView extends GetView<TrackController> {
                             onTap: (_) => controller.showBottomSheet.value = false,
                             circles: controller.vehicleGeofenceCircles.toSet(),
                             polygons: controller.vehicleGeofencePolygons.toSet(),
-                            // Keep a true top-down view (never tilted / spun).
+                            // Top-down, never tilted. The app turns the map
+                            // to the car's heading; users can't spin it.
                             rotateGesturesEnabled: false,
                             // Pinch zoom is done by the app so it zooms around
                             // the car like + and -, without fighting follow.

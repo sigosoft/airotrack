@@ -96,6 +96,16 @@ class TrackController extends GetxController {
   double _cameraZoom = _followZoom;
   LatLng? _cameraTarget;
 
+  /// Heading-up map: the camera bearing follows the car's heading, so the
+  /// car always points up the screen and the road ahead is above it.
+  /// Smoothed more slowly than the icon so the whole map never swings hard.
+  double _cameraBearing = 0.0;
+  static const double _cameraBearingTau = 0.45;
+  static const double _maxCameraBearingDegPerSec = 70.0;
+
+  /// On-screen icon angle = heading minus camera bearing (≈0 while following).
+  final ValueNotifier<double> _markerAngleNotifier = ValueNotifier<double>(0);
+
   /// Size of the map viewport, reported by the view's LayoutBuilder.
   Size _mapSize = Size.zero;
 
@@ -109,6 +119,7 @@ class TrackController extends GetxController {
   /// Last camera we pushed, so an idle car does not spam the platform channel.
   LatLng? _lastSentCameraTarget;
   double? _lastSentCameraZoom;
+  double? _lastSentCameraBearing;
 
   /// Two-finger zoom is done by the app, not by Google Maps (its zoom gesture
   /// is off), so it zooms around the car exactly like + and -. The view turns
@@ -818,6 +829,8 @@ class TrackController extends GetxController {
       _uiHeading = bearing;
       _headingNotifier.value = bearing;
       animatedRotation.value = bearing;
+      // First heading: open the map already facing the travel direction.
+      if (isLocked.value) _cameraBearing = bearing;
       _hasHeading = true;
       return;
     }
@@ -879,9 +892,38 @@ class TrackController extends GetxController {
     final point = _publishedPoint();
 
     // Camera first, so the overlay projects against this frame's camera.
-    if (isLocked.value) _followCamera(point);
+    if (isLocked.value) {
+      _updateCameraBearing();
+      _followCamera(point);
+    }
     _syncMarkerPosition(point);
+    _syncMarkerAngle();
     _publishReadouts(point, force: force);
+  }
+
+  DateTime? _lastCameraBearingAt;
+
+  /// Ease the camera bearing toward the car heading (heading-up map).
+  void _updateCameraBearing() {
+    if (!_hasHeading) return;
+    final now = DateTime.now();
+    final last = _lastCameraBearingAt;
+    _lastCameraBearingAt = now;
+    if (last == null) return;
+    final delta = _shortestBearingDelta(_cameraBearing, _uiHeading);
+    final dt = (now.difference(last).inMicroseconds / 1e6).clamp(0.0, 0.1);
+    final alpha = 1.0 - math.exp(-dt / _cameraBearingTau);
+    final maxStep = _maxCameraBearingDegPerSec * dt;
+    final step = (delta * alpha).clamp(-maxStep, maxStep);
+    if (step.abs() < 0.01) return;
+    _cameraBearing = _normalizeBearing(_cameraBearing + step);
+  }
+
+  void _syncMarkerAngle() {
+    final angle = _normalizeBearing(_uiHeading - _cameraBearing);
+    if (_shortestBearingDelta(_markerAngleNotifier.value, angle).abs() >= 0.12) {
+      _markerAngleNotifier.value = angle;
+    }
   }
 
   /// While locked the camera centre is the marker point. Because both are
@@ -896,14 +938,22 @@ class TrackController extends GetxController {
 
     var target = point;
     if (showBottomSheet.value) {
-      final latOffset = 0.0012 * math.pow(2, 15.0 - zoom).toDouble();
-      target = LatLng(point.latitude - latOffset, point.longitude);
+      // Push the camera centre "behind" the car (screen-down in a heading-up
+      // map), so the car sits above the sheet with the road ahead above it.
+      final offsetDeg = 0.0012 * math.pow(2, 15.0 - zoom).toDouble();
+      final b = _cameraBearing * math.pi / 180;
+      final cosLat = math.cos(point.latitude * math.pi / 180).abs();
+      target = LatLng(
+        point.latitude - offsetDeg * math.cos(b),
+        point.longitude -
+            offsetDeg * math.sin(b) / (cosLat < 0.01 ? 0.01 : cosLat),
+      );
     }
 
     _moveCamera(target, zoom);
   }
 
-  /// Instant (non-animated) north-up, top-down camera move. Skipped when
+  /// Instant (non-animated) heading-up, top-down camera move. Skipped when
   /// nothing changed so a parked car does not flood the platform channel.
   void _moveCamera(LatLng target, double zoom) {
     final controller = _mapController;
@@ -911,16 +961,21 @@ class TrackController extends GetxController {
 
     _cameraTarget = target;
     _cameraZoom = zoom;
+    final bearing = _cameraBearing;
 
     final last = _lastSentCameraTarget;
+    final lastBearing = _lastSentCameraBearing;
     if (last != null &&
         _lastSentCameraZoom == zoom &&
+        lastBearing != null &&
+        _shortestBearingDelta(lastBearing, bearing).abs() < 0.01 &&
         (last.latitude - target.latitude).abs() < 1e-9 &&
         (last.longitude - target.longitude).abs() < 1e-9) {
       return;
     }
     _lastSentCameraTarget = target;
     _lastSentCameraZoom = zoom;
+    _lastSentCameraBearing = bearing;
     _cameraZoom = zoom;
 
     controller
@@ -929,6 +984,7 @@ class TrackController extends GetxController {
             gmaps.CameraPosition(
               target: gmaps.LatLng(target.latitude, target.longitude),
               zoom: zoom,
+              bearing: bearing,
             ),
           ),
         )
@@ -1517,6 +1573,7 @@ class TrackController extends GetxController {
   void onCameraMove(gmaps.CameraPosition position) {
     if (isLocked.value) return;
     _cameraZoom = position.zoom;
+    _cameraBearing = _normalizeBearing(position.bearing);
     _cameraTarget = LatLng(position.target.latitude, position.target.longitude);
     _syncMarkerPosition(_publishedPoint());
   }
@@ -1617,6 +1674,7 @@ class TrackController extends GetxController {
   void moveMapToVehicle({bool snap = false, bool resetZoom = false}) {
     isLocked.value = true;
     if (resetZoom) _userAdjustedZoom = false;
+    if (_hasHeading) _cameraBearing = _uiHeading;
     if (_pathLat == 0.0 && _pathLng == 0.0) return;
     _followCamera(_publishedPoint());
   }
@@ -1851,7 +1909,8 @@ class TrackController extends GetxController {
   }
 
   /// Web Mercator, the same projection Google Maps renders with (256 dp world
-  /// tile at zoom 0, camera target at the viewport centre, north-up, no tilt).
+  /// tile at zoom 0, camera target at the viewport centre, no tilt), rotated
+  /// by the camera bearing so it matches the heading-up map.
   Offset? _projectToScreen(LatLng p) {
     final cam = _cameraTarget;
     if (cam == null || _mapSize.isEmpty) return null;
@@ -1863,9 +1922,17 @@ class TrackController extends GetxController {
       return (0.5 - math.log((1 + s) / (1 - s)) / (4 * math.pi)) * scale;
     }
 
+    final dx = worldX(p.longitude) - worldX(cam.longitude);
+    final dy = worldY(p.latitude) - worldY(cam.latitude);
+
+    // The map is turned so the camera bearing points up: rotate the
+    // north-up offset by -bearing.
+    final b = _cameraBearing * math.pi / 180;
+    final cosB = math.cos(b);
+    final sinB = math.sin(b);
     return Offset(
-      _mapSize.width / 2 + (worldX(p.longitude) - worldX(cam.longitude)),
-      _mapSize.height / 2 + (worldY(p.latitude) - worldY(cam.latitude)),
+      _mapSize.width / 2 + dx * cosB + dy * sinB,
+      _mapSize.height / 2 - dx * sinB + dy * cosB,
     );
   }
 
@@ -1902,10 +1969,10 @@ class TrackController extends GetxController {
       behavior: HitTestBehavior.deferToChild,
       child: RepaintBoundary(
         child: ValueListenableBuilder<double>(
-          valueListenable: _headingNotifier,
-          builder: (context, heading, child) {
+          valueListenable: _markerAngleNotifier,
+          builder: (context, angleDeg, child) {
             return Transform.rotate(
-              angle: heading * (math.pi / 180),
+              angle: angleDeg * (math.pi / 180),
               filterQuality: FilterQuality.medium,
               child: child,
             );
@@ -2055,6 +2122,10 @@ class TrackController extends GetxController {
     _behindStreak = 0;
     _rejectedRoadTarget = null;
     _headingNotifier.value = 0;
+    _cameraBearing = 0;
+    _lastCameraBearingAt = null;
+    _lastSentCameraBearing = null;
+    _markerAngleNotifier.value = 0;
 
     vehicleScreenOffset.value = null;
     _vehicleMarkerChild = null;
@@ -2079,6 +2150,7 @@ class TrackController extends GetxController {
     _stopAnimationLoop();
     _mapController = null;
     _headingNotifier.dispose();
+    _markerAngleNotifier.dispose();
     vehicleScreenOffset.dispose();
     unawaited(_webSocketService.disconnect());
     fenceNameController.dispose();

@@ -83,7 +83,7 @@ class RemindersView extends GetView<RemindersController> {
                       padding: EdgeInsets.zero,
                       itemBuilder: (context, index) {
                         if (index < controller.reminders.length) {
-                          return _buildReminderTile(context);
+                          return const ReminderTile();
                         } else {
                           return const Center(
                             child: Padding(
@@ -138,10 +138,17 @@ class RemindersView extends GetView<RemindersController> {
     );
   }
 
-  Widget _buildReminderTile(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
+}
+
+/// One reminder row. Shared by the Reminders page and the Reminders tab on
+/// the Notifications screen so both look the same.
+class ReminderTile extends StatelessWidget {
+  const ReminderTile({super.key});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: screenWidth - 32,
+      width: double.infinity,
       height: 64,
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 12),

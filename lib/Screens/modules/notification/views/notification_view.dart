@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../alerts/controllers/alerts_controller.dart';
 import '../../alerts/views/widgets/alert_card.dart';
+import '../../reminders/controllers/reminders_controller.dart';
+import '../../reminders/views/reminders_view.dart' show ReminderTile;
 import '../controllers/notification_controller.dart';
 import 'widgets/notification_filter_sheet.dart';
 
@@ -137,7 +139,9 @@ class NotificationView extends GetView<NotificationController> {
             child: Obx(
               // No announcements API yet: don't repeat the alerts under
               // this tab.
-              () => controller.selectedTab.value == 'Announcements'
+              () => controller.selectedTab.value == 'Reminders'
+                  ? const _RemindersPane()
+                  : controller.selectedTab.value == 'Announcements'
                   ? const Center(
                       child: Text(
                         'No announcements',
@@ -190,19 +194,12 @@ class NotificationView extends GetView<NotificationController> {
     );
   }
 
-  // Tab chip: Alerts / Announcements switch in place, Reminders opens its page.
+  // Tab chip: every tab switches in place. Alerts and Reminders used to open
+  // their own pages, which reloaded like a new screen each time; their data
+  // is already loaded here, so the tab just shows it.
   Widget _buildTab(String text, bool isSelected) {
     return GestureDetector(
-      onTap: () {
-        if (text == 'Reminders') {
-          Get.toNamed(Routes.REMINDERS);
-        } else {
-          // Alerts and Announcements switch in place. Alerts used to open the
-          // separate Alerts page, which reloaded everything like a new page;
-          // the alerts are already loaded here, so just show them again.
-          controller.changeTab(text);
-        }
-      },
+      onTap: () => controller.changeTab(text),
       child: Container(
         width: 116,
         height: 30,
@@ -240,5 +237,68 @@ class NotificationView extends GetView<NotificationController> {
   /// Shared with the live track Alerts page so both look the same.
   Widget _buildNotificationCard(BuildContext context, AlertModel item) {
     return AlertCard(alert: item);
+  }
+}
+
+/// Reminders tab content: the same list and + button as the Reminders page,
+/// from the RemindersController created with this screen (so it's already
+/// loaded when the tab is tapped).
+class _RemindersPane extends GetView<RemindersController> {
+  const _RemindersPane();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Obx(() {
+          final count = controller.reminders.length;
+          final loadingMore = controller.isLoading.value &&
+              controller.hasMore.value;
+          return ListView.builder(
+            controller: controller.scrollController,
+            padding: const EdgeInsets.fromLTRB(17, 0, 17, 80),
+            itemCount: count + (loadingMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index < count) return const ReminderTile();
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Color(0xFF009FE3),
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        }),
+        // Add reminder, as on the Reminders page.
+        Positioned(
+          bottom: 30,
+          right: 16,
+          child: GestureDetector(
+            onTap: () => Get.toNamed(Routes.ADD_REMINDER),
+            child: Container(
+              width: 45,
+              height: 45,
+              decoration: BoxDecoration(
+                color: const Color(0xFF009FE3),
+                borderRadius: BorderRadius.circular(22.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.blue.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.add, color: Colors.white, size: 24),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

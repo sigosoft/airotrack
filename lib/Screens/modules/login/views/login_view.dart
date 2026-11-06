@@ -101,28 +101,44 @@ class LoginView extends GetView<LoginController> {
                     child: SizedBox(
                       height: height * 0.065,
                       width: formWidth,
-                      child: ElevatedButton(
-                        onPressed: controller.signIn,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.buttonColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            width * 0.03,
+                      // Spinner while the login request runs; the button is
+                      // disabled meanwhile so a second tap can't log in twice.
+                      child: Obx(
+                        () => ElevatedButton(
+                          onPressed: controller.isLoading.value
+                              ? null
+                              : controller.signIn,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.buttonColor,
+                            disabledBackgroundColor: AppColors.buttonColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                width * 0.03,
+                              ),
+                            ),
+                            elevation: 0,
                           ),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        'Sign In',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: width * 0.045,
-                          fontWeight: FontWeight.bold,
+                          child: controller.isLoading.value
+                              ? SizedBox(
+                                  width: width * 0.06,
+                                  height: width * 0.06,
+                                  child: const CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Text(
+                                  'Sign In',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: width * 0.045,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                         ),
                       ),
                     ),
                   ),
-                ),
                   // SizedBox(height: height * 0.05),
                   // Row(
                   //   mainAxisAlignment: MainAxisAlignment.center,

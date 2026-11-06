@@ -65,6 +65,8 @@ class LoginController extends GetxController {
   }
 
   Future<void> signIn() async {
+    // Ignore taps while a login is already running.
+    if (isLoading.value) return;
     if (!validate()) return;
     isLoading.value = true;
     try {
@@ -77,7 +79,8 @@ class LoginController extends GetxController {
           'fcm': fcmToken,
         },
       );
-      isLoading.value = false;
+      // The spinner stays on until we leave for Home (token saved, Hive
+      // updated), so there is no gap where the button looks idle.
       if (response.data != null) {
         String? token;
         if (response.data['data'] != null &&
@@ -96,8 +99,9 @@ class LoginController extends GetxController {
         Get.offAllNamed(Routes.HOME);
       }
     } catch (e) {
-      isLoading.value = false;
       showErrorMessage(e);
+    } finally {
+      isLoading.value = false;
     }
   }
 

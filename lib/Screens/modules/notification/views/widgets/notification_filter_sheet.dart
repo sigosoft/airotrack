@@ -14,16 +14,21 @@ Future<void> showNotificationFilterSheet(BuildContext context) {
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) {
+      // Fixed height with each pane scrolling inside it. The old
+      // IntrinsicHeight sized the sheet to the event list, so the taller
+      // Vehicles pane (search + list) overflowed.
+      final sheetHeight = MediaQuery.sizeOf(context).height * 0.68;
       return Material(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: SizedBox(
+            height: sheetHeight,
+            child: Column(
             children: [
-              IntrinsicHeight(
+              Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -133,6 +138,7 @@ Future<void> showNotificationFilterSheet(BuildContext context) {
               ),
             ],
           ),
+          ),
         ),
       );
     },
@@ -177,40 +183,71 @@ class _EventTypesPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final selected = controller.draftEventTypes.toList();
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final option in NotificationController.eventTypeOptions)
-              InkWell(
-                onTap: () => controller.toggleDraftEventType(option),
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  child: Row(
-                    children: [
-                      _CheckBox(selected: selected.contains(option)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          option,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
+      final options = controller.eventTypeOptions.toList();
+      final draft = controller.draftEventTypes.toSet();
+      final allTicked =
+          controller.allTicked(options.map((o) => o.key), draft);
+      // Scrolls: every alert_types entry plus All Events can be taller than
+      // the sheet on small phones.
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
+        children: [
+          _CheckRow(
+            label: 'All Events',
+            selected: allTicked,
+            onTap: controller.toggleDraftAllEvents,
+          ),
+          for (final option in options)
+            _CheckRow(
+              label: option.label,
+              selected: draft.contains(option.key),
+              onTap: () => controller.toggleDraftEventType(option.key),
+            ),
+        ],
       );
     });
+  }
+}
+
+/// One tappable row: check box + label.
+class _CheckRow extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CheckRow({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            _CheckBox(selected: selected),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -221,9 +258,7 @@ class _VehiclesPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxListHeight = MediaQuery.sizeOf(context).height * 0.38;
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -252,41 +287,32 @@ class _VehiclesPane extends StatelessWidget {
             ),
           ),
         ),
-        ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxListHeight),
+        // Fills the rest of the pane and scrolls, so it can't overflow.
+        Expanded(
           child: Obx(() {
             final plates = controller.filteredVehicleOptions;
-            final selected = controller.draftVehicles.toList();
-            return ListView.builder(
-              shrinkWrap: true,
+            final selected = controller.draftVehicles.toSet();
+            final allTicked =
+                controller.allTicked(controller.vehicleOptions, selected);
+            final showAll = controller.vehicleFilterQuery.value.trim().isEmpty;
+            return ListView(
               padding: const EdgeInsets.fromLTRB(16, 4, 12, 8),
-              itemCount: plates.length,
-              itemBuilder: (context, index) {
-                final plate = plates[index];
-                final isSelected = selected.contains(plate);
-                return InkWell(
-                  onTap: () => controller.toggleDraftVehicle(plate),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Row(
-                      children: [
-                        _CheckBox(selected: isSelected),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            plate,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+              children: [
+                // Hidden while searching: "All" means every vehicle, not
+                // just the ones matching the search.
+                if (showAll)
+                  _CheckRow(
+                    label: 'All Vehicles',
+                    selected: allTicked,
+                    onTap: controller.toggleDraftAllVehicles,
                   ),
-                );
-              },
+                for (final plate in plates)
+                  _CheckRow(
+                    label: plate,
+                    selected: selected.contains(plate),
+                    onTap: () => controller.toggleDraftVehicle(plate),
+                  ),
+              ],
             );
           }),
         ),

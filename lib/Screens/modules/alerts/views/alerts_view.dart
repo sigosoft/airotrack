@@ -3,30 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/alerts_controller.dart';
 import 'alerts_filter_sheet.dart';
+import 'widgets/alert_card.dart';
 import '../../../routes/app_routes.dart';
-
-/// Icon colour per API `alert` key.
-const Map<String, Color> _eventColors = {
-  'ignitionon': Color(0xFF00C853),
-  'ignitionoff': Color(0xFFD50000),
-  'emergencyon': Color(0xFFC2185B),
-  'emergencyoff': Color(0xFF78909C),
-  'wiredisconnect': Color(0xFFFF6D00),
-  'powerdisconnect': Color(0xFF6A1B9A),
-  'powerrestored': Color(0xFF009688),
-  'tilt': Color(0xFFFFB300),
-  'boxopen': Color(0xFF795548),
-  'rashturning': Color(0xFFE65100),
-  'deviceoverspeed': Color(0xFFFF3D00),
-  'geofenceentry': Color(0xFF1E88E5),
-  'geofenceexit': Color(0xFF00ACC1),
-  'geofenceoverspeed': Color(0xFF3949AB),
-  'impactcrash': Color(0xFFB71C1C),
-};
-
-/// Unknown events stay grey.
-Color _eventColor(AlertModel alert) =>
-    _eventColors[alert.alertKey.toLowerCase()] ?? Colors.grey.shade600;
 
 class AlertsView extends GetView<AlertsController> {
   const AlertsView({Key? key}) : super(key: key);
@@ -247,82 +225,8 @@ class AlertsView extends GetView<AlertsController> {
     );
   }
 
+  /// Same card as the Notifications screen (bell on Home).
   Widget _buildAlertTile(BuildContext context, int index) {
-    final alert = controller.alerts[index];
-    double screenWidth = MediaQuery.of(context).size.width;
-    return Container(
-      width: screenWidth - 32,
-      constraints: const BoxConstraints(minHeight: 64),
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.15),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(color: Colors.grey.shade100),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Power Icon
-          Padding(
-            padding: const EdgeInsets.all(4.0),
-            child: Image.asset(
-              'lib/Asset/Icons/power.png',
-              width: 30,
-              height: 30,
-              color: _eventColor(alert),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Content
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        alert.plateNumber.isNotEmpty
-                            ? alert.plateNumber
-                            : alert.deviceName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.black,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      alert.date,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                  ],
-                ),
-                Text(
-                  alert.type,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-                ),
-              
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    return AlertCard(alert: controller.alerts[index]);
   }
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
@@ -43,9 +42,15 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
 
   _FilterTab _tab = _FilterTab.eventTypes;
 
+  /// True when the Alerts page is for one vehicle: no Vehicles tab then.
+  bool get _singleVehicle => _controller.vehicleImei.isNotEmpty;
+
   // Local copies: nothing reaches the list until Apply.
-  // _types holds the API alert keys (e.g. "ignitionOn").
-  late final Set<String> _types = {..._controller.selectedTypes};
+  // _types holds the alert keys (e.g. "ignitionOn") found in the loaded
+  // alerts. No event filter (empty) means every type: show them all ticked.
+  late final Set<String> _types = _controller.selectedTypes.isEmpty
+      ? {..._controller.alertTypeOptions.map((o) => o.key)}
+      : {..._controller.selectedTypes};
   // No vehicle filter (empty) means every vehicle: show them all ticked.
   late final Set<String> _vehicles = _controller.selectedVehicles.isEmpty
       ? {..._controller.vehicleNumbers}
@@ -53,23 +58,15 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
   late DateTime? _from = _controller.fromDate.value;
   late DateTime? _to = _controller.toDate.value;
 
-  Future<void> _apply() async {
-    // For a vehicle, Apply also saves the ticked event types to it with
-    // update_vehicle_alerts (only when they changed). A failed save keeps the
-    // sheet open so nothing is lost.
-    if (_controller.vehicleTypesChanged(_types)) {
-      final ok = await _controller.saveVehicleAlertTypes({..._types});
-      if (!ok || !mounted) return;
-      final plate = _controller.vehiclePlate;
-      Fluttertoast.showToast(
-        msg: plate.isEmpty ? 'Alerts updated' : 'Alerts updated for $plate',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
-    }
+  /// Apply only filters the list; it saves nothing.
+  void _apply() {
+    // Every type ticked is stored as "no event filter", so types that only
+    // appear in alerts loaded later are not hidden.
+    final allTypes = _controller.alertTypeOptions.map((o) => o.key).toList();
+    final everyType = allTypes.isNotEmpty && allTypes.every(_types.contains);
     _controller.selectedTypes
       ..clear()
-      ..addAll(_types);
+      ..addAll(everyType ? const <String>[] : _types);
     // Every vehicle ticked is stored as "no vehicle filter", so vehicles
     // whose alerts load later (next pages) are not hidden.
     final allVehicles = _controller.vehicleNumbers;
@@ -131,7 +128,9 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _sidebarItem('Event Types', _FilterTab.eventTypes),
-            _sidebarItem('Vehicles', _FilterTab.vehicles),
+            // The page already shows only one vehicle's alerts (opened from
+            // its live track / history), so a vehicle filter adds nothing.
+            if (!_singleVehicle) _sidebarItem('Vehicles', _FilterTab.vehicles),
             _sidebarItem('Date', _FilterTab.date),
           ],
         ),
@@ -163,8 +162,8 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
   Widget _content() {
     switch (_tab) {
       case _FilterTab.eventTypes:
-        // Always every type from alert_types. Obx: the list can still be
-        // arriving from the server when the sheet opens.
+        // Types found in the loaded alerts. Obx: alerts can still be
+        // arriving when the sheet opens.
         return Obx(
           () => _allTickList(
             allLabel: 'All Events',
@@ -386,35 +385,19 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
           Expanded(
             child: SizedBox(
               height: 48,
-              // Disabled with a spinner while update_vehicle_alerts runs.
-              child: Obx(
-                () => ElevatedButton(
-                  onPressed: _controller.isSavingTypes.value ? null : _apply,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _accent,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: _accent.withOpacity(0.6),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+              child: ElevatedButton(
+                onPressed: _apply,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: _controller.isSavingTypes.value
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Apply',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                ),
+                child: const Text(
+                  'Apply',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
               ),
             ),

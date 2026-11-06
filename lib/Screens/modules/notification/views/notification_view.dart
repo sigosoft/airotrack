@@ -3,6 +3,7 @@ import 'package:airotrack/Screens/routes/app_routes.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../alerts/controllers/alerts_controller.dart';
+import '../../alerts/views/widgets/alert_card.dart';
 import '../controllers/notification_controller.dart';
 import 'widgets/notification_filter_sheet.dart';
 
@@ -143,7 +144,17 @@ class NotificationView extends GetView<NotificationController> {
                         style: TextStyle(color: Colors.grey),
                       ),
                     )
-                  : ListView.builder(
+                  // Finished loading and nothing matches (e.g. filtered to a
+                  // vehicle with no alerts): say so instead of a blank page.
+                  : controller.notifications.isEmpty &&
+                          !controller.isLoading.value
+                      ? const Center(
+                          child: Text(
+                            'No alerts found',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      : ListView.builder(
                 controller: controller.scrollController,
                 padding: const EdgeInsets.only(left: 17, right: 17, top: 0),
                 itemCount:
@@ -226,122 +237,8 @@ class NotificationView extends GetView<NotificationController> {
     );
   }
 
+  /// Shared with the live track Alerts page so both look the same.
   Widget _buildNotificationCard(BuildContext context, AlertModel item) {
-    double screenWidth = MediaQuery.of(context).size.width;
-    Widget iconWidget;
-    String statusText;
-
-    final typeLower = item.type.toLowerCase();
-    if (typeLower.contains('ignition on') || typeLower.contains('moving')) {
-      iconWidget = Image.asset(
-        'lib/Asset/Icons/power.png',
-        width: 28,
-        height: 28,
-        color: Color(0xFF00C853), // Green
-      );
-      statusText = item.type;
-    } else if (typeLower.contains('ignition off') ||
-        typeLower.contains('stopped') ||
-        typeLower.contains('offline')) {
-      iconWidget = Image.asset(
-        'lib/Asset/Icons/power.png',
-        width: 28,
-        height: 28,
-        color: Color(0xFFD50000), // Red
-      );
-      statusText = item.type;
-    } else {
-      iconWidget = Image.asset(
-        'lib/Asset/Icons/Speed.png',
-        width: 28,
-        height: 28,
-        color: const Color(0xFF009FE3), // Blue
-      );
-      statusText = item.type;
-    }
-
-    return Container(
-      width: screenWidth - 34,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 10,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12), // Radius 12
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.15),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(color: Colors.grey.shade100),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(2),
-            child: iconWidget, // Reduced icon size
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        item.plateNumber,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.black,
-                          height: 1.2,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      item.date,
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: Colors.grey[500],
-                        height: 1.2,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  statusText,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[600],
-                    height: 1.2,
-                  ),
-                ),
-                Text(
-                  item.address,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey[600],
-                    height: 1.2,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    return AlertCard(alert: item);
   }
 }

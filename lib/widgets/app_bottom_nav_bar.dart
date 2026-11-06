@@ -89,8 +89,8 @@ class AppBottomNavBar extends StatelessWidget {
             isSelected: selected == AppNavTab.alerts,
             onTap: tap(
               AppNavTab.alerts,
-              // Named differently from 'imei' so the alerts list is not
-              // filtered; Alerts uses these only to return to this vehicle.
+              // Alerts shows only this vehicle's alerts (trackImei) and uses
+              // these to return to this vehicle.
               () => Get.offNamed(
                 Routes.ALERTS,
                 parameters: hasVehicle

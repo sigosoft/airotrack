@@ -8,7 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../alerts/controllers/alerts_controller.dart';
-import '../../home/controllers/home_controller.dart';
+import 'package:airotrack/Screens/modules/settings/controllers/configure_alerts_controller.dart'
+    show AlertTypeOption;
 
 enum NotificationFilterCategory { eventTypes, vehicles, date }
 
@@ -22,49 +23,61 @@ class NotificationController extends GetxController {
   var hasMore = true.obs;
   var currentPage = 1;
 
-  // Applied filters
-  final selectedEventTypes = <String>{'All Events'}.obs;
+  // Applied filters. Event types hold alert keys (e.g. "ignitionOn");
+  // empty means no filter (every type / every vehicle).
+  final selectedEventTypes = <String>{}.obs;
   final selectedVehicles = <String>{}.obs;
   final fromDate = Rxn<DateTime>();
   final toDate = Rxn<DateTime>();
 
   // Draft filters while sheet is open
   final filterCategory = NotificationFilterCategory.eventTypes.obs;
-  final draftEventTypes = <String>{'All Events'}.obs;
+  final draftEventTypes = <String>{}.obs;
   final draftVehicles = <String>{}.obs;
   final draftFromDate = Rxn<DateTime>();
   final draftToDate = Rxn<DateTime>();
   final vehicleFilterQuery = ''.obs;
 
-  static const eventTypeOptions = <String>[
-    'All Events',
-    'Command Result',
-    'Device Online',
-    'Device Unknown',
-    'Device Offline',
-    'Device Inactive',
-    'Device Moving',
-    'Device Stopped',
-    'Device Overspeed',
-    'Device Fuel Drop',
-  ];
+  /// Event types for the filter, taken only from the alerts the alerts API
+  /// returned (same as the Alerts page filter). Grows as more pages load.
+  List<AlertTypeOption> get eventTypeOptions => eventTypeOptionsFrom(_all);
 
-  List<String> get vehicleOptions {
-    if (Get.isRegistered<HomeController>()) {
-      final plates = Get.find<HomeController>()
-          .vehicles
-          .map((v) => v.plateNumber)
-          .where((p) => p.trim().isNotEmpty)
-          .toList();
-      if (plates.isNotEmpty) return plates;
+  /// True when every option in [options] is in [draft] ("All" row ticked).
+  bool allTicked(Iterable<String> options, Set<String> draft) =>
+      options.isNotEmpty && options.every(draft.contains);
+
+  /// All Events: tick every type, or clear them all when all are ticked.
+  void toggleDraftAllEvents() {
+    final keys = eventTypeOptions.map((o) => o.key);
+    if (allTicked(keys, draftEventTypes)) {
+      draftEventTypes.clear();
+    } else {
+      draftEventTypes.addAll(keys);
     }
-    return const [
-      'KL 07 D 0518',
-      'KL 07 D 6788',
-      'KL 07 D 0510',
-      'KL 07 D 1234',
-      'KL 07 D 9876',
-    ];
+    draftEventTypes.refresh();
+  }
+
+  /// All Vehicles: tick every vehicle, or clear them all when all are ticked.
+  void toggleDraftAllVehicles() {
+    final all = vehicleOptions;
+    if (allTicked(all, draftVehicles)) {
+      draftVehicles.clear();
+    } else {
+      draftVehicles.addAll(all);
+    }
+    draftVehicles.refresh();
+  }
+
+  /// Vehicles for the filter, taken only from the loaded alerts
+  /// (`vehicle_number`), sorted.
+  List<String> get vehicleOptions {
+    final plates = _all
+        .map((a) => a.plateNumber.trim())
+        .where((p) => p.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    return plates;
   }
 
   List<String> get filteredVehicleOptions {
@@ -91,12 +104,17 @@ class NotificationController extends GetxController {
   void beginFilterEdit() {
     filterCategory.value = NotificationFilterCategory.eventTypes;
     vehicleFilterQuery.value = '';
+    // No filter (empty) is shown as everything ticked.
     draftEventTypes
       ..clear()
-      ..addAll(selectedEventTypes);
+      ..addAll(
+        selectedEventTypes.isEmpty
+            ? eventTypeOptions.map((o) => o.key)
+            : selectedEventTypes,
+      );
     draftVehicles
       ..clear()
-      ..addAll(selectedVehicles);
+      ..addAll(selectedVehicles.isEmpty ? vehicleOptions : selectedVehicles);
     draftFromDate.value = fromDate.value;
     draftToDate.value = toDate.value;
     draftEventTypes.refresh();
@@ -108,35 +126,54 @@ class NotificationController extends GetxController {
   }
 
   void applyFilters() {
+    // Everything ticked is stored as "no filter".
+    final allEvents =
+        allTicked(eventTypeOptions.map((o) => o.key), draftEventTypes);
+    final allVehicles = allTicked(vehicleOptions, draftVehicles);
     selectedEventTypes
       ..clear()
-      ..addAll(draftEventTypes);
+      ..addAll(allEvents ? const <String>[] : draftEventTypes);
     selectedVehicles
       ..clear()
-      ..addAll(draftVehicles);
+      ..addAll(allVehicles ? const <String>[] : draftVehicles);
     fromDate.value = draftFromDate.value;
     toDate.value = draftToDate.value;
     selectedEventTypes.refresh();
     selectedVehicles.refresh();
     _applyLocalFilters();
+    _autoPages = 0;
+    _topUpFiltered();
   }
 
-  void toggleDraftEventType(String option) {
-    if (option == 'All Events') {
-      draftEventTypes
-        ..clear()
-        ..add('All Events');
-    } else {
-      draftEventTypes.remove('All Events');
-      if (draftEventTypes.contains(option)) {
-        draftEventTypes.remove(option);
-      } else {
-        draftEventTypes.add(option);
-      }
-      if (draftEventTypes.isEmpty) {
-        draftEventTypes.add('All Events');
-      }
+  bool get _hasActiveFilter =>
+      selectedEventTypes.isNotEmpty ||
+      selectedVehicles.isNotEmpty ||
+      fromDate.value != null ||
+      toDate.value != null;
+
+  /// Older pages loaded on their own while a filter is on.
+  int _autoPages = 0;
+  static const int _maxAutoPages = 10;
+
+  /// The filter only sees alerts already loaded (newest first). When it
+  /// matches less than a page, load older pages until it fills one, the
+  /// server has no more, or [_maxAutoPages] pages were tried. Without this a
+  /// vehicle whose alerts are not among the newest 20 showed an empty list
+  /// with nothing to scroll.
+  Future<void> _topUpFiltered() async {
+    while (_hasActiveFilter &&
+        notifications.length < _pageSize &&
+        hasMore.value &&
+        !isLoading.value &&
+        _autoPages < _maxAutoPages) {
+      _autoPages++;
+      await loadMoreNotifications();
     }
+  }
+
+  /// Ticks or unticks one alert type ([key] is the API alert key).
+  void toggleDraftEventType(String key) {
+    if (!draftEventTypes.remove(key)) draftEventTypes.add(key);
     draftEventTypes.refresh();
   }
 
@@ -251,19 +288,14 @@ class NotificationController extends GetxController {
 
   /// Event type, vehicle and date filters, applied to what has been loaded.
   void _applyLocalFilters() {
-    final types = selectedEventTypes.contains('All Events')
-        ? <String>{}
-        : selectedEventTypes.map((e) => e.toLowerCase()).toSet();
+    final types = selectedEventTypes.map((e) => e.toLowerCase()).toSet();
     final from = fromDate.value;
     final to = toDate.value;
 
     bool matches(AlertModel a) {
-      if (types.isNotEmpty) {
-        final t = a.type.toLowerCase();
-        final ok = types.any(
-          (o) => t.contains(o) || t.contains(o.replaceFirst('device ', '')),
-        );
-        if (!ok) return false;
+      if (types.isNotEmpty &&
+          !types.contains(a.filterKey.toLowerCase())) {
+        return false;
       }
       if (selectedVehicles.isNotEmpty &&
           !selectedVehicles.contains(a.plateNumber)) {

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart' hide FormData;
+import 'package:get/get.dart';
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
 import 'package:airotrack/Screens/modules/settings/controllers/configure_alerts_controller.dart'
-    show AlertTypeOption, ConfigureAlertsController;
+    show AlertTypeOption;
 import 'package:airotrack/Services/ReverseGeocodeService.dart';
-import 'package:airotrack/Utils/ApiHelpers.dart';
 import 'package:airotrack/Utils/Utils.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
@@ -47,6 +46,10 @@ class AlertModel {
     this.lng,
     this.isIgnitionOn = false,
   });
+
+  /// What the event filter matches on: the API `alert` key, or the event
+  /// text when an alert has no key.
+  String get filterKey => alertKey.isNotEmpty ? alertKey : type;
 
   static String _first(Map<String, dynamic> json, List<String> keys) {
     for (final k in keys) {
@@ -98,6 +101,22 @@ class AlertModel {
   }
 }
 
+/// Distinct event types in [alerts], for the filters: key = [AlertModel.filterKey],
+/// label = the alert's event text. Sorted by label.
+List<AlertTypeOption> eventTypeOptionsFrom(Iterable<AlertModel> alerts) {
+  final byKey = <String, String>{};
+  for (final a in alerts) {
+    final key = a.filterKey;
+    if (key.isEmpty) continue;
+    byKey.putIfAbsent(key, () => a.type.isNotEmpty ? a.type : key);
+  }
+  final list = byKey.entries
+      .map((e) => AlertTypeOption(e.key, e.value))
+      .toList()
+    ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+  return list;
+}
+
 class AlertsController extends GetxController {
   /// Page size the alerts API returns; it reports `limit: 50` for the request.
   static const int pageSize = 50;
@@ -127,72 +146,11 @@ class AlertsController extends GetxController {
   /// Event types present in the loaded alerts, for the filter sheet.
   List<String> get eventTypes => _distinct(allAlerts.map((a) => a.type));
 
-  /// Every alert type from `alert_types` (key + label). The filter sheet
-  /// always lists all of them. Starts with the built-in list so the sheet is
-  /// never empty while the request is in flight or if it fails.
-  final alertTypeOptions = <AlertTypeOption>[
-    ...ConfigureAlertsController.defaultAlertTypes,
-  ].obs;
-
-  /// True when [selectedTypes] covers every alert type, i.e. "All Events".
-  bool get allTypesSelected =>
-      alertTypeOptions.every((o) => selectedTypes.contains(o.key));
-
-  /// Vehicle whose `vehicle_alerts` set the event ticks; empty when the page
-  /// is not for one vehicle (then Apply only filters, nothing is saved).
-  String vehicleImei = '';
-
-  /// Plate of [vehicleImei], for the saved message.
-  String get vehiclePlate =>
-      (Get.parameters['trackPlate'] ?? Get.parameters['vehicleId'] ?? '')
-          .trim();
-
-  /// Alert keys last loaded from or saved to `vehicle_alerts`, so Apply only
-  /// calls `update_vehicle_alerts` when the ticks really changed.
-  final Set<String> _savedVehicleTypes = {};
-
-  final isSavingTypes = false.obs;
-
-  /// True when [types] differ from what the vehicle has saved.
-  bool vehicleTypesChanged(Set<String> types) =>
-      vehicleImei.isNotEmpty &&
-      (types.length != _savedVehicleTypes.length ||
-          !types.every(_savedVehicleTypes.contains));
-
-  /// Saves [types] as the vehicle's switched-on alerts with
-  /// `update_vehicle_alerts` (form data: imei plus repeated `alerts[]`, the
-  /// same request Configure Alerts sends). Returns false when it failed.
-  Future<bool> saveVehicleAlertTypes(Set<String> types) async {
-    if (vehicleImei.isEmpty) return true;
-    isSavingTypes.value = true;
-    try {
-      await ensureApiToken();
-      final form = FormData();
-      form.fields.add(MapEntry('imei', vehicleImei));
-      for (final key in types) {
-        form.fields.add(MapEntry('alerts[]', key));
-      }
-      final response = await DioClient().post(
-        ApiEndPoints.updateVehicleAlerts,
-        body: form,
-      );
-      final body = response.data;
-      final ok = body is! Map || body['status'] != false;
-      if (!ok) {
-        showErrorMessage(body['message'] ?? 'Could not save alerts');
-        return false;
-      }
-      _savedVehicleTypes
-        ..clear()
-        ..addAll(types);
-      return true;
-    } catch (e) {
-      showErrorMessage(e);
-      return false;
-    } finally {
-      isSavingTypes.value = false;
-    }
-  }
+  /// Event types for the filter, taken only from the alerts the alerts API
+  /// returned (key = the alert's `alert` value, label = its `event` text).
+  /// Grows as more pages load.
+  List<AlertTypeOption> get alertTypeOptions =>
+      eventTypeOptionsFrom(allAlerts);
 
   /// Vehicle numbers present in the loaded alerts, for the filter sheet.
   List<String> get vehicleNumbers =>
@@ -208,10 +166,7 @@ class AlertsController extends GetxController {
   void onInit() {
     super.onInit();
     log("AlertsController: onInit called");
-    // Until the types arrive, every built-in type is ticked ("All Events").
-    selectedTypes.addAll(alertTypeOptions.map((o) => o.key));
     loadAlerts();
-    unawaited(_loadEventTypeFilter());
     scrollController.addListener(() {
       try {
         if (!scrollController.hasClients) return;
@@ -225,75 +180,6 @@ class AlertsController extends GetxController {
         // ScrollController not yet attached or detached during rebuild
       }
     });
-  }
-
-  /// Lists every type from `alert_types`, then ticks the ones switched on for
-  /// this vehicle in `vehicle_alerts`. Without a vehicle (all vehicles), or if
-  /// that request fails or returns nothing usable, every type stays ticked.
-  Future<void> _loadEventTypeFilter() async {
-    try {
-      await ensureApiToken();
-      final response = await DioClient().get(ApiEndPoints.alertTypes);
-      final data = response.data is Map ? response.data['data'] : null;
-      final list = data is Map ? data['alerts'] : null;
-      final parsed = <AlertTypeOption>[];
-      if (list is List) {
-        for (final item in list.whereType<Map>()) {
-          final key = (item['key'] ?? '').toString();
-          if (key.isEmpty) continue;
-          parsed.add(AlertTypeOption(key, (item['label'] ?? key).toString()));
-        }
-      }
-      if (parsed.isNotEmpty) alertTypeOptions.assignAll(parsed);
-    } catch (e) {
-      log('[Alerts] alert_types failed, using built-in list: $e');
-    }
-
-    final allKeys = alertTypeOptions.map((o) => o.key).toSet();
-    var initial = allKeys;
-
-    // The vehicle this page was opened for: `imei` when the list is for one
-    // vehicle, `trackImei` when opened from that vehicle's live track (the
-    // list then shows every vehicle, but the ticks follow this vehicle).
-    var imei = (Get.parameters['imei'] ?? '').trim();
-    if (imei.isEmpty) imei = (Get.parameters['trackImei'] ?? '').trim();
-    if (imei.isNotEmpty) {
-      try {
-        final response = await DioClient().get(
-          ApiEndPoints.vehicleAlerts,
-          query: {'imei': imei},
-        );
-        final body = response.data;
-        final data = body is Map ? body['data'] : body;
-        final list =
-            data is List ? data : (data is Map ? data['alerts'] : null);
-        final onKeys = <String>{};
-        if (list is List) {
-          for (final item in list) {
-            if (item is String) {
-              onKeys.add(item);
-            } else if (item is Map && item['alert'] != null) {
-              onKeys.add(item['alert'].toString());
-            }
-          }
-        }
-        final vehicleKeys = allKeys.intersection(onKeys);
-        if (vehicleKeys.isNotEmpty) initial = vehicleKeys;
-        // Saving is only safe once we know what the vehicle has today.
-        vehicleImei = imei;
-        _savedVehicleTypes
-          ..clear()
-          ..addAll(vehicleKeys);
-      } catch (e) {
-        log('[Alerts] vehicle_alerts failed, ticking all events: $e');
-      }
-    }
-
-    if (isClosed) return;
-    selectedTypes
-      ..clear()
-      ..addAll(initial);
-    applyFilters();
   }
 
   Future<void> loadAlerts() async {
@@ -328,6 +214,16 @@ class AlertsController extends GetxController {
     }
   }
 
+  /// The vehicle this page shows alerts for: `imei`, or `trackImei` when
+  /// opened from that vehicle's live track / history bottom bar. Only that
+  /// vehicle's alerts are requested. All vehicles' alerts are on the
+  /// Notifications screen (bell on Home).
+  String get vehicleImei {
+    final imei = (Get.parameters['imei'] ?? '').trim();
+    if (imei.isNotEmpty) return imei;
+    return (Get.parameters['trackImei'] ?? '').trim();
+  }
+
   /// Requests one page with imei, limit and page, and reads the server's
   /// pagination block to know whether another page exists.
   Future<List<AlertModel>> _fetchPage(int page) async {
@@ -350,7 +246,7 @@ class AlertsController extends GetxController {
     final response = await DioClient().get(
       ApiEndPoints.alerts,
       query: {
-        'imei': Get.parameters['imei'] ?? '',
+        'imei': vehicleImei,
         'limit': '$pageSize',
         'page': '$page',
       },
@@ -514,9 +410,8 @@ class AlertsController extends GetxController {
   void applyFilters() {
     final query = searchQuery.value.trim().toLowerCase();
     // Every type ticked ("All Events") or none ticked: no event filter.
-    final types = allTypesSelected
-        ? <String>{}
-        : selectedTypes.map((e) => e.toLowerCase()).toSet();
+    // Empty = every type (the sheet stores "All Events" as empty).
+    final types = selectedTypes.map((e) => e.toLowerCase()).toSet();
     final from = fromDate.value;
     final to = toDate.value;
 
@@ -528,7 +423,7 @@ class AlertsController extends GetxController {
         if (!haystack.contains(query)) return false;
       }
       if (types.isNotEmpty) {
-        if (!types.contains(a.alertKey.toLowerCase())) return false;
+        if (!types.contains(a.filterKey.toLowerCase())) return false;
       }
       if (selectedVehicles.isNotEmpty &&
           !selectedVehicles.contains(a.plateNumber)) {

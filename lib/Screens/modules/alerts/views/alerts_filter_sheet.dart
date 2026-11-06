@@ -46,7 +46,10 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
   // Local copies: nothing reaches the list until Apply.
   // _types holds the API alert keys (e.g. "ignitionOn").
   late final Set<String> _types = {..._controller.selectedTypes};
-  late final Set<String> _vehicles = {..._controller.selectedVehicles};
+  // No vehicle filter (empty) means every vehicle: show them all ticked.
+  late final Set<String> _vehicles = _controller.selectedVehicles.isEmpty
+      ? {..._controller.vehicleNumbers}
+      : {..._controller.selectedVehicles};
   late DateTime? _from = _controller.fromDate.value;
   late DateTime? _to = _controller.toDate.value;
 
@@ -67,9 +70,14 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
     _controller.selectedTypes
       ..clear()
       ..addAll(_types);
+    // Every vehicle ticked is stored as "no vehicle filter", so vehicles
+    // whose alerts load later (next pages) are not hidden.
+    final allVehicles = _controller.vehicleNumbers;
+    final everyVehicle =
+        allVehicles.isNotEmpty && allVehicles.every(_vehicles.contains);
     _controller.selectedVehicles
       ..clear()
-      ..addAll(_vehicles);
+      ..addAll(everyVehicle ? const <String>[] : _vehicles);
     _controller.fromDate.value = _from;
     _controller.toDate.value = _to;
     _controller.applyFilters();
@@ -158,14 +166,16 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
         // Always every type from alert_types. Obx: the list can still be
         // arriving from the server when the sheet opens.
         return Obx(
-          () => _eventTypeList(
-            _controller.alertTypeOptions
+          () => _allTickList(
+            allLabel: 'All Events',
+            options: _controller.alertTypeOptions
                 .map((o) => _AlertOption(o.key, o.label))
                 .toList(),
+            selected: _types,
           ),
         );
       case _FilterTab.vehicles:
-        return _checkList(
+        return _allTickList(
           allLabel: 'All Vehicles',
           options: _controller.vehicleNumbers
               .map((v) => _AlertOption(v, v))
@@ -177,47 +187,28 @@ class _AlertsFilterSheetState extends State<AlertsFilterSheet> {
     }
   }
 
-  /// Event types: "All Events" is ticked when every type is ticked, and
-  /// tapping it ticks every type (or clears them all when all are ticked).
-  Widget _eventTypeList(List<_AlertOption> options) {
-    final allTicked =
-        options.isNotEmpty && options.every((o) => _types.contains(o.key));
-    return ListView(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
-      children: [
-        _checkRow('All Events', allTicked, () {
-          setState(() {
-            if (allTicked) {
-              _types.clear();
-            } else {
-              _types.addAll(options.map((o) => o.key));
-            }
-          });
-        }),
-        for (final o in options)
-          _checkRow(o.label, _types.contains(o.key), () {
-            setState(() {
-              if (!_types.remove(o.key)) _types.add(o.key);
-            });
-          }),
-      ],
-    );
-  }
-
-  /// Vehicles: "All" is checked when nothing specific is selected.
-  Widget _checkList({
+  /// Event types and vehicles: the "All" row is ticked when every option is
+  /// ticked, and tapping it ticks every option (or clears them all when all
+  /// are already ticked). Unticking any option unticks "All".
+  Widget _allTickList({
     required String allLabel,
     required List<_AlertOption> options,
     required Set<String> selected,
   }) {
+    final allTicked =
+        options.isNotEmpty && options.every((o) => selected.contains(o.key));
     return ListView(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       children: [
-        _checkRow(
-          allLabel,
-          selected.isEmpty,
-          () => setState(selected.clear),
-        ),
+        _checkRow(allLabel, allTicked, () {
+          setState(() {
+            if (allTicked) {
+              selected.clear();
+            } else {
+              selected.addAll(options.map((o) => o.key));
+            }
+          });
+        }),
         for (final o in options)
           _checkRow(o.label, selected.contains(o.key), () {
             setState(() {

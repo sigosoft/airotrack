@@ -136,6 +136,12 @@ class TrackController extends GetxController {
   /// Streets map by default; user can switch to satellite via the map button.
   final mapType = gmaps.MapType.normal.obs;
 
+  /// Google's live traffic layer (green / orange / red roads). Free in the
+  /// phone map SDK; off by default, toggled by the traffic button.
+  final trafficEnabled = false.obs;
+
+  void toggleTraffic() => trafficEnabled.value = !trafficEnabled.value;
+
   void toggleMapStyle() {
     mapType.value = mapType.value == gmaps.MapType.normal
         ? gmaps.MapType.hybrid

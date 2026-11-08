@@ -46,6 +46,7 @@ class TrackView extends GetView<TrackController> {
                               zoom: 18,
                             ),
                             mapType: controller.mapType.value,
+                            trafficEnabled: controller.trafficEnabled.value,
                             onMapCreated: controller.onMapCreated,
                             onCameraMove: controller.onCameraMove,
                             onTap: (_) => controller.showBottomSheet.value = false,
@@ -111,6 +112,16 @@ class TrackView extends GetView<TrackController> {
                         'lib/Asset/Icons/map.png',
                         context,
                         onTap: controller.toggleMapStyle,
+                      ),
+                      SizedBox(height: height * 0.012),
+                      // Live traffic on/off; blue border while on.
+                      Obx(
+                        () => _buildMapControl(
+                          'lib/Asset/Icons/Traffic.png',
+                          context,
+                          onTap: controller.toggleTraffic,
+                          active: controller.trafficEnabled.value,
+                        ),
                       ),
                       SizedBox(height: height * 0.012),
                       GestureDetector(
@@ -184,6 +195,7 @@ class TrackView extends GetView<TrackController> {
     String? text,
     Color? textColor,
     VoidCallback? onTap,
+    bool active = false, // on/off buttons: blue border while on
   }) {
     final width = MediaQuery.of(context).size.width;
     return GestureDetector(
@@ -193,6 +205,9 @@ class TrackView extends GetView<TrackController> {
         height: width * 0.085,
         decoration: BoxDecoration(
           color: Colors.white,
+          border: active
+              ? Border.all(color: const Color(0xFF009FE3), width: 2)
+              : null,
           borderRadius: BorderRadius.circular(width * 0.025),
           boxShadow: const [
             BoxShadow(

@@ -17,7 +17,7 @@ class DashboardController extends GetxController {
 
   List<Vehicle> get vehicles {
     if (Get.isRegistered<HomeController>()) {
-      return Get.find<HomeController>().vehicles.toList();
+      return Get.find<HomeController>().allVehicles.toList();
     }
     return const [];
   }
@@ -39,7 +39,7 @@ class DashboardController extends GetxController {
     if (Get.isRegistered<HomeController>()) {
       final home = Get.find<HomeController>();
       _vehiclesWorker?.dispose();
-      _vehiclesWorker = ever<List<Vehicle>>(home.vehicles, (list) {
+      _vehiclesWorker = ever<List<Vehicle>>(home.allVehicles, (list) {
         if (selectedImei.value.isNotEmpty) return;
         if (list.isEmpty) return;
         selectVehicle(list.first);
@@ -54,15 +54,15 @@ class DashboardController extends GetxController {
     if (!Get.isRegistered<HomeController>()) return null;
     final home = Get.find<HomeController>();
 
-    if (home.vehicles.isNotEmpty) return home.vehicles.first;
+    if (home.allVehicles.isNotEmpty) return home.allVehicles.first;
 
     // Poll while home is still loading vehicles.
     for (var i = 0; i < 40; i++) {
       await Future.delayed(const Duration(milliseconds: 250));
-      if (home.vehicles.isNotEmpty) return home.vehicles.first;
-      if (!home.isLoading.value && home.vehicles.isEmpty) break;
+      if (home.allVehicles.isNotEmpty) return home.allVehicles.first;
+      if (!home.isLoading.value && home.allVehicles.isEmpty) break;
     }
-    return home.vehicles.isNotEmpty ? home.vehicles.first : null;
+    return home.allVehicles.isNotEmpty ? home.allVehicles.first : null;
   }
 
   void selectVehicle(Vehicle vehicle) {

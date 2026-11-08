@@ -18,7 +18,7 @@ class StatisticsController extends GetxController {
 
   List<Vehicle> get vehicles {
     if (Get.isRegistered<HomeController>()) {
-      return Get.find<HomeController>().vehicles.toList();
+      return Get.find<HomeController>().allVehicles.toList();
     }
     return const [];
   }
@@ -40,18 +40,18 @@ class StatisticsController extends GetxController {
     if (!Get.isRegistered<HomeController>()) return;
     final home = Get.find<HomeController>();
 
-    if (home.vehicles.isNotEmpty) {
-      selectVehicle(home.vehicles.first);
+    if (home.allVehicles.isNotEmpty) {
+      selectVehicle(home.allVehicles.first);
       return;
     }
 
     for (var i = 0; i < 40; i++) {
       await Future.delayed(const Duration(milliseconds: 250));
-      if (home.vehicles.isNotEmpty) {
-        selectVehicle(home.vehicles.first);
+      if (home.allVehicles.isNotEmpty) {
+        selectVehicle(home.allVehicles.first);
         return;
       }
-      if (!home.isLoading.value && home.vehicles.isEmpty) break;
+      if (!home.isLoading.value && home.allVehicles.isEmpty) break;
     }
   }
 

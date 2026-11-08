@@ -236,7 +236,10 @@ class HomeView extends GetView<HomeController> {
                 controller.isMoreLoading.value;
             return RefreshIndicator(
               onRefresh: () =>
-                  controller.fetchVehicles(type: controller.selectedType.value),
+                  controller.fetchVehicles(
+                    type: controller.selectedType.value,
+                    force: true,
+                  ),
               color: const Color(0xFF009FE3),
               child: ListView.separated(
                 controller: controller.scrollController,

@@ -279,7 +279,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   /// A tick is skipped while the previous request is still in flight, so a
   /// slow server never stacks requests.
   static const Duration autoRefreshInterval = Duration(seconds: 3);
-  static const int _pageSize = 20;
 
   Timer? _autoRefreshTimer;
   bool _silentRefreshBusy = false;
@@ -379,52 +378,76 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     }
   }
 
-  /// Re-reads page 1 without the loading spinner and only touches the
-  /// observable list when something visible changed, so the screen never
-  /// blinks. Rows already loaded from later pages are kept as they are.
-  /// Errors keep the current list.
+  // ---------------------------------------------------------------------
+  // One list, one set of rules
+  //
+  // The server's type lists and counts follow its own rules: it counts every
+  // vehicle with ignition off as "stopped", inactive ones included. The app
+  // labels each vehicle with the rules table (Vehicle.statusByRule), so an
+  // inactive vehicle showed in the Stop tab with an Inactive label, and the
+  // counts didn't match the lists. Now all vehicles are loaded once (type 1)
+  // and every tab and count is built from the app's own status.
+  // ---------------------------------------------------------------------
+
+  /// Every vehicle (type 1), for the counts and for filtering the tabs.
+  final allVehicles = <Vehicle>[].obs;
+
+  /// One page large enough for the whole fleet.
+  static const int _fetchLimit = 500;
+
+  /// Vehicles for tab [type]: 1 = all, else the app's type number
+  /// (2 Running, 3 Idle, 4 Stop, 5 Expired, 6 Inactive, 7 No data).
+  List<Vehicle> _forType(List<Vehicle> all, int type) =>
+      type <= 1 ? all : all.where((v) => v.typeNumber == type).toList();
+
+  /// Every vehicle from the API, or null when the request failed.
+  Future<List<Vehicle>?> _fetchAll() async {
+    final response = await DioClient().get(
+      ApiEndPoints.home,
+      query: {'type': '1', 'page': '1', 'limit': '$_fetchLimit'},
+    );
+    final data = response.data is Map ? response.data['data'] : null;
+    if (data is! Map) return null;
+    final rows = data['vehicles_data'];
+    if (rows is! List) return const [];
+    return _uniqueVehicles(_parseVehicles(rows));
+  }
+
+  /// Shows [all]: the selected tab's list and every count, changing the
+  /// observables only when something visible changed (no blink).
+  void _applyAll(List<Vehicle> all) {
+    if (!_sameVehicles(allVehicles, all)) allVehicles.assignAll(all);
+    final shown = _forType(all, selectedType.value ?? 1);
+    if (!_sameVehicles(vehicles, shown)) vehicles.assignAll(shown);
+    _applyCounts(all);
+  }
+
+  /// RxString only notifies on a real change, so unchanged counts never
+  /// rebuild the status cards.
+  void _applyCounts(List<Vehicle> all) {
+    String countOf(int type) =>
+        all.where((v) => v.typeNumber == type).length.toString();
+    totalCount.value = all.length.toString();
+    runningCount.value = countOf(2);
+    idleCount.value = countOf(3);
+    stoppedCount.value = countOf(4);
+    expiredCount.value = countOf(5);
+    inactiveVehiclesCount.value = countOf(6);
+    noDataCount.value = countOf(7);
+  }
+
+  /// Re-reads every vehicle without the loading spinner and only touches the
+  /// observable lists when something visible changed, so the screen never
+  /// blinks. Errors keep the current list.
   Future<void> refreshSilently() async {
     if (!_appInForeground) return;
-    if (_silentRefreshBusy || isLoading.value || isMoreLoading.value) return;
+    if (_silentRefreshBusy || isLoading.value) return;
     _silentRefreshBusy = true;
-    final typeAtAsk = selectedType.value ?? 1;
     try {
-      final response = await DioClient().get(
-        ApiEndPoints.home,
-        query: {
-          'type': '$typeAtAsk',
-          'page': '1',
-          'limit': '$_pageSize',
-        },
-      );
-      // The user switched tab or pulled to refresh meanwhile: drop this.
-      if (isClosed ||
-          isLoading.value ||
-          isMoreLoading.value ||
-          (selectedType.value ?? 1) != typeAtAsk) {
-        return;
-      }
-      final data = response.data is Map ? response.data['data'] : null;
-      if (data is! Map) return;
-
-      final rows = data['vehicles_data'];
-      if (rows is List) {
-        final firstPage = _uniqueVehicles(_parseVehicles(rows));
-        final next = <Vehicle>[...firstPage];
-        if (currentPage > 1) {
-          // Keep later pages the user scrolled to; drop any now on page 1.
-          final seen = firstPage.map(_vehicleKey).toSet();
-          next.addAll(
-            vehicles.skip(_pageSize).where((v) => seen.add(_vehicleKey(v))),
-          );
-        } else {
-          hasMore.value = rows.length >= _pageSize;
-        }
-        if (!_sameVehicles(vehicles, next)) {
-          vehicles.assignAll(next);
-        }
-      }
-      _applyStatistics(data['statistics']);
+      final all = await _fetchAll();
+      // A full load started meanwhile (pull to refresh): let it win.
+      if (isClosed || isLoading.value || all == null) return;
+      _applyAll(all);
     } catch (e) {
       debugPrint('[Home] auto refresh skipped: $e');
     } finally {
@@ -455,136 +478,35 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     return true;
   }
 
-  /// RxString only notifies on a real change, so unchanged counts never
-  /// rebuild the status cards.
-  void _applyStatistics(dynamic stats) {
-    if (stats is Map) {
-      totalCount.value = stats['total_vehicles']?.toString() ?? "0";
-      runningCount.value = stats['running_vehicles']?.toString() ?? "0";
-      stoppedCount.value = stats['stopped_vehicles']?.toString() ?? "0";
-      idleCount.value = stats['idle_vehicles']?.toString() ?? "0";
-      expiredCount.value = stats['expired_vehicles']?.toString() ?? "0";
-      // Key names below are not confirmed by the backend yet.
-      inactiveVehiclesCount.value =
-          stats['inactive_vehicles']?.toString() ?? "0";
-      noDataCount.value = stats['no_data_vehicles']?.toString() ?? "0";
+  /// Shows tab [type]. Switching tabs filters the vehicles already loaded at
+  /// once (no spinner) and refreshes in the background; the first load, or
+  /// pull to refresh, loads every vehicle with the spinner.
+  Future<void> fetchVehicles({int? type, bool force = false}) async {
+    selectedType.value = type ?? 1;
+    currentPage = 1;
+    hasMore.value = false; // one page holds the whole fleet
+    errorMessage.value = '';
+
+    if (allVehicles.isNotEmpty && !force) {
+      _applyAll(allVehicles.toList());
+      refreshSilently();
       return;
     }
-    String countOf(String status) =>
-        vehicles.where((v) => v.status == status).length.toString();
-    totalCount.value = vehicles.length.toString();
-    runningCount.value = countOf('Running');
-    stoppedCount.value = countOf('Stopped');
-    idleCount.value = countOf('Idle');
-    expiredCount.value = countOf('Expired');
-    inactiveVehiclesCount.value = countOf('Inactive');
-    noDataCount.value = countOf('No data');
-  }
 
-  Future<void> fetchVehicles({int? type}) async {
     try {
-      selectedType.value = type ?? 1;
-      currentPage = 1;
-      hasMore.value = true;
       isLoading.value = true;
-      errorMessage.value = '';
-
-      final response = await DioClient().get(
-        ApiEndPoints.home,
-        query: {
-          'type': '${selectedType.value}',
-          'page': '1',
-          'limit': '20',
-        },
-      );
-      if (response.data != null && response.data['data'] != null) {
-        final data = response.data['data'];
-        if (data['vehicles_data'] != null) {
-          final List<dynamic> vehiclesList = data['vehicles_data'];
-          vehicles.value = _uniqueVehicles(_parseVehicles(vehiclesList));
-          // No more pages when first page is shorter than the page size.
-          hasMore.value = vehiclesList.length >= _pageSize;
-        } else {
-          vehicles.clear();
-          hasMore.value = false;
-        }
-        _applyStatistics(data['statistics']);
-      }
+      final all = await _fetchAll();
+      if (all != null) _applyAll(all);
     } catch (e) {
       errorMessage.value = "An error occurred: $e";
-      print("Error loading data: $e");
+      debugPrint("Error loading data: $e");
     } finally {
       isLoading.value = false;
     }
   }
 
-  Future<void> loadMoreVehicles() async {
-    if (isLoading.value || isMoreLoading.value || !hasMore.value) return;
-    try {
-      isMoreLoading.value = true;
-      final nextPage = currentPage + 1;
-
-      final response = await DioClient().get(
-        ApiEndPoints.home,
-        query: {
-          'type': '${selectedType.value ?? 1}',
-          'page': nextPage.toString(),
-          'limit': '20',
-        },
-      );
-
-      if (response.data != null && response.data['data'] != null) {
-        final data = response.data['data'];
-
-        if (data['vehicles_data'] != null) {
-          final List<dynamic> vehiclesList = data['vehicles_data'];
-          if (vehiclesList.isEmpty) {
-            hasMore.value = false;
-          } else {
-            final newVehicles = <Vehicle>[];
-            for (final row in vehiclesList) {
-              try {
-                final map = row is Map<String, dynamic>
-                    ? row
-                    : Map<String, dynamic>.from(row as Map);
-                newVehicles.add(Vehicle.fromJson(map));
-              } catch (e) {
-                debugPrint('[Home] skip vehicle parse error: $e');
-              }
-            }
-            final unique = _dedupeVehicles(newVehicles);
-            if (unique.isEmpty) {
-              // API repeated page-1 vehicles — stop paging.
-              hasMore.value = false;
-            } else {
-              vehicles.addAll(unique);
-              currentPage = nextPage;
-              if (newVehicles.length < 20) {
-                hasMore.value = false;
-              }
-            }
-          }
-        } else {
-          hasMore.value = false;
-        }
-      } else {
-        hasMore.value = false;
-      }
-    } catch (e) {
-      hasMore.value = false;
-    } finally {
-      isMoreLoading.value = false;
-    }
-  }
-
-  /// Keeps only vehicles not already in [vehicles] (by id, else IMEI/plate).
-  List<Vehicle> _dedupeVehicles(List<Vehicle> incoming) {
-    final existingKeys = <String>{};
-    for (final v in vehicles) {
-      existingKeys.add(_vehicleKey(v));
-    }
-    return incoming.where((v) => existingKeys.add(_vehicleKey(v))).toList();
-  }
+  /// Every vehicle is in one page now, so there is nothing more to load.
+  Future<void> loadMoreVehicles() async {}
 
   /// Dedupes within a single page response.
   List<Vehicle> _uniqueVehicles(List<Vehicle> incoming) {

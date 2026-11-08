@@ -41,7 +41,7 @@ class LocationController extends GetxController {
 
   LocationVehicleInfo _resolveInitialVehicle() {
     if (Get.isRegistered<HomeController>()) {
-      final vehicles = Get.find<HomeController>().vehicles;
+      final vehicles = Get.find<HomeController>().allVehicles;
       if (vehicles.isNotEmpty) {
         final v = vehicles.first;
         return LocationVehicleInfo(

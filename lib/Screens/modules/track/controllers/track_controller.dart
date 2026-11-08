@@ -1972,7 +1972,7 @@ class TrackController extends GetxController {
     if (fromSnapshot != null && fromSnapshot > 0) return fromSnapshot;
     if (vehicleImei.value.trim().isEmpty) return null;
     if (Get.isRegistered<HomeController>()) {
-      for (final v in Get.find<HomeController>().vehicles) {
+      for (final v in Get.find<HomeController>().allVehicles) {
         if (v.deviceId.trim() == vehicleImei.value.trim()) return v.id;
       }
     }

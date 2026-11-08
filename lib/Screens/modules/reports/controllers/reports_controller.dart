@@ -79,7 +79,7 @@ class ReportsController extends GetxController {
 
   List<Vehicle> get vehicles {
     if (Get.isRegistered<HomeController>()) {
-      return Get.find<HomeController>().vehicles.toList();
+      return Get.find<HomeController>().allVehicles.toList();
     }
     return const [];
   }
@@ -141,8 +141,8 @@ class ReportsController extends GetxController {
     final home = Get.find<HomeController>();
     for (var i = 0; i < 40; i++) {
       await Future.delayed(const Duration(milliseconds: 250));
-      if (home.vehicles.isNotEmpty) {
-        final v = home.vehicles.first;
+      if (home.allVehicles.isNotEmpty) {
+        final v = home.allVehicles.first;
         final imei = v.deviceId.trim();
         if (imei.isEmpty) continue;
         selectedImei.value = imei;
@@ -151,7 +151,7 @@ class ReportsController extends GetxController {
         await loadItems(reset: true);
         return;
       }
-      if (!home.isLoading.value && home.vehicles.isEmpty) break;
+      if (!home.isLoading.value && home.allVehicles.isEmpty) break;
     }
   }
 

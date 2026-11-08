@@ -49,6 +49,12 @@ class TrackView extends GetView<TrackController> {
                             onMapCreated: controller.onMapCreated,
                             onCameraMove: controller.onCameraMove,
                             onTap: (_) => controller.showBottomSheet.value = false,
+                            // The car as a Google marker, only while the user
+                            // drags the map (moves exactly with the map).
+                            markers: {
+                              if (controller.dragCarMarker.value != null)
+                                controller.dragCarMarker.value!,
+                            },
                             circles: controller.vehicleGeofenceCircles.toSet(),
                             polygons: controller.vehicleGeofencePolygons.toSet(),
                             // Top-down, never tilted. The app turns the map

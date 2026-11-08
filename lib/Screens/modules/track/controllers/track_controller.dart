@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
@@ -276,6 +277,7 @@ class TrackController extends GetxController {
       _initAndStartTracking(imei);
     }
     _startAnimationLoop();
+    _loadCarIcon();
   }
 
   Future<void> _initAndStartTracking(String imei) async {
@@ -895,14 +897,187 @@ class TrackController extends GetxController {
 
     final point = _publishedPoint();
 
+    // While the map is moved by the user (drag, fling, or not following), the
+    // car is a Google marker: Google draws it in the same pass as the map, so
+    // it stays on its road however fast the map moves. The Flutter overlay is
+    // placed from onCameraMove, which arrives a frame or more late and left
+    // the car behind on fast drags.
+    // Note the pause ending before choosing which car to draw. Deciding first
+    // reset the marker for one frame at the end of a drag, which showed two
+    // cars while the map was still away from the car.
+    final paused = isLocked.value && _followPaused;
+    if (isLocked.value && !paused && _followWasPaused) {
+      // Coming back to the car: force the next camera push.
+      _followWasPaused = false;
+      _lastSentCameraTarget = null;
+      _lastSentCameraBearing = null;
+      _resumedAt = DateTime.now();
+    }
+    if (paused) _followWasPaused = true;
+
+    // After a drag, the marker stays for [_resumeHoldMs] while the camera
+    // jumps back to the car; the Flutter car (placed for the new camera at
+    // once) would otherwise show next to the marker until the map caught up.
+    final resumeAt = _resumedAt;
+    final resuming = resumeAt != null &&
+        DateTime.now().difference(resumeAt).inMilliseconds < _resumeHoldMs;
+    final nativeCar = !isLocked.value || _followPaused || resuming;
+    _syncDragCarMarker(point, nativeCar);
+
     // Camera first, so the overlay projects against this frame's camera.
-    if (isLocked.value) {
+    // While the user drags the map (and a moment after), following pauses:
+    // the overlay uses the map's real camera from onCameraMove so the car
+    // moves with the road under the finger instead of staying put on screen.
+    if (isLocked.value && !paused) {
       _updateCameraBearing();
       _followCamera(point);
     }
-    _syncMarkerPosition(point);
+    if (nativeCar && _overlayHandedOver) {
+      vehicleScreenOffset.value = null; // the Google marker shows the car
+    } else {
+      _syncMarkerPosition(point);
+    }
     _syncMarkerAngle();
     _publishReadouts(point, force: force);
+  }
+
+  // ---------------------------------------------------------------------
+  // Google marker for the car while the user moves the map
+  // ---------------------------------------------------------------------
+
+  /// The car as a Google marker. Opaque only while the user moves the map;
+  /// transparent while following (then the Flutter overlay draws the car).
+  final dragCarMarker = Rxn<gmaps.Marker>();
+  gmaps.BitmapDescriptor? _carIcon;
+  DateTime? _lastDragMarkerAt;
+  LatLng? _lastDragMarkerPoint;
+  double? _lastDragMarkerHeading;
+
+  /// When the Google marker was first added for this drag. The Flutter car
+  /// stays visible until Google has had time to draw the marker; hiding it at
+  /// once left a frame with no car, which looked like a blink.
+  DateTime? _dragMarkerShownAt;
+  // Measured on a device: the Android map plugin re-decodes the marker image
+  // on every marker update, so the marker shows ~170 ms after it is asked
+  // to. Hiding the Flutter car sooner left a gap with no car (a blink).
+  static const int _markerHandoverMs = 250;
+
+  /// Once the map is moving, a Flutter car still showing trails the marker
+  /// (two cars), so hand over as soon as the marker has surely appeared.
+  static const int _markerShownMs = 180;
+  bool _mapMovedSinceTouch = false;
+
+  /// After following resumes, how long the marker keeps drawing the car
+  /// while the camera jumps back to it.
+  static const int _resumeHoldMs = 300;
+  DateTime? _resumedAt;
+
+  /// True once the Google marker has taken over drawing the car.
+  bool get _overlayHandedOver {
+    final shown = _dragMarkerShownAt;
+    if (!_dragMarkerVisible || shown == null) return false;
+    final ms = DateTime.now().difference(shown).inMilliseconds;
+    return ms >= _markerHandoverMs ||
+        (_mapMovedSinceTouch && ms >= _markerShownMs);
+  }
+
+  /// Marker updates are throttled: rebuilding a Google marker every frame is
+  /// what made the native car blink before.
+  static const int _dragMarkerIntervalMs = 250;
+
+  Future<void> _loadCarIcon() async {
+    try {
+      // Loaded as bytes through Flutter: the asset name has spaces, which the
+      // Android map can't open by path ("cannot open asset"), so
+      // BitmapDescriptor.asset never showed the car.
+      final data =
+          await rootBundle.load('lib/Asset/Icons/Track Vehicle Top.png');
+      // 48, not 44: measured on a device, Google drew a 44 marker at ~91% of
+      // the 44 Flutter car (54x108 px vs 60x118 px), so the car shrank when a
+      // drag started. 44 * 118 / 108 = 48 matches the Flutter car.
+      _carIcon = gmaps.BitmapDescriptor.bytes(
+        data.buffer.asUint8List(),
+        width: 48,
+        height: 48,
+      );
+    } catch (e) {
+      debugPrint('[LiveTrack] car marker icon failed, keeping overlay: $e');
+    }
+  }
+
+  /// True while the Google marker is opaque (the user is moving the map).
+  bool _dragMarkerVisible = false;
+
+  /// Rebuilds the Google car marker. [visible] false keeps it on the map but
+  /// fully transparent: Google decodes and draws its icon up front, so the
+  /// first drag only changes alpha instead of adding a new marker (adding one
+  /// took longer than the handover and blinked on the first drag).
+  void _setDragMarker(
+    gmaps.BitmapDescriptor icon,
+    LatLng point, {
+    required bool visible,
+  }) {
+    dragCarMarker.value = gmaps.Marker(
+      markerId: const gmaps.MarkerId('live-car'),
+      position: gmaps.LatLng(point.latitude, point.longitude),
+      icon: icon,
+      alpha: visible ? 1.0 : 0.0,
+      // Flat: the rotation is a compass heading and turns with the map.
+      flat: true,
+      rotation: _uiHeading,
+      anchor: const Offset(0.5, 0.5),
+      zIndexInt: 10,
+      consumeTapEvents: visible,
+      onTap: visible ? toggleBottomSheet : null,
+    );
+  }
+
+  void _syncDragCarMarker(LatLng point, bool show) {
+    final icon = _carIcon;
+    if (icon == null) return; // overlay keeps drawing the car
+    final now = DateTime.now();
+
+    if (!show) {
+      // Not dragging: keep a transparent marker near the car, ready to show.
+      final lastPoint = _lastDragMarkerPoint;
+      final needsHidden = dragCarMarker.value == null ||
+          _dragMarkerVisible ||
+          lastPoint == null ||
+          _calculateDistance(lastPoint, point) > 50;
+      if (needsHidden) {
+        _setDragMarker(icon, point, visible: false);
+        _lastDragMarkerPoint = point;
+      }
+      _dragMarkerVisible = false;
+      _lastDragMarkerAt = null;
+      _lastDragMarkerHeading = null;
+      _dragMarkerShownAt = null;
+      return;
+    }
+
+    if (_dragMarkerVisible) {
+      // Rebuilding a Google marker redraws its icon, which can flash. Only
+      // rebuild when the car really moved or turned, at most every 250 ms.
+      final last = _lastDragMarkerAt;
+      if (last != null &&
+          now.difference(last).inMilliseconds < _dragMarkerIntervalMs) {
+        return;
+      }
+      final lastPoint = _lastDragMarkerPoint;
+      final lastHeading = _lastDragMarkerHeading;
+      final moved =
+          lastPoint == null || _calculateDistance(lastPoint, point) > 0.5;
+      final turned = lastHeading == null ||
+          _shortestBearingDelta(lastHeading, _uiHeading).abs() > 2.0;
+      if (!moved && !turned) return;
+    } else {
+      _dragMarkerVisible = true;
+      _dragMarkerShownAt = now;
+    }
+    _lastDragMarkerAt = now;
+    _lastDragMarkerPoint = point;
+    _lastDragMarkerHeading = _uiHeading;
+    _setDragMarker(icon, point, visible: true);
   }
 
   DateTime? _lastCameraBearingAt;
@@ -1585,16 +1760,66 @@ class TrackController extends GetxController {
   /// While following, the camera is what we push, so its echoes are ignored.
   /// Once unlocked, the reported camera drives the car overlay.
   void onCameraMove(gmaps.CameraPosition position) {
-    if (isLocked.value) return;
+    // While following, these are echoes of our own pushes: ignore them.
+    // During a user drag they are the real map, so adopt them.
+    if (isLocked.value && !_followPaused) return;
+    final prevTarget = _cameraTarget;
+    if (prevTarget != null &&
+        ((prevTarget.latitude - position.target.latitude).abs() > 1e-7 ||
+            (prevTarget.longitude - position.target.longitude).abs() > 1e-7)) {
+      _mapMovedSinceTouch = true;
+      // The map is still being moved (a drag the map took over, or a fling):
+      // keep following paused until it has been still for [_recenterDelay].
+      if (!_userDragging && !_touchHold) _dragEndedAt = DateTime.now();
+    }
+    if (_pointerNow.length == 1) {
+      _pointerAtCameraReport = _pointerNow.values.first;
+    }
     _cameraZoom = position.zoom;
     _cameraBearing = _normalizeBearing(position.bearing);
     _cameraTarget = LatLng(position.target.latitude, position.target.longitude);
-    _syncMarkerPosition(_publishedPoint());
+    // Keep the Flutter car glued until the Google marker has taken over (or
+    // if the marker icon could not be loaded).
+    if (!_overlayHandedOver) _syncMarkerPosition(_publishedPoint());
+  }
+
+  // One-finger drag while following. The map pans under the finger and the
+  // car moves with it; after the finger lifts and [_recenterDelay] passes,
+  // the camera returns to the car and following carries on.
+  static const double _dragSlop = 18.0;
+  static const Duration _recenterDelay = Duration(seconds: 3);
+  bool _userDragging = false;
+  Offset? _dragStart;
+  DateTime? _dragEndedAt;
+  bool _followWasPaused = false;
+
+  /// One finger is on the map. The car moves to the Google marker right
+  /// here, before the map starts moving, so the swap is invisible (swapping
+  /// once a drag was already moving showed two cars for a moment).
+  bool _touchHold = false;
+
+  /// Finger position when the map last reported its camera during this
+  /// touch; null until the first report (the map hasn't moved before that).
+  Offset? _pointerAtCameraReport;
+
+  bool get _followPaused {
+    if (_userDragging || _touchHold) return true;
+    final ended = _dragEndedAt;
+    return ended != null && DateTime.now().difference(ended) < _recenterDelay;
   }
 
   void onMapPointerDown(PointerDownEvent e) {
     _pointerNow[e.pointer] = e.position;
+    if (_pointerNow.length == 1) {
+      _dragStart = e.position;
+      _touchHold = true;
+      _mapMovedSinceTouch = false;
+      _pointerAtCameraReport = null;
+    }
     if (_pointerNow.length >= 2) {
+      // Two fingers is a pinch (app zoom), not a pan: keep following.
+      _userDragging = false;
+      _touchHold = false;
       _startPinch();
     }
   }
@@ -1633,7 +1858,21 @@ class TrackController extends GetxController {
       return;
     }
 
-    // One-finger drags do not stop following; the car stays centred.
+    // One finger past the touch slop is a pan: pause following so the car
+    // stays on its road while the map moves (a plain tap pauses nothing).
+    final start = _dragStart;
+    if (!_userDragging &&
+        _pointerNow.length == 1 &&
+        start != null &&
+        (e.position - start).distance > _dragSlop) {
+      _userDragging = true;
+      _dragEndedAt = null;
+    }
+    // Until the marker takes over, move the Flutter car with the finger on
+    // this very event instead of waiting for the next frame.
+    if (!_overlayHandedOver && _pointerNow.length == 1) {
+      _syncMarkerPosition(_publishedPoint());
+    }
   }
 
   void onMapPointerUp(PointerEvent e) {
@@ -1641,6 +1880,24 @@ class TrackController extends GetxController {
     if (_pointerNow.length < 2 && pinchActive.value) {
       pinchActive.value = false;
       _pinchStartDist = null;
+    }
+    if (_pointerNow.isEmpty) {
+      _dragStart = null;
+      // A tap (no drag) resumes following at once; a drag waits
+      // [_recenterDelay] so the map can be looked at.
+      _touchHold = false;
+      if (_userDragging || _mapMovedSinceTouch) {
+        _userDragging = false;
+        _dragEndedAt = DateTime.now();
+      } else if (e is PointerCancelEvent) {
+        // The map took over the touch (a slow drag that hadn't passed our
+        // slop yet). The finger may still be moving the map, so don't follow
+        // at once: a short grace, extended by onCameraMove while the map
+        // keeps moving.
+        _dragEndedAt = DateTime.now().subtract(
+          _recenterDelay - const Duration(milliseconds: 500),
+        );
+      }
     }
   }
 
@@ -1687,6 +1944,11 @@ class TrackController extends GetxController {
 
   void moveMapToVehicle({bool snap = false, bool resetZoom = false}) {
     isLocked.value = true;
+    // The locate button returns to the car at once, even right after a drag.
+    _userDragging = false;
+    _dragEndedAt = null;
+    _lastSentCameraTarget = null;
+    _lastSentCameraBearing = null;
     if (resetZoom) _userAdjustedZoom = false;
     if (_hasHeading) _cameraBearing = _uiHeading;
     if (_pathLat == 0.0 && _pathLng == 0.0) return;
@@ -1877,6 +2139,22 @@ class TrackController extends GetxController {
       vehicleScreenOffset.value = null;
       return;
     }
+    // From touch until the Google marker takes over, the map can already be
+    // moving under the finger while its camera reports arrive late. Place the
+    // Flutter car from the latest reported camera plus the finger movement
+    // since that report. (The finger movement since touch was too much:
+    // Google drops the first few pixels of a drag, the touch slop, so the car
+    // ran one car-width ahead of the map.)
+    final atReport = _pointerAtCameraReport;
+    if ((_touchHold || _userDragging) &&
+        !_overlayHandedOver &&
+        atReport != null &&
+        _pointerNow.length == 1) {
+      final base = _projectToScreen(point);
+      vehicleScreenOffset.value =
+          base == null ? null : base + (_pointerNow.values.first - atReport);
+      return;
+    }
     vehicleScreenOffset.value = _projectToScreen(point);
     _calibrateProjection(point);
   }
@@ -1925,8 +2203,8 @@ class TrackController extends GetxController {
   /// Web Mercator, the same projection Google Maps renders with (256 dp world
   /// tile at zoom 0, camera target at the viewport centre, no tilt), rotated
   /// by the camera bearing so it matches the heading-up map.
-  Offset? _projectToScreen(LatLng p) {
-    final cam = _cameraTarget;
+  Offset? _projectToScreen(LatLng p, {LatLng? camera}) {
+    final cam = camera ?? _cameraTarget;
     if (cam == null || _mapSize.isEmpty) return null;
 
     final scale = _tileSize * math.pow(2, _cameraZoom).toDouble();

@@ -231,15 +231,44 @@ class HomeView extends GetView<HomeController> {
               return const Center(child: CircularProgressIndicator());
             }
             final list = controller.filteredVehicles;
+            final query = controller.searchQuery.value.trim();
             final showLoadMore =
-                controller.searchQuery.value.trim().isEmpty &&
-                controller.isMoreLoading.value;
-            return RefreshIndicator(
-              onRefresh: () =>
-                  controller.fetchVehicles(
-                    type: controller.selectedType.value,
-                    force: true,
+                query.isEmpty && controller.isMoreLoading.value;
+            Future<void> onRefresh() => controller.fetchVehicles(
+                  type: controller.selectedType.value,
+                  force: true,
+                );
+            if (list.isEmpty && !showLoadMore) {
+              // Scrollable so pull-to-refresh still works on an empty tab.
+              return RefreshIndicator(
+                onRefresh: onRefresh,
+                color: const Color(0xFF009FE3),
+                child: LayoutBuilder(
+                  builder: (context, constraints) => ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      SizedBox(
+                        height: constraints.maxHeight,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              query.isEmpty
+                                  ? 'No vehicles found'
+                                  : 'No vehicles match "$query"',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+              );
+            }
+            return RefreshIndicator(
+              onRefresh: onRefresh,
               color: const Color(0xFF009FE3),
               child: ListView.separated(
                 controller: controller.scrollController,

@@ -557,6 +557,11 @@ class HistoryController extends GetxController {
       <LocationHistoryItem>[].obs;
   List<double> _playbackSpeedSeries = <double>[];
 
+  /// For each speed sample, how far along the day's track it was (0..1 of
+  /// the total distance). Playback progress is by distance, so speeds are
+  /// looked up by distance too; empty when the track has no length.
+  List<double> _playbackSpeedDistanceFraction = <double>[];
+
   static const int _maxHistoryPreviewItems = 300;
 
   List<LocationHistoryItem> _buildHistoryPreview(
@@ -998,6 +1003,7 @@ class HistoryController extends GetxController {
   void _buildPlaybackSpeedSeries(List<Map<String, dynamic>> raw) {
     if (raw.isEmpty) {
       _playbackSpeedSeries = <double>[];
+      _playbackSpeedDistanceFraction = <double>[];
       return;
     }
     final sorted = List<Map<String, dynamic>>.from(raw)
@@ -1009,13 +1015,51 @@ class HistoryController extends GetxController {
     _playbackSpeedSeries = sorted
         .map((m) => _parseSpeedValue(m['speed']))
         .toList(growable: false);
+
+    // Distance along the track at each sample. Parked samples add no
+    // distance, so they don't take up a share of the playback.
+    final cumulative = List<double>.filled(sorted.length, 0.0);
+    double total = 0.0;
+    LatLng? prev;
+    for (var i = 0; i < sorted.length; i++) {
+      final lat = sorted[i]['lat'];
+      final lng = sorted[i]['lng'];
+      if (lat is double && lng is double) {
+        final p = LatLng(lat, lng);
+        if (prev != null) total += _distanceMeters(prev, p);
+        prev = p;
+      }
+      cumulative[i] = total;
+    }
+    _playbackSpeedDistanceFraction = total > 0
+        ? cumulative.map((d) => d / total).toList(growable: false)
+        : <double>[];
   }
 
+  /// Speed sample for a playback position. Progress is a share of the
+  /// route's distance, so pick the sample at that distance. Picking by sample
+  /// count read the night's parked 0 km/h samples for most of the drive.
   int _speedSeriesIndexForProgress(double progressValue) {
     if (_playbackSpeedSeries.isEmpty) return -1;
-    return (progressValue.clamp(0.0, 1.0) * (_playbackSpeedSeries.length - 1))
-        .round()
-        .clamp(0, _playbackSpeedSeries.length - 1);
+    final p = progressValue.clamp(0.0, 1.0);
+    final fractions = _playbackSpeedDistanceFraction;
+    if (fractions.length != _playbackSpeedSeries.length) {
+      return (p * (_playbackSpeedSeries.length - 1))
+          .round()
+          .clamp(0, _playbackSpeedSeries.length - 1);
+    }
+    // First sample at or past this distance.
+    var lo = 0;
+    var hi = fractions.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (fractions[mid] < p) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
   }
 
   double _getBackendSpeedKmphAtProgress([double? p]) {
@@ -1583,6 +1627,7 @@ class HistoryController extends GetxController {
         debugPrint('[History] getHistory: responseBody null');
         historyPreviewItems.clear();
         _playbackSpeedSeries = <double>[];
+        _playbackSpeedDistanceFraction = <double>[];
         _resetHistorySummaryStats();
         isLoading.value = false;
       }

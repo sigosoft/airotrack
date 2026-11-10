@@ -31,6 +31,7 @@ class HistoryMapLayer extends StatefulWidget {
     this.onRouteTap,
     this.routeTapPoint,
     this.movingMarkerAssetPath = 'lib/Asset/Images/marker2.png',
+    this.bottomSheetFraction = 0.0,
   }) : super(key: key);
 
   final ll.LatLng initialCenter;
@@ -51,6 +52,10 @@ class HistoryMapLayer extends StatefulWidget {
   final ValueChanged<ll.LatLng>? onRouteTap;
   final ll.LatLng? routeTapPoint;
   final String movingMarkerAssetPath;
+
+  /// Share of the map's height the bottom sheet covers when shown; the
+  /// route fit keeps the route above it.
+  final double bottomSheetFraction;
 
   @override
   State<HistoryMapLayer> createState() => _HistoryMapLayerState();
@@ -115,8 +120,10 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
         _renderPosition = target;
         _renderBearing = targetBearing;
       });
-      if (widget.isFollowCameraEnabled &&
-          (widget.isPlaybackActive || widget.movingMarkerPosition != null)) {
+      // Follow only while playing. Following as soon as the car first
+      // appeared zoomed the camera onto the parked car (zoom 16) and undid
+      // the fit to the whole route when History opened.
+      if (widget.isFollowCameraEnabled && widget.isPlaybackActive) {
         _enterFollowMode(snapImmediately: true);
       }
       return;
@@ -283,10 +290,20 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
         _mapController.move(bounds.center, _lastKnownZoom);
         debugPrint('[History] Camera: zero-area move applied');
       } else {
+        // Keep the route above the bottom sheet, not behind it.
+        final mapHeight = _mapController.camera.nonRotatedSize.height;
+        final sheetPx = widget.bottomSheetVisible && mapHeight.isFinite
+            ? mapHeight * widget.bottomSheetFraction.clamp(0.0, 0.8)
+            : 0.0;
         _mapController.fitCamera(
           CameraFit.bounds(
             bounds: bounds,
-            padding: const EdgeInsets.all(_fitPadding),
+            padding: EdgeInsets.fromLTRB(
+              _fitPadding,
+              _fitPadding,
+              _fitPadding,
+              _fitPadding + sheetPx,
+            ),
           ),
         );
         debugPrint('[History] Camera: initial fit applied');

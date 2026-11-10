@@ -187,12 +187,15 @@ class ReportsController extends GetxController {
       isLoading.value = true;
       await ensureApiToken();
       final range = PeriodQuery.fromLabel(selectedPeriod.value);
-      // Spec: imei, period, from_date, to_date, limit (same for all report GETs)
+      // Dates only: when `period` is sent the server ignores from_date/to_date
+      // (week = calendar week from Monday, custom = 422), so the range the
+      // app shows would not match the data.
       final response = await DioClient().get(
         reportType!.endpoint,
         query: range.toQuery(
           imei: imei,
           limit: _pageLimit,
+          includePeriod: false,
         ),
       );
 

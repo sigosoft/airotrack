@@ -99,7 +99,9 @@ class StatisticsController extends GetxController {
       );
       final response = await DioClient().get(
         ApiEndPoints.statistics,
-        query: range.toQuery(imei: imei),
+        // Dates only: with `period` the server ignores from_date/to_date
+        // (week = calendar week from Monday, custom = 422).
+        query: range.toQuery(imei: imei, includePeriod: false),
       );
       if (response.data != null) {
         stats.value = StatisticsModel.fromJson(response.data);

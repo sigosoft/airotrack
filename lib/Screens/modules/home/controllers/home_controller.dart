@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
 import 'package:airotrack/Utils/Utils.dart';
+import 'package:airotrack/Screens/routes/app_routes.dart';
 
 class Vehicle {
   final int id;
@@ -439,8 +440,18 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   /// Re-reads every vehicle without the loading spinner and only touches the
   /// observable lists when something visible changed, so the screen never
   /// blinks. Errors keep the current list.
+  /// Whether a screen that shows this list live is open: the vehicle list
+  /// tab on Home, or Live Track (its car colour follows this list's status).
+  /// Elsewhere (Dashboard, Reports, Settings, pushed pages) the list is only
+  /// read once for pickers, so polling it every 3 s just costs data.
+  bool get _liveListOnScreen {
+    final route = Uri.tryParse(Get.currentRoute)?.path ?? Get.currentRoute;
+    if (route == Routes.TRACK) return true;
+    return route == Routes.HOME && selectedIndex.value == 1;
+  }
+
   Future<void> refreshSilently() async {
-    if (!_appInForeground) return;
+    if (!_appInForeground || !_liveListOnScreen) return;
     if (_silentRefreshBusy || isLoading.value) return;
     _silentRefreshBusy = true;
     try {
@@ -521,7 +532,10 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   }
 
   void changeTab(int index) {
+    final wasList = selectedIndex.value == 1;
     selectedIndex.value = index;
+    // Polling pauses on the other tabs: refresh at once when coming back.
+    if (index == 1 && !wasList) refreshSilently();
   }
 
   @override

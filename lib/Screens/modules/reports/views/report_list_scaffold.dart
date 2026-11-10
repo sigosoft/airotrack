@@ -138,6 +138,33 @@ class _ReportListScaffoldState extends State<ReportListScaffold> {
                   ),
                 );
               }
+              final error = controller.loadError.value;
+              if (list.isEmpty && error.isNotEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          error,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: () => controller.loadItems(reset: true),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF009FE3),
+                            side: const BorderSide(color: Color(0xFF009FE3)),
+                          ),
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
               if (list.isEmpty) {
                 return const Center(
                   child: Text(

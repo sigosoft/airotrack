@@ -4,6 +4,7 @@ import 'package:airotrack/Models/ReportItem.dart';
 import 'package:airotrack/Screens/modules/home/controllers/home_controller.dart';
 import 'package:airotrack/Utils/ApiHelpers.dart';
 import 'package:airotrack/Utils/Utils.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -66,6 +67,10 @@ class ReportsController extends GetxController {
   final ScrollController scrollController = ScrollController();
   final items = <ReportItem>[].obs;
   final isLoading = false.obs;
+
+  /// Set when the first page fails, so the list shows the error and a
+  /// Retry button instead of "No reports found". Empty when there's none.
+  final loadError = ''.obs;
   final hasMore = true.obs;
   final selectedPeriod = 'Today'.obs;
   final selectedImei = ''.obs;
@@ -183,6 +188,7 @@ class ReportsController extends GetxController {
         currentPage = 1;
         hasMore.value = true;
         items.clear();
+        loadError.value = '';
       }
       isLoading.value = true;
       await ensureApiToken();
@@ -249,9 +255,28 @@ class ReportsController extends GetxController {
     } catch (e) {
       showErrorMessage(e);
       hasMore.value = false;
+      // First page failed: say so in the list (with Retry) rather than
+      // showing "No reports found", which reads as "there is no data".
+      if (reset) loadError.value = _loadErrorText(e);
     } finally {
       isLoading.value = false;
     }
+  }
+
+  static String _loadErrorText(Object e) {
+    if (e is DioException) {
+      switch (e.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.sendTimeout:
+          return 'The server took too long to respond.';
+        case DioExceptionType.connectionError:
+          return 'No connection to the server.';
+        default:
+          break;
+      }
+    }
+    return "Couldn't load this report.";
   }
 
   Future<void> loadMore() async {

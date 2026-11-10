@@ -93,7 +93,7 @@ class _SummaryTile extends StatelessWidget {
                 const Color(0xFF00C853),
               ),
               _stat(
-                'Stoped',
+                'Stopped',
                 reportDisplay(item.stopped),
                 const Color(0xFFFF5252),
               ),

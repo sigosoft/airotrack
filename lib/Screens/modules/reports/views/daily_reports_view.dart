@@ -123,7 +123,7 @@ class _DailyTile extends StatelessWidget {
                   const Color(0xFFFF6F00)),
               _stat('Running', reportDisplay(item.running),
                   const Color(0xFF00C853)),
-              _stat('Stoped', reportDisplay(item.stopped),
+              _stat('Stopped', reportDisplay(item.stopped),
                   const Color(0xFFFF3D00)),
               _stat('Idle', reportDisplay(item.idle), const Color(0xFFFFC107)),
             ],

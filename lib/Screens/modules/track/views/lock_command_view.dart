@@ -137,7 +137,7 @@ class LockCommandView extends StatelessWidget {
             child: _buildHistoryTile(
               title: "Stop Engine",
               time: "Sent on Oct 17, 2025 5:38:08 PM",
-              status: "Engine Stoped successfully",
+              status: "Engine Stopped successfully",
               color: const Color(0xFFFF5252),
               iconPath: 'lib/Asset/Icons/Lock.png',
             ),

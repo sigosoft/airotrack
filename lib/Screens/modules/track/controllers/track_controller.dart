@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
@@ -133,7 +134,7 @@ class TrackController extends GetxController {
   /// Stable marker child. Rebuilding Image/Obx every frame causes flicker.
   Widget? _vehicleMarkerChild;
 
-  /// Streets map by default; user can switch to satellite via the map button.
+  /// Streets map by default; the map button switches to satellite or terrain.
   final mapType = gmaps.MapType.normal.obs;
 
   /// Google's live traffic layer (green / orange / red roads). Free in the
@@ -142,11 +143,76 @@ class TrackController extends GetxController {
 
   void toggleTraffic() => trafficEnabled.value = !trafficEnabled.value;
 
-  void toggleMapStyle() {
-    mapType.value = mapType.value == gmaps.MapType.normal
-        ? gmaps.MapType.hybrid
-        : gmaps.MapType.normal;
+  /// Compass: false = heading-up (the map turns with the car), true =
+  /// north-up (north stays at the top and the car turns instead). The camera
+  /// eases to the new bearing with the same smoothing as heading-up.
+  final northUp = false.obs;
+
+  /// Camera bearing for the compass needle, updated when it moves ≥ 0.5°.
+  final ValueNotifier<double> _compassNotifier = ValueNotifier<double>(0);
+  ValueListenable<double> get compassBearing => _compassNotifier;
+
+  void toggleNorthUp() {
+    northUp.value = !northUp.value;
+    _lastCameraBearingAt = null;
+    _lastSentCameraBearing = null;
   }
+
+  /// 3D view: tilts the camera and shows Google's 3D buildings. The tilt
+  /// eases in and out like the bearing. While tilted the camera centres on
+  /// the car (no "behind the car" offset for the bottom sheet), so the car
+  /// overlay stays at the screen centre, where the flat projection is exact.
+  final is3D = false.obs;
+  static const double _tilt3D = 55.0;
+  static const double _tiltTau = 0.25;
+  double _cameraTilt = 0.0;
+  double? _lastSentCameraTilt;
+  DateTime? _lastTiltAt;
+
+  /// Camera tilt for the car overlay, so the car lies on the tilted ground.
+  final ValueNotifier<double> _tiltNotifier = ValueNotifier<double>(0);
+
+  void toggle3D() {
+    is3D.value = !is3D.value;
+    _lastTiltAt = null;
+    _lastSentCameraTarget = null;
+  }
+
+  void _updateCameraTilt() {
+    final goal = is3D.value ? _tilt3D : 0.0;
+    final now = DateTime.now();
+    final last = _lastTiltAt;
+    _lastTiltAt = now;
+    if (last == null || (_cameraTilt - goal).abs() < 0.05) {
+      if ((_cameraTilt - goal).abs() < 0.05) _cameraTilt = goal;
+      return;
+    }
+    final dt = (now.difference(last).inMicroseconds / 1e6).clamp(0.0, 0.1);
+    final alpha = 1.0 - math.exp(-dt / _tiltTau);
+    final step = (goal - _cameraTilt) * alpha;
+    // A small floor so the last degree doesn't crawl.
+    _cameraTilt += step.abs() < 0.2
+        ? (goal - _cameraTilt).clamp(-0.2, 0.2)
+        : step;
+  }
+
+  void _syncTilt() {
+    if ((_tiltNotifier.value - _cameraTilt).abs() >= 0.2 ||
+        (_cameraTilt == 0 && _tiltNotifier.value != 0)) {
+      _tiltNotifier.value = _cameraTilt;
+    }
+  }
+
+  void _syncCompass() {
+    if (_shortestBearingDelta(_compassNotifier.value, _cameraBearing).abs() >=
+        0.5) {
+      _compassNotifier.value = _cameraBearing;
+    }
+  }
+
+  /// Map button chooser: Default (streets), Satellite (with labels) or
+  /// Terrain (hills and relief).
+  void setMapType(gmaps.MapType type) => mapType.value = type;
 
   bool _isFetchingSnapshot = false;
   bool _disposed = false;
@@ -659,6 +725,7 @@ class TrackController extends GetxController {
 
     // Clamp so a backgrounded app does not resume with a huge jump.
     dt = dt.clamp(1 / 240, 0.1);
+    _stepFling(dt);
     _glide(dt);
   }
 
@@ -842,7 +909,7 @@ class TrackController extends GetxController {
       _headingNotifier.value = bearing;
       animatedRotation.value = bearing;
       // First heading: open the map already facing the travel direction.
-      if (isLocked.value) _cameraBearing = bearing;
+      if (isLocked.value && !northUp.value) _cameraBearing = bearing;
       _hasHeading = true;
       return;
     }
@@ -917,7 +984,12 @@ class TrackController extends GetxController {
       _followWasPaused = false;
       _lastSentCameraTarget = null;
       _lastSentCameraBearing = null;
-      _resumedAt = DateTime.now();
+      // Hold the marker through the jump back only if it is the car now; if
+      // the map was idle the Flutter car is showing and simply follows.
+      _resumedAt = _dragMarkerVisible ? DateTime.now() : null;
+      // Glide back to the car instead of snapping there.
+      _resumeFrom = _cameraTarget;
+      _resumeGlideAt = DateTime.now();
     }
     if (paused) _followWasPaused = true;
 
@@ -927,7 +999,15 @@ class TrackController extends GetxController {
     final resumeAt = _resumedAt;
     final resuming = resumeAt != null &&
         DateTime.now().difference(resumeAt).inMilliseconds < _resumeHoldMs;
-    final nativeCar = !isLocked.value || _followPaused || resuming;
+    // Once the map stands still (finger up, no fling) the Flutter car draws
+    // it again: the camera is fixed, so the overlay sits exactly on the road
+    // and glides every frame. The marker only updates every 250 ms, so a
+    // moving car stepped ~1 m at a time ("jumping") during the 3 s pause.
+    // Tilted (3D) the overlay can't be placed off-centre, so keep the marker.
+    // Flat map: the app pans the camera itself, so the overlay always knows
+    // the exact camera and draws the car; Google's marker is never needed.
+    final nativeCar = !_appPans &&
+        (((!isLocked.value || _followPaused) && !_mapIdle) || resuming);
     _syncDragCarMarker(point, nativeCar);
 
     // Camera first, so the overlay projects against this frame's camera.
@@ -936,6 +1016,7 @@ class TrackController extends GetxController {
     // moves with the road under the finger instead of staying put on screen.
     if (isLocked.value && !paused) {
       _updateCameraBearing();
+      _updateCameraTilt();
       _followCamera(point);
     }
     if (nativeCar && _overlayHandedOver) {
@@ -978,6 +1059,46 @@ class TrackController extends GetxController {
   static const int _resumeHoldMs = 300;
   DateTime? _resumedAt;
 
+  /// Last time onCameraMove reported the map actually moving.
+  DateTime? _lastCameraMoveAt;
+
+  /// Measured on a device: after the finger lifts, the map's position
+  /// reports can pause ~300 ms and then show it moved another 20 m (the
+  /// fling). 200 ms called the map still too early, so the car swapped to
+  /// the Flutter car, back to the marker, and again: a visible jump each
+  /// time at speed (the marker lags up to 250 ms, ~4 m at 57 km/h).
+  static const int _mapIdleMs = 600;
+
+  /// Once the map has gone still after a touch, the Flutter car stays until
+  /// the next touch; late reports just move it with the map, no swap back.
+  bool _idleLatched = false;
+
+  /// Set when Google's map took over a touch (PointerCancel): we then got no
+  /// finger moves, and measured on a device its first camera report came
+  /// only ~1.2 s after the touch, as one 100+ m jump. Until that report the
+  /// app's camera is stale, so the Flutter car would be drawn at the old
+  /// centre (it jumped there, then back). Cleared by the first report.
+  DateTime? _awaitCameraReportSince;
+  static const int _awaitCameraReportMs = 1500;
+
+  /// No finger on the map and no camera movement for [_mapIdleMs].
+  bool get _mapIdle {
+    if (_pointerNow.isNotEmpty || _userDragging || _touchHold) return false;
+    if (_cameraTilt > 0.5) return false;
+    if (_idleLatched) return true;
+    final waitingSince = _awaitCameraReportSince;
+    if (waitingSince != null &&
+        DateTime.now().difference(waitingSince).inMilliseconds <
+            _awaitCameraReportMs) {
+      return false;
+    }
+    final last = _lastCameraMoveAt;
+    final idle = last == null ||
+        DateTime.now().difference(last).inMilliseconds >= _mapIdleMs;
+    if (idle) _idleLatched = true;
+    return idle;
+  }
+
   /// True once the Google marker has taken over drawing the car.
   bool get _overlayHandedOver {
     final shown = _dragMarkerShownAt;
@@ -988,8 +1109,10 @@ class TrackController extends GetxController {
   }
 
   /// Marker updates are throttled: rebuilding a Google marker every frame is
-  /// what made the native car blink before.
-  static const int _dragMarkerIntervalMs = 250;
+  /// what made the native car blink before. 250 ms was too coarse at speed:
+  /// recorded at 78 km/h, the car stepped ~5 m (15 px) at a time during a
+  /// drag. 100 ms keeps steps ~2 m.
+  static const int _dragMarkerIntervalMs = 100;
 
   Future<void> _loadCarIcon() async {
     try {
@@ -1062,8 +1185,16 @@ class TrackController extends GetxController {
     }
 
     if (_dragMarkerVisible) {
+      // Let the marker's first appearance finish (~170 ms on a device) before
+      // updating it: an update at 100 ms restarted it, so it wasn't drawn yet
+      // when the Flutter car hid and the car vanished for ~0.15 s.
+      final shownAt = _dragMarkerShownAt;
+      if (shownAt != null &&
+          now.difference(shownAt).inMilliseconds < _markerHandoverMs) {
+        return;
+      }
       // Rebuilding a Google marker redraws its icon, which can flash. Only
-      // rebuild when the car really moved or turned, at most every 250 ms.
+      // rebuild when the car really moved or turned, at most every 100 ms.
       final last = _lastDragMarkerAt;
       if (last != null &&
           now.difference(last).inMilliseconds < _dragMarkerIntervalMs) {
@@ -1088,14 +1219,16 @@ class TrackController extends GetxController {
 
   DateTime? _lastCameraBearingAt;
 
-  /// Ease the camera bearing toward the car heading (heading-up map).
+  /// Ease the camera bearing toward the car heading (heading-up map), or
+  /// toward north when the compass is set to north-up.
   void _updateCameraBearing() {
-    if (!_hasHeading) return;
+    if (!_hasHeading && !northUp.value) return;
     final now = DateTime.now();
     final last = _lastCameraBearingAt;
     _lastCameraBearingAt = now;
     if (last == null) return;
-    final delta = _shortestBearingDelta(_cameraBearing, _uiHeading);
+    final goal = northUp.value ? 0.0 : _uiHeading;
+    final delta = _shortestBearingDelta(_cameraBearing, goal);
     final dt = (now.difference(last).inMicroseconds / 1e6).clamp(0.0, 0.1);
     final alpha = 1.0 - math.exp(-dt / _cameraBearingTau);
     final maxStep = _maxCameraBearingDegPerSec * dt;
@@ -1109,6 +1242,8 @@ class TrackController extends GetxController {
     if (_shortestBearingDelta(_markerAngleNotifier.value, angle).abs() >= 0.12) {
       _markerAngleNotifier.value = angle;
     }
+    _syncCompass();
+    _syncTilt();
   }
 
   /// While locked the camera centre is the marker point. Because both are
@@ -1122,10 +1257,13 @@ class TrackController extends GetxController {
     }
 
     var target = point;
-    if (showBottomSheet.value) {
+    // Fades out as the camera tilts: tilted, the car stays at the centre.
+    final flatness = (1.0 - _cameraTilt / _tilt3D).clamp(0.0, 1.0);
+    if (showBottomSheet.value && flatness > 0) {
       // Push the camera centre "behind" the car (screen-down in a heading-up
       // map), so the car sits above the sheet with the road ahead above it.
-      final offsetDeg = 0.0012 * math.pow(2, 15.0 - zoom).toDouble();
+      final offsetDeg =
+          0.0012 * math.pow(2, 15.0 - zoom).toDouble() * flatness;
       final b = _cameraBearing * math.pi / 180;
       final cosLat = math.cos(point.latitude * math.pi / 180).abs();
       target = LatLng(
@@ -1135,7 +1273,129 @@ class TrackController extends GetxController {
       );
     }
 
+    // After a drag, ease from where the user left the map back onto the car
+    // over [_resumeGlideMs]. Snapping there looked like the map jumping.
+    final from = _resumeFrom;
+    final glideAt = _resumeGlideAt;
+    if (from != null && glideAt != null) {
+      final t = DateTime.now().difference(glideAt).inMilliseconds /
+          _resumeGlideMs;
+      if (t >= 1.0) {
+        _resumeFrom = null;
+        _resumeGlideAt = null;
+      } else {
+        final e = t < 0.5
+            ? 4 * t * t * t
+            : 1 - math.pow(-2 * t + 2, 3).toDouble() / 2;
+        target = LatLng(
+          from.latitude + (target.latitude - from.latitude) * e,
+          from.longitude + (target.longitude - from.longitude) * e,
+        );
+      }
+    }
+
     _moveCamera(target, zoom);
+  }
+
+  /// Google draws a camera we push about a frame later than the Flutter car
+  /// that is placed in the same step. Recorded on a device: in fast moves
+  /// (a drag start, the glide back) the car ran 20-40 px ahead of its road
+  /// for that frame. So the car is placed for the camera of ~[_mapLagMs]
+  /// ago, which is what the map is actually showing.
+  static const int _mapLagMs = 40;
+
+  /// Last time the camera we push actually changed.
+  DateTime? _lastCameraChangeAt;
+  final List<(DateTime, LatLng)> _cameraHistory = [];
+
+  void _recordCamera(LatLng target) {
+    final now = DateTime.now();
+    _cameraHistory.add((now, target));
+    while (_cameraHistory.length > 2 &&
+        now.difference(_cameraHistory[1].$1).inMilliseconds > _mapLagMs) {
+      _cameraHistory.removeAt(0);
+    }
+  }
+
+  /// The camera the map is showing now: the newest pushed one that is at
+  /// least [_mapLagMs] old (or the current one if none is).
+  LatLng? _shownCameraTarget() {
+    final current = _cameraTarget;
+    if (current == null || _cameraHistory.isEmpty) return current;
+    final cutoff = DateTime.now().subtract(
+      const Duration(milliseconds: _mapLagMs),
+    );
+    LatLng? shown;
+    for (final (at, target) in _cameraHistory) {
+      if (at.isAfter(cutoff)) break;
+      shown = target;
+    }
+    // A camera set from the map's own report (Google panning, in 3D) isn't
+    // in the history: use it as it is.
+    if (shown == null || _cameraHistory.last.$2 != current) return current;
+    return shown;
+  }
+
+  LatLng? _resumeFrom;
+  DateTime? _resumeGlideAt;
+  static const int _resumeGlideMs = 600;
+
+  /// One-finger pans on the flat map are done by the app (Google's own
+  /// scroll gesture is off): the camera is moved here, from the finger, in
+  /// the same frame the car overlay is placed. Measured on a device, Google
+  /// reported its camera during a drag rarely or only after the finger
+  /// lifted (one 120-196 m jump), so the overlay was placed against a stale
+  /// map: the car slid off its road, showed twice next to Google's marker,
+  /// then jumped. In 3D (tilted) the overlay can't be placed off-centre, so
+  /// Google pans and its marker draws the car, as before.
+  bool get _appPans => !is3D.value && _cameraTilt < 0.5;
+
+  Offset? _lastPanPos;
+  DateTime? _lastPanAt;
+  final List<(DateTime, Offset)> _panSamples = [];
+  Offset _flingV = Offset.zero; // px/s
+  // A quick flick threw the car off screen for ~1 s at 0.35 s / no cap.
+  static const double _flingTau = 0.25;
+  static const double _maxFlingSpeed = 2500; // px/s
+
+  /// Moves the camera so the map follows a finger movement of [d] logical px.
+  void _panBy(Offset d) {
+    final cam = _cameraTarget;
+    if (cam == null || _mapSize.isEmpty || d == Offset.zero) return;
+    final scale = _tileSize * math.pow(2, _cameraZoom).toDouble();
+    final b = _cameraBearing * math.pi / 180;
+    final cosB = math.cos(b);
+    final sinB = math.sin(b);
+    // Screen -> world: inverse of the rotation in [_projectToScreen].
+    final wx = d.dx * cosB - d.dy * sinB;
+    final wy = d.dx * sinB + d.dy * cosB;
+    final s = math.sin(cam.latitude * math.pi / 180).clamp(-0.9999, 0.9999);
+    final camX = (cam.longitude + 180.0) / 360.0 * scale;
+    final camY = (0.5 - math.log((1 + s) / (1 - s)) / (4 * math.pi)) * scale;
+    // The map moves with the finger, so the camera moves the other way.
+    final nx = camX - wx;
+    final ny = camY - wy;
+    final lng = nx / scale * 360.0 - 180.0;
+    final n = math.pi - 2 * math.pi * ny / scale;
+    final lat = 180 / math.pi * math.atan((math.exp(n) - math.exp(-n)) / 2);
+    _lastPanAt = DateTime.now();
+    _moveCamera(LatLng(lat, lng), _cameraZoom);
+    if (_pathLat != 0.0 || _pathLng != 0.0) {
+      _syncMarkerPosition(_publishedPoint());
+    }
+  }
+
+  /// Fling after the finger lifts: keeps panning, slowing down.
+  void _stepFling(double dt) {
+    if (_flingV == Offset.zero) return;
+    if (!_appPans || _pointerNow.isNotEmpty) {
+      _flingV = Offset.zero;
+      return;
+    }
+    _panBy(_flingV * dt);
+    _flingV = _flingV * math.exp(-dt / _flingTau);
+    _dragEndedAt = DateTime.now(); // the 3 s wait starts when it stops
+    if (_flingV.distance < 40) _flingV = Offset.zero;
   }
 
   /// Instant (non-animated) heading-up, top-down camera move. Skipped when
@@ -1145,13 +1405,16 @@ class TrackController extends GetxController {
     if (controller == null) return;
 
     _cameraTarget = target;
+    _recordCamera(target);
     _cameraZoom = zoom;
     final bearing = _cameraBearing;
+    final tilt = _cameraTilt;
 
     final last = _lastSentCameraTarget;
     final lastBearing = _lastSentCameraBearing;
     if (last != null &&
         _lastSentCameraZoom == zoom &&
+        _lastSentCameraTilt == tilt &&
         lastBearing != null &&
         _shortestBearingDelta(lastBearing, bearing).abs() < 0.01 &&
         (last.latitude - target.latitude).abs() < 1e-9 &&
@@ -1161,7 +1424,9 @@ class TrackController extends GetxController {
     _lastSentCameraTarget = target;
     _lastSentCameraZoom = zoom;
     _lastSentCameraBearing = bearing;
+    _lastSentCameraTilt = tilt;
     _cameraZoom = zoom;
+    _lastCameraChangeAt = DateTime.now();
 
     controller
         .moveCamera(
@@ -1170,6 +1435,7 @@ class TrackController extends GetxController {
               target: gmaps.LatLng(target.latitude, target.longitude),
               zoom: zoom,
               bearing: bearing,
+              tilt: tilt,
             ),
           ),
         )
@@ -1284,17 +1550,34 @@ class TrackController extends GetxController {
       try {
         List<LatLng> road = const [];
 
-        road = await _directionsService.getRoute(fromPt, toPt, smooth: false);
-
-        // No road, or a route that U-turns (typical on a divided highway when
-        // the car sits on the other carriageway): follow the GPS trace instead.
-        if (traceCopy.length >= 2 &&
-            (road.length < 2 || _roadStartsBackward(road))) {
+        // Snap the vehicle's real GPS trail onto the roads (Map Matching, as
+        // History does), not the quickest route from the car to the fix.
+        // Recorded in Thrissur town (fixes 130-200 m apart, one-way Swaraj
+        // Round): the quickest route cut through lanes the vehicle never used
+        // and the car drove ~25 m beside the road it was really on.
+        if (traceCopy.length >= 2) {
+          final recent = traceCopy.length > 6
+              ? traceCopy.sublist(traceCopy.length - 6)
+              : traceCopy;
           final matched = await _directionsService.matchTrace(
-            traceCopy,
+            recent,
             radiusMeters: 25,
           );
-          if (matched.length >= 2) road = matched;
+          // Use it only if it runs past where the car is now.
+          if (matched.length >= 2 &&
+              _calculateDistance(
+                    fromPt,
+                    _closestPointOnPolyline(fromPt, matched),
+                  ) <
+                  15.0 &&
+              !_roadStartsBackward(matched)) {
+            road = matched;
+          }
+        }
+
+        // No trail yet, or it couldn't be matched: the route to the fix.
+        if (road.length < 2) {
+          road = await _directionsService.getRoute(fromPt, toPt, smooth: false);
         }
 
         if (_disposed) return;
@@ -1307,7 +1590,12 @@ class TrackController extends GetxController {
           return;
         }
 
-        final routeLenM = _pathLengthMeters(road);
+        // Length of the part the car will drive: from the car to the fix (a
+        // matched trail also covers road behind the car).
+        final routeLenM = _pathLengthMeters(_trimRouteToUpdate(
+          _trimRouteAhead(_closestPointOnPolyline(fromPt, road), road),
+          toPt,
+        ));
 
         if (straightM > 0.5 &&
             routeLenM > straightM * 4.5 &&
@@ -1769,11 +2057,16 @@ class TrackController extends GetxController {
     // While following, these are echoes of our own pushes: ignore them.
     // During a user drag they are the real map, so adopt them.
     if (isLocked.value && !_followPaused) return;
+    // Flat map: the app pans the camera, so these are late echoes of our own
+    // moves; adopting them would drag the car backwards.
+    if (_appPans) return;
+    _awaitCameraReportSince = null;
     final prevTarget = _cameraTarget;
     if (prevTarget != null &&
         ((prevTarget.latitude - position.target.latitude).abs() > 1e-7 ||
             (prevTarget.longitude - position.target.longitude).abs() > 1e-7)) {
       _mapMovedSinceTouch = true;
+      _lastCameraMoveAt = DateTime.now();
       // The map is still being moved (a drag the map took over, or a fling):
       // keep following paused until it has been still for [_recenterDelay].
       if (!_userDragging && !_touchHold) _dragEndedAt = DateTime.now();
@@ -1783,6 +2076,8 @@ class TrackController extends GetxController {
     }
     _cameraZoom = position.zoom;
     _cameraBearing = _normalizeBearing(position.bearing);
+    _cameraTilt = position.tilt;
+    _syncCompass();
     _cameraTarget = LatLng(position.target.latitude, position.target.longitude);
     // Keep the Flutter car glued until the Google marker has taken over (or
     // if the marker icon could not be loaded).
@@ -1821,14 +2116,35 @@ class TrackController extends GetxController {
       _touchHold = true;
       _mapMovedSinceTouch = false;
       _pointerAtCameraReport = null;
+      _awaitCameraReportSince = null;
+      _idleLatched = false;
+      // A touch stops a fling or a glide back to the car where it is.
+      _flingV = Offset.zero;
+      _resumeFrom = null;
+      _resumeGlideAt = null;
+      _lastPanPos = e.position;
+      _panSamples
+        ..clear()
+        ..add((DateTime.now(), e.position));
     }
     if (_pointerNow.length >= 2) {
-      // Two fingers is a pinch (app zoom), not a pan: keep following.
+      // Two fingers is a pinch (app zoom), not a pan: keep following, and
+      // forget anything the first finger started. Before, a slight pan under
+      // the first finger counted as a drag, so after every pinch following
+      // paused for [_recenterDelay] and the car drove off while the map
+      // stood still (it looked stuck).
       _userDragging = false;
       _touchHold = false;
+      _mapMovedSinceTouch = false;
+      _dragEndedAt = null;
+      _pinchInTouch = true;
       _startPinch();
     }
   }
+
+  /// True from the second finger until all fingers lift: the touch is a
+  /// pinch, so lifting resumes following at once.
+  bool _pinchInTouch = false;
 
   void _startPinch() {
     final d = _pinchDistance();
@@ -1874,11 +2190,41 @@ class TrackController extends GetxController {
       _userDragging = true;
       _dragEndedAt = null;
     }
+    if (_appPans) {
+      // The app moves the map under the finger (from the touch point, so the
+      // slop isn't lost) and places the car in the same step.
+      if (_userDragging && _pointerNow.length == 1) {
+        final last = _lastPanPos ?? e.position;
+        _panBy(e.position - last);
+        _lastPanPos = e.position;
+        final now = DateTime.now();
+        _panSamples.add((now, e.position));
+        _panSamples.removeWhere(
+            (s) => now.difference(s.$1).inMilliseconds > 100);
+      }
+      return;
+    }
     // Until the marker takes over, move the Flutter car with the finger on
     // this very event instead of waiting for the next frame.
     if (!_overlayHandedOver && _pointerNow.length == 1) {
       _syncMarkerPosition(_publishedPoint());
     }
+  }
+
+  /// Finger speed over the last 100 ms, for the fling.
+  Offset _releaseVelocity() {
+    if (_panSamples.length < 2) return Offset.zero;
+    final first = _panSamples.first;
+    final last = _panSamples.last;
+    final ms = last.$1.difference(first.$1).inMilliseconds;
+    if (ms < 10) return Offset.zero;
+    // Finger stopped before lifting: no fling.
+    if (DateTime.now().difference(last.$1).inMilliseconds > 60) {
+      return Offset.zero;
+    }
+    var v = (last.$2 - first.$2) * (1000.0 / ms);
+    if (v.distance > _maxFlingSpeed) v = v * (_maxFlingSpeed / v.distance);
+    return v.distance < 300 ? Offset.zero : v;
   }
 
   void onMapPointerUp(PointerEvent e) {
@@ -1892,14 +2238,22 @@ class TrackController extends GetxController {
       // A tap (no drag) resumes following at once; a drag waits
       // [_recenterDelay] so the map can be looked at.
       _touchHold = false;
-      if (_userDragging || _mapMovedSinceTouch) {
+      if (_pinchInTouch) {
+        // A pinch: keep following, no pause.
+        _pinchInTouch = false;
+        _userDragging = false;
+        _mapMovedSinceTouch = false;
+        _dragEndedAt = null;
+      } else if (_userDragging || _mapMovedSinceTouch) {
+        if (_appPans && _userDragging) _flingV = _releaseVelocity();
         _userDragging = false;
         _dragEndedAt = DateTime.now();
       } else if (e is PointerCancelEvent) {
         // The map took over the touch (a slow drag that hadn't passed our
         // slop yet). The finger may still be moving the map, so don't follow
         // at once: a short grace, extended by onCameraMove while the map
-        // keeps moving.
+        // keeps moving. Keep Google's car until the map reports where it is.
+        _awaitCameraReportSince = DateTime.now();
         _dragEndedAt = DateTime.now().subtract(
           _recenterDelay - const Duration(milliseconds: 500),
         );
@@ -1956,7 +2310,11 @@ class TrackController extends GetxController {
     _lastSentCameraTarget = null;
     _lastSentCameraBearing = null;
     if (resetZoom) _userAdjustedZoom = false;
-    if (_hasHeading) _cameraBearing = _uiHeading;
+    if (northUp.value) {
+      _cameraBearing = 0;
+    } else if (_hasHeading) {
+      _cameraBearing = _uiHeading;
+    }
     if (_pathLat == 0.0 && _pathLng == 0.0) return;
     _followCamera(_publishedPoint());
   }
@@ -2177,6 +2535,21 @@ class TrackController extends GetxController {
     if (_calibBusy || (last != null && now.difference(last).inMilliseconds < 1500)) {
       return;
     }
+    // The flat projection doesn't model tilt; measuring a tilted map would
+    // throw the scale off.
+    if (_cameraTilt > 0.5) return;
+    // While the app pans, Google draws a frame or two behind our camera, so
+    // its answer would be for an older camera than the one we compare with.
+    final panAt = _lastPanAt;
+    if (panAt != null && now.difference(panAt).inMilliseconds < 800) return;
+    // Only while the camera stands still. Following a moving car, the
+    // camera moves every frame and Google answers a few hundred ms later for
+    // a newer camera: recorded on a device, that swung the scale between 216
+    // and 244 in 20 s, sliding the car along its road by 5-15%.
+    final changed = _lastCameraChangeAt;
+    if (changed != null && now.difference(changed).inMilliseconds < 1000) {
+      return;
+    }
     final mine = _projectToScreen(point);
     if (mine == null) return;
     final centre = Offset(_mapSize.width / 2, _mapSize.height / 2);
@@ -2210,7 +2583,7 @@ class TrackController extends GetxController {
   /// tile at zoom 0, camera target at the viewport centre, no tilt), rotated
   /// by the camera bearing so it matches the heading-up map.
   Offset? _projectToScreen(LatLng p, {LatLng? camera}) {
-    final cam = camera ?? _cameraTarget;
+    final cam = camera ?? _shownCameraTarget();
     if (cam == null || _mapSize.isEmpty) return null;
 
     final scale = _tileSize * math.pow(2, _cameraZoom).toDouble();
@@ -2269,10 +2642,23 @@ class TrackController extends GetxController {
         child: ValueListenableBuilder<double>(
           valueListenable: _markerAngleNotifier,
           builder: (context, angleDeg, child) {
-            return Transform.rotate(
-              angle: angleDeg * (math.pi / 180),
-              filterQuality: FilterQuality.medium,
+            // Turned to the heading, then laid back onto the tilted ground
+            // (3D view) so it matches Google's flat marker in perspective.
+            return ValueListenableBuilder<double>(
+              valueListenable: _tiltNotifier,
               child: child,
+              builder: (context, tiltDeg, child) {
+                final m = Matrix4.identity()
+                  ..setEntry(3, 2, 0.002)
+                  ..rotateX(-tiltDeg * math.pi / 180)
+                  ..rotateZ(angleDeg * math.pi / 180);
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: m,
+                  filterQuality: FilterQuality.medium,
+                  child: child,
+                );
+              },
             );
           },
           child: Image.asset(
@@ -2424,6 +2810,11 @@ class TrackController extends GetxController {
     _lastCameraBearingAt = null;
     _lastSentCameraBearing = null;
     _markerAngleNotifier.value = 0;
+    _compassNotifier.value = 0;
+    _cameraTilt = 0;
+    _lastSentCameraTilt = null;
+    _lastTiltAt = null;
+    _tiltNotifier.value = 0;
 
     vehicleScreenOffset.value = null;
     _vehicleMarkerChild = null;

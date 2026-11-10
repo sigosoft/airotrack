@@ -58,21 +58,28 @@ class TrackView extends GetView<TrackController> {
                             },
                             circles: controller.vehicleGeofenceCircles.toSet(),
                             polygons: controller.vehicleGeofencePolygons.toSet(),
-                            // Top-down, never tilted. The app turns the map
-                            // to the car's heading; users can't spin it.
+                            // The app turns and tilts the map (heading, 3D
+                            // button); users can't spin or tilt it by hand.
                             rotateGesturesEnabled: false,
                             // Pinch zoom is done by the app so it zooms around
                             // the car like + and -, without fighting follow.
                             zoomGesturesEnabled: false,
-                            scrollGesturesEnabled:
+                            // Flat map: one-finger pans are done by the app
+                            // (so the car always sits on its road). In 3D,
+                            // Google pans as before.
+                            scrollGesturesEnabled: controller.is3D.value &&
                                 !controller.pinchActive.value,
                             tiltGesturesEnabled: false,
-                            buildingsEnabled: false,
+                            // 3D buildings with the 3D view only.
+                            buildingsEnabled: controller.is3D.value,
                             compassEnabled: false,
                             zoomControlsEnabled: false,
                             myLocationButtonEnabled: false,
                             mapToolbarEnabled: false,
-                            indoorViewEnabled: false,
+                            // Indoor floor plans (malls, airports, parking
+                            // buildings Google has mapped) show when zoomed
+                            // in on one, with Google's floor picker.
+                            indoorViewEnabled: true,
                             minMaxZoomPreference:
                                 const MinMaxZoomPreference(3, 20),
                           ),
@@ -111,7 +118,7 @@ class TrackView extends GetView<TrackController> {
                       _buildMapControl(
                         'lib/Asset/Icons/map.png',
                         context,
-                        onTap: controller.toggleMapStyle,
+                        onTap: () => _showMapTypeSheet(context),
                       ),
                       SizedBox(height: height * 0.012),
                       // Live traffic on/off; blue border while on.
@@ -121,6 +128,46 @@ class TrackView extends GetView<TrackController> {
                           context,
                           onTap: controller.toggleTraffic,
                           active: controller.trafficEnabled.value,
+                        ),
+                      ),
+                      SizedBox(height: height * 0.012),
+                      // Compass: the needle points to north as the map turns.
+                      // Tap to switch heading-up / north-up (blue border
+                      // while north-up).
+                      Obx(
+                        () => _buildMapControl(
+                          null,
+                          context,
+                          onTap: controller.toggleNorthUp,
+                          active: controller.northUp.value,
+                          child: ValueListenableBuilder<double>(
+                            valueListenable: controller.compassBearing,
+                            builder: (_, bearing, __) => Transform.rotate(
+                              angle: -bearing * math.pi / 180,
+                              child: SizedBox(
+                                width: width * 0.06,
+                                height: width * 0.06,
+                                child: const CustomPaint(
+                                  painter: _CompassNeedlePainter(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: height * 0.012),
+                      // 3D view: tilted camera + 3D buildings; blue border
+                      // while on.
+                      Obx(
+                        () => _buildMapControl(
+                          null,
+                          context,
+                          text: '3D',
+                          textColor: controller.is3D.value
+                              ? const Color(0xFF009FE3)
+                              : Colors.black,
+                          onTap: controller.toggle3D,
+                          active: controller.is3D.value,
                         ),
                       ),
                       SizedBox(height: height * 0.012),
@@ -187,6 +234,88 @@ class TrackView extends GetView<TrackController> {
     );
   }
 
+  /// Map type chooser from the map button: Default, Satellite, Terrain.
+  void _showMapTypeSheet(BuildContext context) {
+    const options = [
+      (MapType.normal, 'Default', Icons.map_outlined),
+      (MapType.hybrid, 'Satellite', Icons.satellite_alt_outlined),
+      (MapType.terrain, 'Terrain', Icons.terrain_outlined),
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Map type',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Obx(
+                () => Row(
+                  children: [
+                    for (final (type, label, icon) in options)
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            controller.setMapType(type);
+                            Navigator.of(sheetContext).pop();
+                          },
+                          child: _mapTypeOption(
+                            label,
+                            icon,
+                            controller.mapType.value == type,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mapTypeOption(String label, IconData icon, bool selected) {
+    const blue = Color(0xFF009FE3);
+    return Column(
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: selected ? blue.withOpacity(0.08) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? blue : Colors.grey.shade300,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Icon(icon, size: 30, color: selected ? blue : Colors.black87),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+            color: selected ? blue : Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildMapControl(
     String? imagePath,
     BuildContext context, {
@@ -196,6 +325,7 @@ class TrackView extends GetView<TrackController> {
     Color? textColor,
     VoidCallback? onTap,
     bool active = false, // on/off buttons: blue border while on
+    Widget? child, // custom content (e.g. the compass needle)
   }) {
     final width = MediaQuery.of(context).size.width;
     return GestureDetector(
@@ -218,7 +348,8 @@ class TrackView extends GetView<TrackController> {
           ],
         ),
         child: Center(
-          child: imagePath != null
+          child: child ??
+              (imagePath != null
               ? Image.asset(
                   imagePath,
                   width: width * 0.05,
@@ -237,7 +368,7 @@ class TrackView extends GetView<TrackController> {
                   iconData,
                   color: color ?? Colors.black,
                   size: width * 0.06,
-                ),
+                )),
         ),
       ),
     );
@@ -1587,4 +1718,40 @@ class GaugePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Compass needle: red half points north, grey half south, drawn pointing
+/// up; the view rotates it by minus the camera bearing.
+class _CompassNeedlePainter extends CustomPainter {
+  const _CompassNeedlePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final halfW = size.width * 0.2;
+    final halfH = size.height * 0.48;
+
+    final north = Path()
+      ..moveTo(cx, cy - halfH)
+      ..lineTo(cx + halfW, cy)
+      ..lineTo(cx - halfW, cy)
+      ..close();
+    final south = Path()
+      ..moveTo(cx, cy + halfH)
+      ..lineTo(cx + halfW, cy)
+      ..lineTo(cx - halfW, cy)
+      ..close();
+
+    canvas.drawPath(north, Paint()..color = const Color(0xFFE53935));
+    canvas.drawPath(south, Paint()..color = const Color(0xFF9E9E9E));
+    canvas.drawCircle(
+      Offset(cx, cy),
+      size.width * 0.07,
+      Paint()..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CompassNeedlePainter oldDelegate) => false;
 }

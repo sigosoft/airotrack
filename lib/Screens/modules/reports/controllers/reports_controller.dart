@@ -77,6 +77,10 @@ class ReportsController extends GetxController {
   final selectedPlate = 'All vehicles'.obs;
   final searchQuery = ''.obs;
 
+  /// Range picked from the calendar; used when [selectedPeriod] is 'Custom'.
+  final customFrom = Rxn<DateTime>();
+  final customTo = Rxn<DateTime>();
+
   ReportType? reportType;
   var currentPage = 1;
   static const int _pageLimit = 50;
@@ -120,7 +124,8 @@ class ReportsController extends GetxController {
 
   /// Called by each report list view to bind endpoint + fetch.
   void configure(ReportType type) {
-    final key = '${type.name}|${selectedPeriod.value}|${selectedImei.value}';
+    final key = '${type.name}|${selectedPeriod.value}|'
+        '${customFrom.value}|${customTo.value}|${selectedImei.value}';
     if (_configuredKey == key) return;
     reportType = type;
     _configuredKey = key;
@@ -169,6 +174,16 @@ class ReportsController extends GetxController {
     }
   }
 
+  void setCustomRange(DateTime from, DateTime to) {
+    customFrom.value = from;
+    customTo.value = to;
+    selectedPeriod.value = 'Custom';
+    if (reportType != null && selectedImei.value.trim().isNotEmpty) {
+      _configuredKey = null;
+      loadItems(reset: true);
+    }
+  }
+
   void selectVehicle({String? imei, String? plate}) {
     selectedImei.value = imei ?? '';
     selectedPlate.value =
@@ -192,7 +207,11 @@ class ReportsController extends GetxController {
       }
       isLoading.value = true;
       await ensureApiToken();
-      final range = PeriodQuery.fromLabel(selectedPeriod.value);
+      final range = PeriodQuery.fromLabel(
+        selectedPeriod.value,
+        customFrom: customFrom.value,
+        customTo: customTo.value,
+      );
       // Dates only: when `period` is sent the server ignores from_date/to_date
       // (week = calendar week from Monday, custom = 422), so the range the
       // app shows would not match the data.

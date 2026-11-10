@@ -2,6 +2,7 @@ import 'package:airotrack/Models/ReportItem.dart';
 import 'package:airotrack/Screens/modules/reports/controllers/reports_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
 
 /// Shared list shell used by all report screens.
 class ReportListScaffold extends StatefulWidget {
@@ -118,15 +119,57 @@ class _ReportListScaffoldState extends State<ReportListScaffold> {
                     ),
                     const SizedBox(width: 8),
                   ],
-                  Image.asset(
-                    'lib/Asset/Icons/Calender.png',
-                    height: 28,
-                    width: 28,
+                  GestureDetector(
+                    onTap: _pickCustomRange,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: controller.selectedPeriod.value == 'Custom'
+                              ? const Color(0xFF009FE3)
+                              : Colors.transparent,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Image.asset(
+                        'lib/Asset/Icons/Calender.png',
+                        height: 28,
+                        width: 28,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
+          Obx(() {
+            final from = controller.customFrom.value;
+            final to = controller.customTo.value;
+            if (controller.selectedPeriod.value != 'Custom' ||
+                from == null ||
+                to == null) {
+              return const SizedBox.shrink();
+            }
+            final fmt = DateFormat('dd MMM yyyy');
+            final text = DateUtils.isSameDay(from, to)
+                ? fmt.format(from)
+                : '${fmt.format(from)} – ${fmt.format(to)}';
+            return Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    color: Color(0xFF009FE3),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            );
+          }),
           Expanded(
             child: Obx(() {
               final list = controller.filteredItems;
@@ -212,6 +255,31 @@ class _ReportListScaffoldState extends State<ReportListScaffold> {
         ],
       ),
     );
+  }
+
+  Future<void> _pickCustomRange() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final from = controller.customFrom.value;
+    final to = controller.customTo.value;
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(today.year - 2),
+      lastDate: today,
+      initialDateRange: from != null && to != null
+          ? DateTimeRange(start: from, end: to)
+          : DateTimeRange(start: today, end: today),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: Theme.of(context).colorScheme.copyWith(
+                primary: const Color(0xFF009FE3),
+              ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    controller.setCustomRange(picked.start, picked.end);
   }
 
   Widget _buildFilterTab(String text, bool isSelected, VoidCallback onTap) {

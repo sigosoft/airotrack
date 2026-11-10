@@ -65,7 +65,21 @@ class HistoryBottomNavBar extends StatelessWidget {
             assetPath: 'lib/Asset/Icons/statistics.png',
             label: "Statistics",
             isSelected: false,
-            onTap: () => Get.toNamed(Routes.STATISTICS),
+            // Pass this vehicle (as the Track screen's bar does); without it
+            // Statistics fell back to the first vehicle in the list.
+            onTap: () {
+              final statsImei = historyController.activeImei.trim();
+              final plate = historyController.vehicleId.value.trim();
+              Get.toNamed(
+                Routes.STATISTICS,
+                parameters: statsImei.isEmpty
+                    ? null
+                    : {
+                        'imei': statsImei,
+                        'plate': plate.isEmpty ? statsImei : plate,
+                      },
+              );
+            },
           ),
         ],
       ),

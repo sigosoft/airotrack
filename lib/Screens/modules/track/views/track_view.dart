@@ -468,13 +468,27 @@ class TrackView extends GetView<TrackController> {
   }
 
   Widget _buildDraggableBottomSheet() {
-    // Peek = the bottom nav (10% of the height, see AppBottomNavBar) plus a
-    // fixed ~95 dp for the plate and odometer. That is ~20% on the design
-    // phone, but more on short phones, where a flat 20% left the odometer
-    // hidden behind the nav bar.
-    final screenH = MediaQuery.of(Get.context!).size.height;
-    final peek = (0.10 + 95 / screenH).clamp(0.20, 0.40).toDouble();
-    final mid = math.max(0.45, peek + 0.05);
+    // Peek = the bottom nav (10% of the screen height, see AppBottomNavBar)
+    // plus ~115 dp for the handle, plate, odometer and last-update date.
+    // Sheet sizes are fractions of the space the sheet really gets, which is
+    // shorter than the screen when Android's navigation bar sits below the
+    // app; measuring the full screen with 95 dp cut the date line off
+    // behind the bottom nav.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenH = MediaQuery.of(context).size.height;
+        final availH = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : screenH;
+        final peek =
+            ((0.10 * screenH + 115) / availH).clamp(0.20, 0.45).toDouble();
+        final mid = math.max(0.50, peek + 0.05);
+        return _buildSheet(peek, mid);
+      },
+    );
+  }
+
+  Widget _buildSheet(double peek, double mid) {
     return DraggableScrollableSheet(
       // Peek by default so the map stays dominant; drag up for full details.
       initialChildSize: peek,
@@ -564,14 +578,17 @@ class TrackView extends GetView<TrackController> {
                             ],
                           ),
                         ),
-                        // Green Car Visualization
+                        // Car in the vehicle's status colour (as on Home).
                         Container(
                           width: width * 0.28,
                           height: height * 0.07,
                           alignment: Alignment.centerRight,
-                          child: Image.asset(
-                            'lib/Asset/Images/Green Car.png',
-                            fit: BoxFit.contain,
+                          child: Obx(
+                            () => Image.asset(
+                              controller.displayStatusCarImage,
+                              fit: BoxFit.contain,
+                              gaplessPlayback: true,
+                            ),
                           ),
                         ),
                       ],

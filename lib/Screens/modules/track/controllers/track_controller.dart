@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -351,6 +353,15 @@ class TrackController extends GetxController {
     }
     _startAnimationLoop();
     _loadCarIcon();
+    // Recolour the car when the vehicle's status changes: on live updates,
+    // and when Home's list (which the colour follows) refreshes.
+    _carStatusWorker = ever(liveTrackData, (_) => _applyCarStatus());
+    if (Get.isRegistered<HomeController>()) {
+      _homeStatusWorker = ever(
+        Get.find<HomeController>().allVehicles,
+        (_) => _applyCarStatus(),
+      );
+    }
   }
 
   Future<void> _initAndStartTracking(String imei) async {
@@ -1161,17 +1172,158 @@ class TrackController extends GetxController {
       // BitmapDescriptor.asset never showed the car.
       final data =
           await rootBundle.load('lib/Asset/Icons/Track Vehicle Top.png');
-      // 48, not 44: measured on a device, Google drew a 44 marker at ~91% of
-      // the 44 Flutter car (54x108 px vs 60x118 px), so the car shrank when a
-      // drag started. 44 * 118 / 108 = 48 matches the Flutter car.
-      _carIcon = gmaps.BitmapDescriptor.bytes(
-        data.buffer.asUint8List(),
-        width: 48,
-        height: 48,
-      );
+      final original = data.buffer.asUint8List();
+      // The only top-view car is green (Running). Make the other status
+      // colours from it, matching the status colours on Home.
+      _carPngByStatus['running'] = original;
+      for (final entry in _carStatusColors.entries) {
+        try {
+          _carPngByStatus[entry.key] = await _tintCarPng(original, entry.value);
+        } catch (e) {
+          debugPrint('[LiveTrack] car tint ${entry.key} failed: $e');
+        }
+      }
+      if (_disposed) return;
+      _applyCarStatus(force: true);
     } catch (e) {
       debugPrint('[LiveTrack] car marker icon failed, keeping overlay: $e');
     }
+  }
+
+  /// Top-view car PNG per status key (see [_carStatusKey]).
+  final Map<String, Uint8List> _carPngByStatus = {};
+
+  /// Car image the map overlay draws; null until the asset is loaded.
+  final carImageBytes = ValueNotifier<Uint8List?>(null);
+
+  String? _appliedCarStatus;
+  Worker? _carStatusWorker;
+  Worker? _homeStatusWorker;
+
+  /// Bumped when the car colour changes, so the bottom card's picture
+  /// (an Obx) rebuilds even when only Home's list changed.
+  final carStatusKey = 'stopped'.obs;
+
+  /// Home's status colours (home_view `_statusColor`), without Running,
+  /// which keeps the original green car.
+  static const Map<String, Color> _carStatusColors = {
+    'idle': Color(0xFFFFD600),
+    'stopped': Color(0xFFFF3D00),
+    'inactive': Color(0xFF2196F3),
+    'expired': Color(0xFFFF9100),
+    'nodata': Color(0xFF9E9E9E),
+  };
+
+  /// Status as a key into [_carPngByStatus] and the status car pictures.
+  ///
+  /// Uses Home's status for this vehicle when Home has it, so the car here
+  /// is the same colour as on Home (Home applies the app's status rules;
+  /// e.g. ignition on + mode S is Idle there). Otherwise falls back to the
+  /// live position. The snapshot's top-level `status` is the API flag
+  /// ("true"), not a vehicle status, so unknown text is ignored.
+  String get _carStatusKey {
+    final fromHome = _homeVehicleStatus();
+    if (fromHome != null) return _statusKey(fromHome) ?? 'stopped';
+    return _statusKey(liveTrackData.value?.currentStatus ?? '') ??
+        _statusKey(
+          liveTrackData.value?.currentPosition?.derivedStatus ?? '',
+        ) ??
+        'stopped';
+  }
+
+  static String? _statusKey(String status) {
+    final s = status.toLowerCase();
+    if (s.contains('run') || s.contains('moving')) return 'running';
+    if (s.contains('idle')) return 'idle';
+    if (s.contains('inactive')) return 'inactive';
+    if (s.contains('expire')) return 'expired';
+    if (s.contains('no data') || s.contains('nodata')) return 'nodata';
+    if (s.contains('stop')) return 'stopped';
+    return null;
+  }
+
+  String? _homeVehicleStatus() {
+    final imei = vehicleImei.value.trim();
+    if (imei.isEmpty || !Get.isRegistered<HomeController>()) return null;
+    for (final v in Get.find<HomeController>().allVehicles) {
+      if (v.deviceId.trim() == imei) return v.status;
+    }
+    return null;
+  }
+
+  /// Side-view car for the bottom card, same pictures as Home.
+  String get displayStatusCarImage {
+    switch (carStatusKey.value) {
+      case 'running':
+        return 'lib/Asset/Images/Green right Car.png';
+      case 'idle':
+        return 'lib/Asset/Images/Idle_yellow_rightcar.png';
+      case 'inactive':
+        return 'lib/Asset/Images/Inactive_blue_rightcar.png';
+      case 'expired':
+        return 'lib/Asset/Images/Expired_GlossyOrange_rightcar.png';
+      case 'nodata':
+        return 'lib/Asset/Images/No data_grey_rightcar.png';
+      default:
+        return 'lib/Asset/Images/Red right Car.png';
+    }
+  }
+
+  /// Points the map car (Flutter overlay and Google drag marker) at the
+  /// picture for the current status.
+  void _applyCarStatus({bool force = false}) {
+    if (_disposed) return;
+    final key = _carStatusKey;
+    carStatusKey.value = key;
+    if (_carPngByStatus.isEmpty) return;
+    if (!force && key == _appliedCarStatus) return;
+    final png = _carPngByStatus[key] ?? _carPngByStatus['running']!;
+    _appliedCarStatus = key;
+    carImageBytes.value = png;
+    // 48, not 44: measured on a device, Google drew a 44 marker at ~91% of
+    // the 44 Flutter car (54x108 px vs 60x118 px), so the car shrank when a
+    // drag started. 44 * 118 / 108 = 48 matches the Flutter car.
+    final icon = gmaps.BitmapDescriptor.bytes(png, width: 48, height: 48);
+    _carIcon = icon;
+    final marker = dragCarMarker.value;
+    if (marker != null) {
+      dragCarMarker.value = marker.copyWith(iconParam: icon);
+    }
+  }
+
+  /// Recolours the green body of the top-view car to [target], keeping its
+  /// shading. Dark windows, lights and outlines aren't green-dominant, so
+  /// they stay as they are.
+  static Future<Uint8List> _tintCarPng(Uint8List png, Color target) async {
+    final codec = await ui.instantiateImageCodec(png, targetWidth: 256);
+    final src = (await codec.getNextFrame()).image;
+    final data = await src.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+    final w = src.width;
+    final h = src.height;
+    src.dispose();
+    final px = data!.buffer.asUint8List();
+    final tr = (target.r * 255).round();
+    final tg = (target.g * 255).round();
+    final tb = (target.b * 255).round();
+    for (var i = 0; i < px.length; i += 4) {
+      if (px[i + 3] == 0) continue;
+      final r = px[i];
+      final g = px[i + 1];
+      final b = px[i + 2];
+      if (g > r + 40 && g > b + 25) {
+        // The body green is ~190 in G: scale the target by the pixel's shade.
+        final shade = g / 190.0;
+        px[i] = (tr * shade).round().clamp(0, 255);
+        px[i + 1] = (tg * shade).round().clamp(0, 255);
+        px[i + 2] = (tb * shade).round().clamp(0, 255);
+      }
+    }
+    final done = Completer<ui.Image>();
+    ui.decodeImageFromPixels(px, w, h, ui.PixelFormat.rgba8888, done.complete);
+    final tinted = await done.future;
+    final out = await tinted.toByteData(format: ui.ImageByteFormat.png);
+    tinted.dispose();
+    return out!.buffer.asUint8List();
   }
 
   /// True while the Google marker is opaque (the user is moving the map).
@@ -2701,14 +2853,27 @@ class TrackController extends GetxController {
               },
             );
           },
-          child: Image.asset(
-            'lib/Asset/Icons/Track Vehicle Top.png',
-            width: 44,
-            height: 44,
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-            filterQuality: FilterQuality.medium,
-            color: null,
+          // Car in the vehicle's status colour; the green asset until the
+          // coloured versions are ready.
+          child: ValueListenableBuilder<Uint8List?>(
+            valueListenable: carImageBytes,
+            builder: (context, bytes, _) => bytes == null
+                ? Image.asset(
+                    'lib/Asset/Icons/Track Vehicle Top.png',
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.medium,
+                  )
+                : Image.memory(
+                    bytes,
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.medium,
+                  ),
           ),
         ),
       ),
@@ -2882,6 +3047,9 @@ class TrackController extends GetxController {
     _headingNotifier.dispose();
     _markerAngleNotifier.dispose();
     vehicleScreenOffset.dispose();
+    _carStatusWorker?.dispose();
+    _homeStatusWorker?.dispose();
+    carImageBytes.dispose();
     unawaited(_webSocketService.disconnect());
     fenceNameController.dispose();
     super.onClose();

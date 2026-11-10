@@ -290,6 +290,7 @@ class TrackController extends GetxController {
   static const int _rotationReadoutIntervalMs = 120;
 
   double _expectedPingSec = 6.0;
+  bool _pingMeasured = false;
   double _glideSpeedMs = 0.0;
   int _routeRequestId = 0;
   DateTime? _lastRoadFetchAt;
@@ -605,8 +606,22 @@ class TrackController extends GetxController {
     // Learn the real ping interval so the speed target stays honest.
     if (previousGpsTime != null) {
       final interval = now.difference(previousGpsTime).inMilliseconds / 1000.0;
-      if (interval >= 0.8 && interval < 60.0) {
-        _expectedPingSec = _expectedPingSec * 0.7 + interval * 0.3;
+      // The server sends each fix twice ~0.3-1 s apart; counting that as the
+      // interval made the car rush and then wait. Learn only from a fix that
+      // really moved.
+      final moved = previousGps != null &&
+          _calculateDistance(previousGps, location) > 2.0;
+      if (moved && interval >= 2.0 && interval < 60.0) {
+        // Take the first real interval as it is: blending in from the 6 s
+        // guess took several fixes to reach a device's 20 s.
+        // Gaps are uneven (7.5 s then 19.5 s recorded). Follow longer gaps
+        // quickly and shorter ones slowly: arriving early makes the car stop
+        // and wait, which looks like jerking; arriving a bit late doesn't.
+        final w = interval > _expectedPingSec ? 0.5 : 0.15;
+        _expectedPingSec = _pingMeasured
+            ? _expectedPingSec * (1 - w) + interval * w
+            : interval;
+        _pingMeasured = true;
       }
     }
 
@@ -771,15 +786,34 @@ class TrackController extends GetxController {
   /// the next WebSocket ping arrives, fenced by what the device reports.
   /// This is what keeps the car in step with reality without catch-up spikes.
   double _targetSpeedMs(double remaining) {
-    final reported =
-        math.max(_lastReportedSpeedKmh, _lastInferredSpeedKmh) / 3.6;
-    final horizon = _expectedPingSec.clamp(1.5, 8.0);
+    // The device's own speed. The speed inferred from two fixes can be far
+    // too high when fixes arrive close together: recorded at 17 km/h, the
+    // car was driven at 24.8 m/s (89 km/h) and whipped round a junction.
+    // Use the inference only when the device reports no speed.
+    final reported = (_lastReportedSpeedKmh > 0
+            ? _lastReportedSpeedKmh
+            : _lastInferredSpeedKmh) /
+        3.6;
+    // Drive the buffered road in the time left until the next fix is due (a
+    // little past it, so the car never arrives early and stands waiting).
+    // Recorded with a device pinging every 20 s: a fixed 8 s horizon, and
+    // "remaining / horizon" re-taken every frame, made the car surge to
+    // 15 m/s after each fix, slow to 3 m/s and stop for ~4 s: jerking.
+    final lastFix = _lastGpsTime;
+    final sinceFix = lastFix == null
+        ? 0.0
+        : DateTime.now().difference(lastFix).inMilliseconds / 1000.0;
+    final timeLeft =
+        (_expectedPingSec.clamp(1.5, 40.0) * 1.2 - sinceFix).clamp(1.0, 48.0);
 
-    var v = remaining / horizon;
+    var v = remaining / timeLeft;
 
     if (reported > 0.4) {
-      // Never crawl far below the real speed, never sprint far above it.
-      v = v.clamp(reported * 0.6, reported * 1.8);
+      // Never sprint far above the real speed. The floor is low: pacing by
+      // the time left already keeps the car moving, and a 60% floor made it
+      // finish a short buffer early and stand still ~1.5 s before the next
+      // fix (recorded on a device).
+      v = v.clamp(reported * 0.3, reported * 2.0);
     } else {
       v = v.clamp(0.0, 14.0);
     }
@@ -923,6 +957,12 @@ class TrackController extends GetxController {
   }) {
     // With a road queue the frame loop owns heading. GPS only seeds it.
     if (_roadQueue.length >= 2 && _hasHeading) return;
+    // Waiting at the end of the known road, a new fix used to turn the car
+    // toward the fix in a straight line (recorded: 144° -> 6° while
+    // standing), then the road for that fix turned it back. Keep the heading
+    // until the road arrives; the road ahead sets it. A straight-line
+    // heading is only for when there is no road at all.
+    if (_hasHeading && _lastRoadCorridor.length >= 2) return;
 
     double? movementBearing;
     var movedM = 0.0;
@@ -2789,6 +2829,7 @@ class TrackController extends GetxController {
     _isMovingVehicle = false;
     _glideSpeedMs = 0.0;
     _expectedPingSec = 6.0;
+    _pingMeasured = false;
 
     _routeRequestId = 0;
     _roadQueue.clear();

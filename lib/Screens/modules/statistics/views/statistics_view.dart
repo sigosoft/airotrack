@@ -27,7 +27,15 @@ class StatisticsView extends GetView<StatisticsController> {
           elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
-            onPressed: () => Get.toNamed(Routes.TRACK),
+            // Return to the screen Statistics was opened from. Pushing TRACK
+            // here opened a new, vehicle-less Track page and looped back.
+            onPressed: () {
+              if (Navigator.of(context).canPop()) {
+                Get.back();
+              } else {
+                Get.offAllNamed(Routes.HOME);
+              }
+            },
           ),
           actions: [
             GestureDetector(

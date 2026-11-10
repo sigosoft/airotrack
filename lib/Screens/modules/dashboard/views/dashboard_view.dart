@@ -271,6 +271,8 @@ class DashboardView extends GetView<DashboardController> {
                                 LineChartBarData(
                                   spots: _engineLineSpots(engineSpots),
                                   isCurved: true,
+                                  // Keep the curve from swinging below 0 h (or above 24 h) between points.
+                                  preventCurveOverShooting: true,
                                   color: const Color(0xFF10B25B),
                                   barWidth: 3,
                                   isStrokeCapRound: true,

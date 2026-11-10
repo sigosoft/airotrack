@@ -730,9 +730,13 @@ class HomeView extends GetView<HomeController> {
               children: [
                 _buildDialogRow("Name:", vehicle.plateNumber),
                 const SizedBox(height: 8),
+                // The home API sends no status duration today; show
+                // "Since …" only when there is one, not a dangling "Since".
                 _buildDialogRow(
                   "Status:",
-                  "${vehicle.statusLabel}  Since ${vehicle.statusDuration}",
+                  vehicle.statusDuration.trim().isEmpty
+                      ? vehicle.statusLabel
+                      : "${vehicle.statusLabel} since ${vehicle.statusDuration.trim()}",
                 ),
                 const SizedBox(height: 8),
                 _buildDialogRow("Device Time:", vehicle.lastUpdated),

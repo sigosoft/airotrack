@@ -1,5 +1,6 @@
 import 'dart:developer';
 import 'package:airotrack/Configs/RetryInterceptor.dart';
+import 'package:airotrack/Utils/SessionGuard.dart';
 import 'package:dio/dio.dart';
 
 import 'ApiConfigs.dart';
@@ -23,6 +24,23 @@ class DioClient {
 
     dio.interceptors.add(RetryInterceptor(dio: dio));
     dio.interceptors.add(_loggingInterceptor());
+    dio.interceptors.add(_sessionInterceptor());
+  }
+
+  /// A 401 means the saved token was rejected, so the session ends. Login and
+  /// logout are excluded: a wrong password shows its own error, and logout
+  /// handles 401 itself.
+  InterceptorsWrapper _sessionInterceptor() {
+    return InterceptorsWrapper(
+      onError: (err, handler) {
+        final path = err.requestOptions.path;
+        final isAuthCall = path.endsWith('login') || path.endsWith('logout');
+        if (err.response?.statusCode == 401 && !isAuthCall) {
+          SessionGuard.endSession();
+        }
+        handler.next(err);
+      },
+    );
   }
 
   /// Logger Interceptor

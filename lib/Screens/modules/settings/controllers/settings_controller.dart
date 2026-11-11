@@ -24,12 +24,21 @@ class SettingsController extends GetxController {
 
       // Signing out depends on the server. If the call fails, the user stays
       // signed in and sees an error, so the phone and server never disagree.
-      await DioClient()
+      // 401 means the server has no valid session for this token, so it counts
+      // as signed out. Any other failure keeps the user signed in.
+      final response = await DioClient()
           .get(
             ApiEndPoints.logout,
-            options: Options(headers: {'Authorization': 'Bearer $token'}),
+            options: Options(
+              headers: {'Authorization': 'Bearer $token'},
+              validateStatus: (_) => true,
+            ),
           )
           .timeout(const Duration(seconds: 3));
+      final code = response.statusCode ?? 0;
+      if (code != 401 && (code < 200 || code >= 300)) {
+        throw Exception('Logout failed: $code');
+      }
 
       await removename('token');
       DioClient().clearToken();

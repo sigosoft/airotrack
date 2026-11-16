@@ -28,6 +28,9 @@ class Vehicle {
   final bool isIgnitionOn;
   final bool isLocked;
   final String deviceId;
+  /// Direction the vehicle faces, degrees clockwise from north (null when
+  /// the API sends none).
+  final double? course;
 
   Vehicle({
     required this.id,
@@ -45,6 +48,7 @@ class Vehicle {
     this.isIgnitionOn = false,
     this.isLocked = true,
     required this.deviceId,
+    this.course,
   });
 
   bool get hasValidCoordinates {
@@ -217,6 +221,7 @@ class Vehicle {
       isIgnitionOn: ignition,
       isLocked: json['lock'] != 0,
       deviceId: (json['imei'] ?? json['device_id'] ?? '').toString(),
+      course: _course(json),
     );
   }
 
@@ -593,4 +598,13 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     scrollController.dispose();
     super.onClose();
   }
+}
+
+/// Heading from whichever key the API uses, in 0..360, or null.
+double? _course(Map<String, dynamic> json) {
+  final raw =
+      json['course'] ?? json['angle'] ?? json['heading'] ?? json['direction'];
+  final v = raw is num ? raw.toDouble() : double.tryParse(raw?.toString() ?? '');
+  if (v == null || !v.isFinite) return null;
+  return v % 360;
 }

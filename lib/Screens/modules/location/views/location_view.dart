@@ -59,8 +59,8 @@ class _LocationViewState extends State<LocationView> {
               onPositionChanged: controller.onPositionChanged,
               markers: [
                 for (final p in placements)
-                  if (p.vehicles.length > 1 && controller.atMaxZoom)
-                    _stackMarker(p.vehicles, selectedId, p.point)
+                  if (controller.atMaxZoom)
+                    _topCarsMarker(p.vehicles, selectedId, p.point)
                   else
                     _groupMarker(p.vehicles, selectedId, at: p.point),
               ],
@@ -227,65 +227,98 @@ class _LocationViewState extends State<LocationView> {
     );
   }
 
-  /// Cars reporting the same spot, at the closest zoom: one name label per
-  /// car (each opens that car), and the cars overlapped like cards right on
-  /// the real location.
-  Marker _stackMarker(List<Vehicle> group, int? selectedId, LatLng point) {
-    const labelH = 30.0;
-    const gap = 4.0;
-    const step = 18.0; // how far each car sits from the one before it
-    final car = 44 * controller.iconScale;
-    final carsW = car + step * (group.length - 1);
-    final labelsH = group.length * (labelH + gap);
+  /// Closest zoom: cars seen from above, turned the way they face, side by
+  /// side on their real spot (several trackers can report the very same
+  /// point), each with its own small name label. Tap a car or its name to
+  /// open it.
+  Marker _topCarsMarker(List<Vehicle> group, int? selectedId, LatLng point) {
+    final car = 48 * controller.iconScale;
+    final step = car * 0.55; // close together, like cars parked side by side
+    const labelH = 20.0;
+    const labelGap = 3.0;
+    const labelHalfW = 90.0;
+    final n = group.length;
+    final span = car + step * (n - 1);
+    final width = span + 2 * labelHalfW;
+    final labelsH = n * (labelH + labelGap);
     // Same empty height below as the labels above, so the cars sit centred
     // on the real spot.
+    final height = labelsH * 2 + car;
+    double carLeft(int i) => labelHalfW + i * step;
     return Marker(
       point: point,
-      width: math.max(180, carsW),
-      height: labelsH * 2 + car,
-      child: Column(
+      width: width,
+      height: height,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          for (final v in group)
-            Padding(
-              padding: const EdgeInsets.only(bottom: gap),
+          for (var i = 0; i < n; i++)
+            Positioned(
+              left: carLeft(i),
+              top: labelsH,
               child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _openVehicle(v),
-                child: _plateLabel(v, selected: v.id == selectedId),
+                onTap: () => _openVehicle(group[i]),
+                child: _topCar(group[i], car),
               ),
             ),
-          SizedBox(
-            width: carsW,
-            height: car,
-            child: Stack(
-              children: [
-                for (var i = 0; i < group.length; i++)
-                  Positioned(
-                    left: i * step,
-                    child: GestureDetector(
-                      onTap: () => _openVehicle(group[i]),
-                      child: Image.asset(
-                        _statusCarImage(group[i].status),
-                        width: car,
-                        height: car,
-                      ),
-                    ),
+          // Leftmost car's name on top, so every name stays readable.
+          for (var i = 0; i < n; i++)
+            Positioned(
+              left: carLeft(i) + car / 2 - labelHalfW,
+              width: labelHalfW * 2,
+              top: i * (labelH + labelGap),
+              height: labelH,
+              child: Center(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _openVehicle(group[i]),
+                  child: _plateLabel(
+                    group[i],
+                    selected: group[i].id == selectedId,
+                    small: true,
                   ),
-              ],
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _plateLabel(Vehicle v, {required bool selected}) {
+  /// Top-down car in the vehicle's status colour, pointing along its course.
+  Widget _topCar(Vehicle v, double size) {
+    final c = _statusColor(v.status);
+    // Grey out the green artwork, then paint it in the status colour; the
+    // 1.65 keeps the body as bright as the colour itself.
+    const k = 1.65;
+    final r = c.red / 255 * k, g = c.green / 255 * k, b = c.blue / 255 * k;
+    return Transform.rotate(
+      angle: (v.course ?? 0) * math.pi / 180,
+      child: ColorFiltered(
+        colorFilter: ColorFilter.matrix([
+          0.2126 * r, 0.7152 * r, 0.0722 * r, 0, 0,
+          0.2126 * g, 0.7152 * g, 0.0722 * g, 0, 0,
+          0.2126 * b, 0.7152 * b, 0.0722 * b, 0, 0,
+          0, 0, 0, 1, 0,
+        ]),
+        child: Image.asset(
+          'lib/Asset/Icons/Track Vehicle Top.png',
+          width: size,
+          height: size,
+        ),
+      ),
+    );
+  }
+
+  Widget _plateLabel(Vehicle v, {required bool selected, bool small = false}) {
     return Container(
-      height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      height: small ? 20 : 30,
+      padding: small
+          ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+          : const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
         color: selected ? AppColors.primaryBlue : Colors.black,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(small ? 6 : 15),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -298,10 +331,11 @@ class _LocationViewState extends State<LocationView> {
         v.plateNumber.isEmpty ? '—' : v.plateNumber,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           color: Colors.white,
-          fontSize: 12,
+          fontSize: small ? 10 : 12,
           fontWeight: FontWeight.bold,
+          height: 1,
         ),
       ),
     );

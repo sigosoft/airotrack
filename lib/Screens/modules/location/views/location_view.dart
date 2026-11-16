@@ -43,12 +43,12 @@ class _LocationViewState extends State<LocationView> {
         children: [
           Obx(() {
             final selectedId = controller.selectedId.value;
-            final groups =
-                controller.groupedVehicles(controller.zoomStep.value);
-            // The group holding the selected vehicle draws last, on top.
-            groups.sort((a, b) =>
-                (a.any((v) => v.id == selectedId) ? 1 : 0) -
-                (b.any((v) => v.id == selectedId) ? 1 : 0));
+            final placements =
+                controller.markerPlacements(controller.zoomStep.value);
+            // The marker holding the selected vehicle draws last, on top.
+            placements.sort((a, b) =>
+                (a.vehicles.any((v) => v.id == selectedId) ? 1 : 0) -
+                (b.vehicles.any((v) => v.id == selectedId) ? 1 : 0));
             return AiroMapWidget(
               mapController: _mapController,
               mapStyle: controller.mapStyle.value,
@@ -57,8 +57,20 @@ class _LocationViewState extends State<LocationView> {
               initialZoom: controller.lastZoom,
               onMapReady: controller.onMapReady,
               onPositionChanged: controller.onPositionChanged,
+              // Cars moved aside at the closest zoom: a thin line back to
+              // where they really are.
+              polylines: [
+                for (final p in placements)
+                  if (p.anchor != null)
+                    Polyline(
+                      points: [p.anchor!, p.point],
+                      color: Colors.black54,
+                      strokeWidth: 1.5,
+                    ),
+              ],
               markers: [
-                for (final group in groups) _groupMarker(group, selectedId),
+                for (final p in placements)
+                  _groupMarker(p.vehicles, selectedId, at: p.point),
               ],
             );
           }),
@@ -133,12 +145,12 @@ class _LocationViewState extends State<LocationView> {
 
   /// One marker per group. A group of several vehicles shows the first (or
   /// selected) plate with a "+N" badge; tapping it lists them to pick from.
-  Marker _groupMarker(List<Vehicle> group, int? selectedId) {
+  Marker _groupMarker(List<Vehicle> group, int? selectedId, {LatLng? at}) {
     final v = group.first;
     final selected = group.any((g) => g.id == selectedId);
     final extra = group.length - 1;
     return Marker(
-      point: LatLng(v.latitude!, v.longitude!),
+      point: at ?? LatLng(v.latitude!, v.longitude!),
       // Wide enough for full plate names like "TCP TSAIRO MICRA".
       width: 180,
       height: 38 + 52 * controller.iconScale,
@@ -147,8 +159,11 @@ class _LocationViewState extends State<LocationView> {
         onTap: () {
           if (extra == 0) {
             _openVehicle(v);
-          } else {
+          } else if (controller.atMaxZoom) {
             _showGroupSheet(group);
+          } else {
+            // Zoom in on them; at the closest zoom each gets its own marker.
+            controller.zoomToGroup(group);
           }
         },
         child: Column(

@@ -138,6 +138,73 @@ class LocationController extends GetxController {
     if (hasGesture) _following = false;
   }
 
+  /// True at the closest zoom the map allows.
+  bool get atMaxZoom => zoomStep.value >= _maxZoom - 0.25;
+
+  /// Where each marker goes. Below the closest zoom, cars that would cover
+  /// each other share one "+N" marker. At the closest zoom nothing can split
+  /// them any further (several trackers often report the very same point),
+  /// so every car gets its own marker, stacked above and below the real spot;
+  /// [MarkerPlacement.anchor] is that real spot, for a leader line.
+  List<MarkerPlacement> markerPlacements(double zoom) {
+    final groups = groupedVehicles(zoom);
+    if (zoom < _maxZoom - 0.25) {
+      return [
+        for (final g in groups)
+          MarkerPlacement(g, LatLng(g.first.latitude!, g.first.longitude!)),
+      ];
+    }
+    final scale = 256 * math.pow(2, zoom);
+    const rowPx = 95.0; // one marker (label + car) per row
+    final out = <MarkerPlacement>[];
+    for (final g in groups) {
+      final anchor = LatLng(g.first.latitude!, g.first.longitude!);
+      if (g.length == 1) {
+        out.add(MarkerPlacement(g, anchor));
+        continue;
+      }
+      final lat = anchor.latitude * math.pi / 180;
+      final y0 = (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) /
+          2 *
+          scale;
+      for (var i = 0; i < g.length; i++) {
+        final y = y0 + (i - (g.length - 1) / 2) * rowPx;
+        final n = math.pi - 2 * math.pi * y / scale;
+        final spreadLat =
+            180 / math.pi * math.atan(0.5 * (math.exp(n) - math.exp(-n)));
+        out.add(MarkerPlacement(
+          [g[i]],
+          LatLng(spreadLat, anchor.longitude),
+          anchor: anchor,
+        ));
+      }
+    }
+    return out;
+  }
+
+  /// "+N" marker tapped: zoom in until those cars show one by one.
+  void zoomToGroup(List<Vehicle> group) {
+    if (!_mapReady || _map == null || group.isEmpty) return;
+    _following = false;
+    final points = group.map(_pointOf).toList();
+    try {
+      final bounds = LatLngBounds.fromPoints(points);
+      if (bounds.southWest == bounds.northEast) {
+        _map!.move(bounds.center, _maxZoom);
+      } else {
+        _map!.fitCamera(
+          CameraFit.bounds(
+            bounds: bounds,
+            padding: const EdgeInsets.fromLTRB(80, 200, 90, 200),
+            maxZoom: _maxZoom,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Location] group zoom skipped: $e');
+    }
+  }
+
   /// Vehicles whose markers would cover each other at [zoom] share one group.
   /// The selected vehicle anchors its group so it is never hidden.
   List<List<Vehicle>> groupedVehicles(double zoom) {
@@ -319,4 +386,14 @@ class LocationController extends GetxController {
     }
     super.onClose();
   }
+}
+
+/// One marker on the Location map: its vehicles (several = "+N"), where it is
+/// drawn, and, when it was moved aside to stay visible, the real spot.
+class MarkerPlacement {
+  const MarkerPlacement(this.vehicles, this.point, {this.anchor});
+
+  final List<Vehicle> vehicles;
+  final LatLng point;
+  final LatLng? anchor;
 }

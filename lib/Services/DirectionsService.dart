@@ -98,6 +98,33 @@ class DirectionsService {
     }
   }
 
+  /// Closest point on a drivable road to [p] (Mapbox, the same road data
+  /// Live Track keeps its car on), or null on failure.
+  Future<LatLng?> nearestRoadPoint(LatLng p) async {
+    // Directions needs two points; the second is ~1 m north. The first
+    // waypoint comes back moved onto the road.
+    final url = 'https://api.mapbox.com/directions/v5/mapbox/driving'
+        '/${p.longitude},${p.latitude}'
+        ';${p.longitude},${p.latitude + 0.00001}'
+        '?overview=false&access_token=$_accessToken';
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(url);
+      final waypoints = response.data?['waypoints'];
+      if (waypoints is List && waypoints.isNotEmpty) {
+        final loc = (waypoints.first as Map)['location'];
+        if (loc is List && loc.length >= 2) {
+          return LatLng(
+            (loc[1] as num).toDouble(),
+            (loc[0] as num).toDouble(),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('DirectionsService nearestRoadPoint error: $e');
+    }
+    return null;
+  }
+
   List<LatLng> _coordsFromGeoJson(dynamic geometry) {
     final out = <LatLng>[];
     if (geometry is! Map) return out;

@@ -3,8 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart' as ll;
 
 import '../../../../Services/AppSettings.dart';
+import '../../../../Services/DirectionsService.dart';
 import '../../home/controllers/home_controller.dart';
 
 /// Location tab: every vehicle on one map.
@@ -168,7 +170,7 @@ class LocationController extends GetxController {
   /// stack there, one tappable label per car.
   List<MarkerPlacement> markerPlacements(double zoom) => [
         for (final g in groupedVehicles(zoom))
-          MarkerPlacement(g, LatLng(g.first.latitude!, g.first.longitude!)),
+          MarkerPlacement(g, pointOf(g.first)),
       ];
 
   /// "+N" marker tapped: zoom in until those cars show one by one.
@@ -197,8 +199,9 @@ class LocationController extends GetxController {
     const maxDy = 60.0;
     final scale = 256 * math.pow(2, zoom);
     Offset px(Vehicle v) {
-      final lat = v.latitude! * math.pi / 180;
-      final x = (v.longitude! + 180) / 360 * scale;
+      final point = pointOf(v);
+      final lat = point.latitude * math.pi / 180;
+      final x = (point.longitude + 180) / 360 * scale;
       final y = (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) /
           2 *
           scale;
@@ -226,6 +229,7 @@ class LocationController extends GetxController {
     // RxList.assignAll clears before it adds, so this also fires once with an
     // empty list on every refresh. Ignore that step, or the selection is lost.
     if (_home.allVehicles.isEmpty) return;
+    _snapToRoads();
     if (!_fittedOnce) {
       fitAll();
       return;
@@ -243,7 +247,67 @@ class LocationController extends GetxController {
   // Camera
   // ---------------------------------------------------------------------
 
-  LatLng _pointOf(Vehicle v) => LatLng(v.latitude!, v.longitude!);
+  LatLng _pointOf(Vehicle v) => pointOf(v);
+
+  // ---------------------------------------------------------------------
+  // On the road, as on Live Track
+  // ---------------------------------------------------------------------
+
+  /// Live Track keeps its car on the road (Mapbox road data), while a raw
+  /// GPS fix often sits a few metres beside it. Each car here is drawn on
+  /// the nearest road too, so both screens show it in the same place.
+  /// A fix farther than this from any road (yard, parking lot) stays put.
+  static const double _maxRoadSnapM = 30.0;
+
+  /// Road point per GPS fix (rounded to ~1 m), or null for "keep the fix".
+  final Map<String, LatLng?> _roadPoints = {};
+  final Set<String> _roadLookups = {};
+  final DirectionsService _directions = DirectionsService();
+
+  /// Bumped when road points arrive, so the markers move onto the road.
+  final roadPointsVersion = 0.obs;
+
+  String _fixKey(Vehicle v) =>
+      '${v.latitude!.toStringAsFixed(5)},${v.longitude!.toStringAsFixed(5)}';
+
+  /// Where [v] is drawn: on the nearest road once known, else its GPS fix.
+  LatLng pointOf(Vehicle v) =>
+      _roadPoints[_fixKey(v)] ?? LatLng(v.latitude!, v.longitude!);
+
+  /// Looks up the road point of every shown car not looked up yet, a few at
+  /// a time. A parked car is looked up once; a moving one at each new fix.
+  void _snapToRoads() {
+    if (_roadPoints.length > 2000) _roadPoints.clear();
+    for (final v in mapVehicles) {
+      if (_roadLookups.length >= 6) return;
+      final key = _fixKey(v);
+      if (_roadPoints.containsKey(key) || _roadLookups.contains(key)) continue;
+      _roadLookups.add(key);
+      final fix = LatLng(v.latitude!, v.longitude!);
+      _directions
+          .nearestRoadPoint(ll.LatLng(fix.latitude, fix.longitude))
+          .then((road) {
+        _roadLookups.remove(key);
+        if (isClosed) return;
+        // A failed lookup isn't remembered, so it's tried again later.
+        if (road != null) {
+          final onRoad = LatLng(road.latitude, road.longitude);
+          _roadPoints[key] = _distanceM(fix, onRoad) <= _maxRoadSnapM ? onRoad : null;
+          roadPointsVersion.value++;
+        }
+        _snapToRoads();
+      });
+    }
+  }
+
+  static double _distanceM(LatLng a, LatLng b) {
+    const mPerDeg = 111320.0;
+    final dy = (a.latitude - b.latitude) * mPerDeg;
+    final dx = (a.longitude - b.longitude) *
+        mPerDeg *
+        math.cos((a.latitude + b.latitude) / 2 * math.pi / 180);
+    return math.sqrt(dx * dx + dy * dy);
+  }
 
   double get _currentZoom => lastZoom;
 
@@ -352,6 +416,7 @@ class LocationController extends GetxController {
     if (statusFilter.value == filter) return;
     statusFilter.value = filter;
     if (selectedVehicle == null) selectedId.value = null;
+    _snapToRoads();
     _fittedOnce = false;
     fitAll();
   }

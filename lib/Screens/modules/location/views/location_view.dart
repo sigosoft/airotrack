@@ -39,6 +39,12 @@ class _LocationViewState extends State<LocationView> {
       ever(controller.selectedId, (_) => _rebuildMarkers()),
       ever(controller.statusFilter, (_) => _rebuildMarkers()),
       ever(home.allVehicles, (_) => _rebuildMarkers()),
+      // Cars moved onto the road: redraw once a batch has arrived.
+      debounce(
+        controller.roadPointsVersion,
+        (_) => _rebuildMarkers(),
+        time: const Duration(milliseconds: 300),
+      ),
     ]);
   }
 

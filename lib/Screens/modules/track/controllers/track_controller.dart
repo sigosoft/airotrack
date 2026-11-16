@@ -776,9 +776,14 @@ class TrackController extends GetxController {
     if (_pathLat == 0.0 && _pathLng == 0.0) return;
     if (_liveTarget == null) return;
 
-    if (_isMovingVehicle) {
-      final pos = LatLng(_pathLat, _pathLng);
-      final remaining = _remainingPathMeters(pos);
+    final pos = LatLng(_pathLat, _pathLng);
+    final remaining = _remainingPathMeters(pos);
+    // Stopped, but the car on screen is well behind where it stopped (it was
+    // still driving when the last fixes came): drive there, don't crawl.
+    // Recorded on a device: a stop fix 74 m ahead was crept toward at
+    // 0.35 m/s, so the car lagged for over three minutes.
+    final catchUp = !_isMovingVehicle && remaining > _stoppedCatchUpM;
+    if (_isMovingVehicle || catchUp) {
       final target = _targetSpeedMs(remaining);
 
       // Single symmetric low pass. No separate accel/decel caps, no additive
@@ -810,9 +815,17 @@ class TrackController extends GetxController {
     _publishFrame();
   }
 
-  /// Target speed = how fast we must move to consume the buffered road before
-  /// the next WebSocket ping arrives, fenced by what the device reports.
-  /// This is what keeps the car in step with reality without catch-up spikes.
+  /// Stopped car this far behind its last fix drives there (see [_glide]).
+  static const double _stoppedCatchUpM = 8.0;
+
+  /// Target speed: close a steady share of the buffered road each second,
+  /// never much faster than the device reports.
+  ///
+  /// Recorded on a device (fixes 1.4-2.8 s apart, then a 21 s gap): pacing
+  /// the road to be used up by the time the next fix was due drove the car at
+  /// twice its real speed, so it finished the road and stood still for 17 s
+  /// until the late fix came. Closing a share of what is left instead slows
+  /// the car down gradually when a fix is late, and never stops it dead.
   double _targetSpeedMs(double remaining) {
     // The device's own speed. The speed inferred from two fixes can be far
     // too high when fixes arrive close together: recorded at 17 km/h, the
@@ -822,28 +835,24 @@ class TrackController extends GetxController {
             ? _lastReportedSpeedKmh
             : _lastInferredSpeedKmh) /
         3.6;
-    // Drive the buffered road in the time left until the next fix is due (a
-    // little past it, so the car never arrives early and stands waiting).
-    // Recorded with a device pinging every 20 s: a fixed 8 s horizon, and
-    // "remaining / horizon" re-taken every frame, made the car surge to
-    // 15 m/s after each fix, slow to 3 m/s and stop for ~4 s: jerking.
-    final lastFix = _lastGpsTime;
-    final sinceFix = lastFix == null
-        ? 0.0
-        : DateTime.now().difference(lastFix).inMilliseconds / 1000.0;
-    final timeLeft =
-        (_expectedPingSec.clamp(1.5, 40.0) * 1.2 - sinceFix).clamp(1.0, 48.0);
-
-    var v = remaining / timeLeft;
+    // How many seconds' worth of road to keep in hand. Scales with the
+    // device's fix interval: too short for a slow device made the car surge
+    // after each fix and stall before the next (recorded at 20 s pings).
+    final horizon = _expectedPingSec.clamp(3.0, 10.0);
+    double v;
 
     if (reported > 0.4) {
-      // Never sprint far above the real speed. The floor is low: pacing by
-      // the time left already keeps the car moving, and a 60% floor made it
-      // finish a short buffer early and stand still ~1.5 s before the next
-      // fix (recorded on a device).
-      v = v.clamp(reported * 0.3, reported * 2.0);
+      // Drive at about the device's speed, easing off only as the road in
+      // hand runs short. Linear in what is left (v = remaining / horizon)
+      // swung 4.4 -> 12.9 m/s within every 10 s fix at a steady 10 m/s
+      // (replayed on a device); the gentle curve keeps it near 0.8-1.1x.
+      final x = remaining / (reported * horizon);
+      v = reported * math.pow(x, 0.35).toDouble();
+      // A little above the real speed at most, so a late fix makes the car
+      // lag a few metres more instead of racing ahead and stopping.
+      v = math.min(v, math.max(reported * 1.3, reported + 1.5));
     } else {
-      v = v.clamp(0.0, 14.0);
+      v = (remaining / horizon).clamp(0.0, 14.0);
     }
 
     // Ease into the end of the buffer instead of stopping dead.
@@ -1520,11 +1529,25 @@ class TrackController extends GetxController {
     var target = point;
     // Fades out as the camera tilts: tilted, the car stays at the centre.
     final flatness = (1.0 - _cameraTilt / _tilt3D).clamp(0.0, 1.0);
-    if (showBottomSheet.value && flatness > 0) {
+    // Showing or hiding the sheet moves the car up or down the screen. Ease
+    // it over ~0.4 s: done in one step, the whole map jumped ~330 px.
+    final nowEase = DateTime.now();
+    final lastEase = _sheetEaseAt;
+    _sheetEaseAt = nowEase;
+    final goal = showBottomSheet.value ? 1.0 : 0.0;
+    if (lastEase == null) {
+      _sheetEase = goal;
+    } else {
+      final dt = (nowEase.difference(lastEase).inMicroseconds / 1e6)
+          .clamp(0.0, 0.1);
+      _sheetEase += (goal - _sheetEase) * (1.0 - math.exp(-dt / 0.12));
+      if ((goal - _sheetEase).abs() < 0.002) _sheetEase = goal;
+    }
+    if (_sheetEase > 0 && flatness > 0) {
       // Push the camera centre "behind" the car (screen-down in a heading-up
       // map), so the car sits above the sheet with the road ahead above it.
       final offsetDeg =
-          0.0012 * math.pow(2, 15.0 - zoom).toDouble() * flatness;
+          0.0012 * math.pow(2, 15.0 - zoom).toDouble() * flatness * _sheetEase;
       final b = _cameraBearing * math.pi / 180;
       final cosLat = math.cos(point.latitude * math.pi / 180).abs();
       target = LatLng(
@@ -1567,11 +1590,12 @@ class TrackController extends GetxController {
 
   /// Last time the camera we push actually changed.
   DateTime? _lastCameraChangeAt;
-  final List<(DateTime, LatLng)> _cameraHistory = [];
+  /// Pushed cameras: time, centre, bearing, zoom.
+  final List<(DateTime, LatLng, double, double)> _cameraHistory = [];
 
-  void _recordCamera(LatLng target) {
+  void _recordCamera(LatLng target, double bearing, double zoom) {
     final now = DateTime.now();
-    _cameraHistory.add((now, target));
+    _cameraHistory.add((now, target, bearing, zoom));
     while (_cameraHistory.length > 2 &&
         now.difference(_cameraHistory[1].$1).inMilliseconds > _mapLagMs) {
       _cameraHistory.removeAt(0);
@@ -1579,23 +1603,35 @@ class TrackController extends GetxController {
   }
 
   /// The camera the map is showing now: the newest pushed one that is at
-  /// least [_mapLagMs] old (or the current one if none is).
-  LatLng? _shownCameraTarget() {
+  /// least [_mapLagMs] old (or the current one if none is), as centre,
+  /// bearing and zoom from the SAME push.
+  ///
+  /// Recorded on a device: taking the old centre with the current bearing
+  /// threw the car 47-57 px off its road for two frames whenever the map
+  /// turned in one step (the first heading, the sheet shown or hidden).
+  (LatLng, double, double)? _shownCamera() {
     final current = _cameraTarget;
-    if (current == null || _cameraHistory.isEmpty) return current;
+    if (current == null) return null;
+    final now = (current, _cameraBearing, _cameraZoom);
+    if (_cameraHistory.isEmpty) return now;
     final cutoff = DateTime.now().subtract(
       const Duration(milliseconds: _mapLagMs),
     );
-    LatLng? shown;
-    for (final (at, target) in _cameraHistory) {
+    (LatLng, double, double)? shown;
+    for (final (at, target, bearing, zoom) in _cameraHistory) {
       if (at.isAfter(cutoff)) break;
-      shown = target;
+      shown = (target, bearing, zoom);
     }
     // A camera set from the map's own report (Google panning, in 3D) isn't
     // in the history: use it as it is.
-    if (shown == null || _cameraHistory.last.$2 != current) return current;
+    if (shown == null || _cameraHistory.last.$2 != current) return now;
     return shown;
   }
+
+  /// 1 while the sheet shows (car pushed up the screen), 0 while hidden;
+  /// eased between the two in [_followCamera].
+  double _sheetEase = 1.0;
+  DateTime? _sheetEaseAt;
 
   LatLng? _resumeFrom;
   DateTime? _resumeGlideAt;
@@ -1666,7 +1702,7 @@ class TrackController extends GetxController {
     if (controller == null) return;
 
     _cameraTarget = target;
-    _recordCamera(target);
+    _recordCamera(target, _cameraBearing, zoom);
     _cameraZoom = zoom;
     final bearing = _cameraBearing;
     final tilt = _cameraTilt;
@@ -1933,6 +1969,7 @@ class TrackController extends GetxController {
     _roadQueue
       ..clear()
       ..addAll(ahead);
+
 
     // Always land on the new road line. The car never floats off the road.
     _pathLat = onNew.latitude;
@@ -2870,10 +2907,14 @@ class TrackController extends GetxController {
   /// tile at zoom 0, camera target at the viewport centre, no tilt), rotated
   /// by the camera bearing so it matches the heading-up map.
   Offset? _projectToScreen(LatLng p, {LatLng? camera}) {
-    final cam = camera ?? _shownCameraTarget();
+    // Centre, bearing and zoom from the same camera push.
+    final shown = camera == null ? _shownCamera() : null;
+    final cam = camera ?? shown?.$1;
     if (cam == null || _mapSize.isEmpty) return null;
+    final bearing = shown?.$2 ?? _cameraBearing;
+    final zoomNow = shown?.$3 ?? _cameraZoom;
 
-    final scale = _tileSize * math.pow(2, _cameraZoom).toDouble();
+    final scale = _tileSize * math.pow(2, zoomNow).toDouble();
     double worldX(double lng) => (lng + 180.0) / 360.0 * scale;
     double worldY(double lat) {
       final s = math.sin(lat * math.pi / 180).clamp(-0.9999, 0.9999);
@@ -2885,7 +2926,7 @@ class TrackController extends GetxController {
 
     // The map is turned so the camera bearing points up: rotate the
     // north-up offset by -bearing.
-    final b = _cameraBearing * math.pi / 180;
+    final b = bearing * math.pi / 180;
     final cosB = math.cos(b);
     final sinB = math.sin(b);
     return Offset(

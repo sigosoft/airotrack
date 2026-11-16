@@ -1,11 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../../../widgets/map_widget.dart';
 import '../../../../Services/AppSettings.dart';
 import '../../home/controllers/home_controller.dart';
 
@@ -28,22 +26,22 @@ class LocationController extends GetxController {
 
   static const double _vehicleZoom = 15;
   static const double _minZoom = 3;
-  static const double _maxZoom = 19;
+  static const double _maxZoom = 20;
+  static const double minZoom = _minZoom;
+  static const double maxZoom = _maxZoom;
 
   final statusFilter = 'All'.obs;
-  /// Public OpenStreetMap tiles stay grey on devices (blocked), so the tab
-  /// uses Mapbox; the widget still falls back to OSM without a token.
-  /// Starts on General Settings → Map Type.
-  final mapStyle = _settingsStyle().obs;
+  /// Google map type. Starts on General Settings → Map Type.
+  final mapType = _settingsMapType().obs;
 
-  static AiroMapStyle _settingsStyle() {
+  static MapType _settingsMapType() {
     switch (AppSettings.maybe?.mapType.value) {
       case AppMapType.satellite:
-        return AiroMapStyle.mapboxSatellite;
+        return MapType.hybrid;
       case AppMapType.terrain:
-        return AiroMapStyle.mapboxOutdoors;
+        return MapType.terrain;
       default:
-        return AiroMapStyle.mapboxStreets;
+        return MapType.normal;
     }
   }
 
@@ -58,7 +56,7 @@ class LocationController extends GetxController {
 
   HomeController get _home => Get.find<HomeController>();
 
-  MapController? _map;
+  GoogleMapController? _map;
   bool _mapReady = false;
   bool _fittedOnce = false;
 
@@ -68,6 +66,9 @@ class LocationController extends GetxController {
   /// Last camera, so switching tabs and back keeps the view.
   LatLng? lastCenter;
   double lastZoom = 13;
+
+  /// Size of the map on screen, for fitting vehicles into view.
+  Size mapSize = Size.zero;
 
   final List<Worker> _workers = [];
 
@@ -101,42 +102,46 @@ class LocationController extends GetxController {
   }
 
   // ---------------------------------------------------------------------
-  // Map lifecycle (the view owns the MapController)
+  // Map lifecycle
   // ---------------------------------------------------------------------
 
-  void attachMap(MapController controller) {
+  /// Where the map opens: the last view, else the first vehicle.
+  CameraPosition get initialCamera {
+    final first = mapVehicles.firstOrNull;
+    return CameraPosition(
+      target: lastCenter ??
+          (first != null ? _pointOf(first) : const LatLng(11.8745, 75.3704)),
+      zoom: lastZoom,
+    );
+  }
+
+  void onMapCreated(GoogleMapController controller) {
     _map = controller;
-    _mapReady = false;
-  }
-
-  void detachMap(MapController controller) {
-    if (identical(_map, controller)) {
-      _map = null;
-      _mapReady = false;
-    }
-  }
-
-  void onMapReady() {
     _mapReady = true;
-    // Fitting inside onMapReady moves the camera before the tile layer has
-    // loaded its first view, and the new view stays grey until a gesture.
-    // Fit one frame later instead.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_fittedOnce) fitAll();
     });
+  }
+
+  /// The map left the screen (tab switched); its controller is gone.
+  void onMapDisposed() {
+    _map = null;
+    _mapReady = false;
   }
 
   /// Zoom rounded to half steps. Markers that would overlap at this zoom are
   /// grouped, so the view rebuilds markers only when this changes.
   final zoomStep = 13.0.obs;
 
-  void onPositionChanged(MapCamera camera, bool hasGesture) {
-    lastCenter = camera.center;
+  void onCameraMove(CameraPosition camera) {
+    lastCenter = camera.target;
     lastZoom = camera.zoom;
     final step = (camera.zoom * 2).round() / 2;
     if (zoomStep.value != step) zoomStep.value = step;
-    if (hasGesture) _following = false;
   }
+
+  /// A finger touched the map: stop following the selected vehicle.
+  void onUserTouch() => _following = false;
 
   /// True at the closest zoom the map allows.
   bool get atMaxZoom => zoomStep.value >= _maxZoom - 0.25;
@@ -154,23 +159,7 @@ class LocationController extends GetxController {
   void zoomToGroup(List<Vehicle> group) {
     if (!_mapReady || _map == null || group.isEmpty) return;
     _following = false;
-    final points = group.map(_pointOf).toList();
-    try {
-      final bounds = LatLngBounds.fromPoints(points);
-      if (bounds.southWest == bounds.northEast) {
-        _map!.move(bounds.center, _maxZoom);
-      } else {
-        _map!.fitCamera(
-          CameraFit.bounds(
-            bounds: bounds,
-            padding: const EdgeInsets.fromLTRB(80, 200, 90, 200),
-            maxZoom: _maxZoom,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('[Location] group zoom skipped: $e');
-    }
+    _fit(group.map(_pointOf).toList(), maxZoom: _maxZoom);
   }
 
   /// Vehicles whose markers would cover each other at [zoom] share one group.
@@ -233,21 +222,60 @@ class LocationController extends GetxController {
 
   LatLng _pointOf(Vehicle v) => LatLng(v.latitude!, v.longitude!);
 
-  double get _currentZoom {
-    try {
-      return _map?.camera.zoom ?? lastZoom;
-    } catch (_) {
-      return lastZoom;
-    }
-  }
+  double get _currentZoom => lastZoom;
 
   void _moveTo(Vehicle v, {double? zoom}) {
+    _camera(CameraUpdate.newLatLngZoom(_pointOf(v), zoom ?? _currentZoom));
+  }
+
+  void _camera(CameraUpdate update) {
     if (!_mapReady || _map == null) return;
-    try {
-      _map!.move(_pointOf(v), zoom ?? _currentZoom);
-    } catch (e) {
-      debugPrint('[Location] move skipped: $e');
+    _map!.animateCamera(update).catchError((Object e) {
+      debugPrint('[Location] camera skipped: $e');
+    });
+  }
+
+  /// Centres [points] in the free part of the map (clear of the side
+  /// buttons, the top buttons and the bottom bar), zoomed in no closer than
+  /// [maxZoom].
+  void _fit(List<LatLng> points, {required double maxZoom}) {
+    if (points.isEmpty) return;
+    const pad = EdgeInsets.fromLTRB(80, 200, 90, 200);
+    Offset world(LatLng p) {
+      final lat = p.latitude.clamp(-85.0, 85.0) * math.pi / 180;
+      return Offset(
+        (p.longitude + 180) / 360,
+        (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) / 2,
+      );
     }
+
+    final w = points.map(world).toList();
+    final minX = w.map((o) => o.dx).reduce(math.min);
+    final maxX = w.map((o) => o.dx).reduce(math.max);
+    final minY = w.map((o) => o.dy).reduce(math.min);
+    final maxY = w.map((o) => o.dy).reduce(math.max);
+    final freeW = math.max(1.0, mapSize.width - pad.horizontal);
+    final freeH = math.max(1.0, mapSize.height - pad.vertical);
+    var zoom = maxZoom;
+    if (maxX > minX || maxY > minY) {
+      final zx = maxX > minX
+          ? math.log(freeW / (256 * (maxX - minX))) / math.ln2
+          : maxZoom;
+      final zy = maxY > minY
+          ? math.log(freeH / (256 * (maxY - minY))) / math.ln2
+          : maxZoom;
+      zoom = math.min(maxZoom, math.min(zx, zy));
+    }
+    zoom = zoom.clamp(_minZoom, _maxZoom).toDouble();
+    // Centre of the points, shifted so they sit in the middle of the free
+    // area rather than of the whole map.
+    final scale = 256 * math.pow(2, zoom);
+    final cx = (minX + maxX) / 2 - (pad.left - pad.right) / 2 / scale;
+    final cy = (minY + maxY) / 2 - (pad.top - pad.bottom) / 2 / scale;
+    final n = math.pi - 2 * math.pi * cy;
+    final lat = 180 / math.pi * math.atan(0.5 * (math.exp(n) - math.exp(-n)));
+    final lng = cx * 360 - 180;
+    _camera(CameraUpdate.newLatLngZoom(LatLng(lat, lng), zoom));
   }
 
   /// Shows every vehicle in the current filter.
@@ -257,43 +285,14 @@ class LocationController extends GetxController {
     if (points.isEmpty) return;
     _following = false;
     _fittedOnce = true;
-    try {
-      final bounds = LatLngBounds.fromPoints(points);
-      final zeroArea = bounds.southWest == bounds.northEast;
-      if (points.length == 1 || zeroArea) {
-        _map!.move(bounds.center, _vehicleZoom);
-      } else {
-        _map!.fitCamera(
-          CameraFit.bounds(
-            bounds: bounds,
-            // Clear of the side buttons, the top buttons (plate labels sit
-            // above each point) and the bottom navigation bar.
-            padding: const EdgeInsets.fromLTRB(80, 200, 90, 200),
-            maxZoom: 16,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('[Location] fit skipped: $e');
-    }
+    _fit(points, maxZoom: points.length == 1 ? _vehicleZoom : 16);
   }
 
   void zoomIn() => _zoomBy(1);
 
   void zoomOut() => _zoomBy(-1);
 
-  void _zoomBy(double delta) {
-    if (!_mapReady || _map == null) return;
-    try {
-      final camera = _map!.camera;
-      _map!.move(
-        camera.center,
-        (camera.zoom + delta).clamp(_minZoom, _maxZoom).toDouble(),
-      );
-    } catch (e) {
-      debugPrint('[Location] zoom skipped: $e');
-    }
-  }
+  void _zoomBy(double delta) => _camera(CameraUpdate.zoomBy(delta));
 
   // ---------------------------------------------------------------------
   // Selection
@@ -334,16 +333,12 @@ class LocationController extends GetxController {
     fitAll();
   }
 
-  /// Map button: streets ↔ satellite.
+  /// Map button: default → satellite → terrain → default.
   void cycleMapStyle() {
-    // Traffic uses its own street map; picking a style turns it off so the
-    // chosen style actually shows.
-    trafficEnabled.value = false;
-    // Streets → satellite → terrain → streets.
-    mapStyle.value = switch (mapStyle.value) {
-      AiroMapStyle.mapboxStreets => AiroMapStyle.mapboxSatellite,
-      AiroMapStyle.mapboxSatellite => AiroMapStyle.mapboxOutdoors,
-      _ => AiroMapStyle.mapboxStreets,
+    mapType.value = switch (mapType.value) {
+      MapType.normal => MapType.hybrid,
+      MapType.hybrid => MapType.terrain,
+      _ => MapType.normal,
     };
   }
 

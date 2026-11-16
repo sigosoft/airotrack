@@ -1,15 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../../Utils/app_colors.dart';
-import '../../../../widgets/map_widget.dart';
 import '../../../widgets/vehicle_details_dialog.dart';
 import '../../home/controllers/home_controller.dart';
 import '../controllers/location_controller.dart';
+import 'location_marker_icons.dart';
 
 class LocationView extends StatefulWidget {
   const LocationView({super.key});
@@ -20,18 +19,38 @@ class LocationView extends StatefulWidget {
 
 class _LocationViewState extends State<LocationView> {
   final LocationController controller = Get.find<LocationController>();
-  final MapController _mapController = MapController();
+  LocationMarkerIcons? _icons;
+  Set<Marker> _markers = {};
+  int _markerGen = 0;
+  final List<Worker> _workers = [];
 
   @override
   void initState() {
     super.initState();
-    controller.attachMap(_mapController);
+    final home = Get.find<HomeController>();
+    _workers.addAll([
+      ever(controller.zoomStep, (_) => _rebuildMarkers()),
+      ever(controller.selectedId, (_) => _rebuildMarkers()),
+      ever(controller.statusFilter, (_) => _rebuildMarkers()),
+      ever(home.allVehicles, (_) => _rebuildMarkers()),
+    ]);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_icons == null) {
+      _icons = LocationMarkerIcons(MediaQuery.of(context).devicePixelRatio);
+      _rebuildMarkers();
+    }
   }
 
   @override
   void dispose() {
-    controller.detachMap(_mapController);
-    _mapController.dispose();
+    for (final w in _workers) {
+      w.dispose();
+    }
+    controller.onMapDisposed();
     super.dispose();
   }
 
@@ -41,31 +60,36 @@ class _LocationViewState extends State<LocationView> {
     return Scaffold(
       body: Stack(
         children: [
-          Obx(() {
-            final selectedId = controller.selectedId.value;
-            final placements =
-                controller.markerPlacements(controller.zoomStep.value);
-            // The marker holding the selected vehicle draws last, on top.
-            placements.sort((a, b) =>
-                (a.vehicles.any((v) => v.id == selectedId) ? 1 : 0) -
-                (b.vehicles.any((v) => v.id == selectedId) ? 1 : 0));
-            return AiroMapWidget(
-              mapController: _mapController,
-              mapStyle: controller.mapStyle.value,
-              traffic: controller.trafficEnabled.value,
-              initialCenter: controller.lastCenter,
-              initialZoom: controller.lastZoom,
-              onMapReady: controller.onMapReady,
-              onPositionChanged: controller.onPositionChanged,
-              markers: [
-                for (final p in placements)
-                  if (controller.atMaxZoom)
-                    _topCarsMarker(p.vehicles, selectedId, p.point)
-                  else
-                    _groupMarker(p.vehicles, selectedId, at: p.point),
-              ],
-            );
-          }),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              controller.mapSize = constraints.biggest;
+              return Listener(
+                // Any finger on the map stops following the selected car.
+                onPointerDown: (_) => controller.onUserTouch(),
+                child: Obx(
+                  () => GoogleMap(
+                    initialCameraPosition: controller.initialCamera,
+                    mapType: controller.mapType.value,
+                    trafficEnabled: controller.trafficEnabled.value,
+                    onMapCreated: controller.onMapCreated,
+                    onCameraMove: controller.onCameraMove,
+                    markers: _markers,
+                    minMaxZoomPreference: const MinMaxZoomPreference(
+                      LocationController.minZoom,
+                      LocationController.maxZoom,
+                    ),
+                    // The screen has its own buttons for these.
+                    zoomControlsEnabled: false,
+                    myLocationButtonEnabled: false,
+                    mapToolbarEnabled: false,
+                    compassEnabled: false,
+                    rotateGesturesEnabled: false,
+                    tiltGesturesEnabled: false,
+                  ),
+                ),
+              );
+            },
+          ),
           Positioned(
             top: topInset,
             left: 15,
@@ -135,210 +159,124 @@ class _LocationViewState extends State<LocationView> {
   // Markers
   // ---------------------------------------------------------------------
 
+  /// Redraws the Google markers for the current zoom, filter, selection and
+  /// vehicles. Only the latest call's result is shown.
+  Future<void> _rebuildMarkers() async {
+    final icons = _icons;
+    if (icons == null) return;
+    // A refresh first empties the vehicle list for a moment; keep the
+    // markers until the new list arrives.
+    if (Get.find<HomeController>().allVehicles.isEmpty && _markers.isNotEmpty) {
+      return;
+    }
+    final gen = ++_markerGen;
+    final selectedId = controller.selectedId.value;
+    final atMax = controller.atMaxZoom;
+    final placements = controller.markerPlacements(controller.zoomStep.value);
+    final out = <Marker>{};
+    try {
+      for (final p in placements) {
+        if (atMax) {
+          out.addAll(await _topCarMarkers(icons, p, selectedId));
+        } else {
+          out.add(await _groupMarker(icons, p, selectedId));
+        }
+      }
+    } catch (e) {
+      debugPrint('[Location] markers skipped: $e');
+      return;
+    }
+    if (!mounted || gen != _markerGen) return;
+    setState(() => _markers = out);
+  }
+
   /// One marker per group. A group of several vehicles shows the first (or
-  /// selected) plate with a "+N" badge; tapping it lists them to pick from.
-  Marker _groupMarker(List<Vehicle> group, int? selectedId, {LatLng? at}) {
+  /// selected) plate with a "+N" badge; tapping it zooms in on them.
+  Future<Marker> _groupMarker(
+    LocationMarkerIcons icons,
+    MarkerPlacement p,
+    int? selectedId,
+  ) async {
+    final group = p.vehicles;
     final v = group.first;
     final selected = group.any((g) => g.id == selectedId);
     final extra = group.length - 1;
+    final icon = await icons.group(
+      plate: v.plateNumber,
+      extra: extra,
+      selected: selected,
+      carAsset: _statusCarImage(v.status),
+      carSize: (selected ? 52 : 44) * controller.iconScale,
+    );
     return Marker(
-      point: at ?? LatLng(v.latitude!, v.longitude!),
-      // Wide enough for full plate names like "TCP TSAIRO MICRA".
-      width: 180,
-      height: 38 + 52 * controller.iconScale,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (extra == 0) {
-            _openVehicle(v);
-          } else if (controller.atMaxZoom) {
-            _showGroupSheet(group);
-          } else {
-            // Zoom in on them; at the closest zoom each gets its own marker.
-            controller.zoomToGroup(group);
-          }
-        },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: selected ? AppColors.primaryBlue : Colors.black,
-                borderRadius: BorderRadius.circular(15),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      v.plateNumber.isEmpty ? '—' : v.plateNumber,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  if (extra > 0) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '+$extra',
-                        style: TextStyle(
-                          color: selected
-                              ? AppColors.primaryBlue
-                              : Colors.black,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            Image.asset(
-              _statusCarImage(v.status),
-              width: (selected ? 52 : 44) * controller.iconScale,
-              height: (selected ? 52 : 44) * controller.iconScale,
-            ),
-          ],
-        ),
-      ),
+      markerId: MarkerId('g-${v.id}'),
+      position: p.point,
+      icon: icon.descriptor,
+      anchor: icon.anchor(),
+      zIndexInt: selected ? 2 : 1,
+      consumeTapEvents: true,
+      onTap: () {
+        if (extra == 0) {
+          _openVehicle(v);
+        } else if (controller.atMaxZoom) {
+          _showGroupSheet(group);
+        } else {
+          // Zoom in on them; at the closest zoom each gets its own marker.
+          controller.zoomToGroup(group);
+        }
+      },
     );
   }
 
   /// Closest zoom: cars seen from above, turned the way they face, side by
   /// side on their real spot (several trackers can report the very same
-  /// point), each with its own small name label. Tap a car or its name to
-  /// open it.
-  Marker _topCarsMarker(List<Vehicle> group, int? selectedId, LatLng point) {
+  /// point), each with its own small name label above. Tap a car or its
+  /// name to open it.
+  Future<List<Marker>> _topCarMarkers(
+    LocationMarkerIcons icons,
+    MarkerPlacement p,
+    int? selectedId,
+  ) async {
+    final group = p.vehicles;
     final car = 48 * controller.iconScale;
     final step = car * 0.55; // close together, like cars parked side by side
-    const labelH = 20.0;
     const labelGap = 3.0;
-    const labelHalfW = 90.0;
+    const labelRow = 20.0 + labelGap;
     final n = group.length;
-    final span = car + step * (n - 1);
-    final width = span + 2 * labelHalfW;
-    final labelsH = n * (labelH + labelGap);
-    // Same empty height below as the labels above, so the cars sit centred
-    // on the real spot.
-    final height = labelsH * 2 + car;
-    double carLeft(int i) => labelHalfW + i * step;
-    return Marker(
-      point: point,
-      width: width,
-      height: height,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (var i = 0; i < n; i++)
-            Positioned(
-              left: carLeft(i),
-              top: labelsH,
-              child: GestureDetector(
-                onTap: () => _openVehicle(group[i]),
-                child: _topCar(group[i], car),
-              ),
-            ),
-          // Leftmost car's name on top, so every name stays readable.
-          for (var i = 0; i < n; i++)
-            Positioned(
-              left: carLeft(i) + car / 2 - labelHalfW,
-              width: labelHalfW * 2,
-              top: i * (labelH + labelGap),
-              height: labelH,
-              child: Center(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _openVehicle(group[i]),
-                  child: _plateLabel(
-                    group[i],
-                    selected: group[i].id == selectedId,
-                    small: true,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// Top-down car in the vehicle's status colour, pointing along its course.
-  Widget _topCar(Vehicle v, double size) {
-    final c = _statusColor(v.status);
-    // Grey out the green artwork, then paint it in the status colour; the
-    // 1.65 keeps the body as bright as the colour itself.
-    const k = 1.65;
-    final r = c.red / 255 * k, g = c.green / 255 * k, b = c.blue / 255 * k;
-    return Transform.rotate(
-      angle: (v.course ?? 0) * math.pi / 180,
-      child: ColorFiltered(
-        colorFilter: ColorFilter.matrix([
-          0.2126 * r, 0.7152 * r, 0.0722 * r, 0, 0,
-          0.2126 * g, 0.7152 * g, 0.0722 * g, 0, 0,
-          0.2126 * b, 0.7152 * b, 0.0722 * b, 0, 0,
-          0, 0, 0, 1, 0,
-        ]),
-        child: Image.asset(
-          'lib/Asset/Icons/Track Vehicle Top.png',
-          width: size,
-          height: size,
-        ),
-      ),
-    );
-  }
-
-  Widget _plateLabel(Vehicle v, {required bool selected, bool small = false}) {
-    return Container(
-      height: small ? 20 : 30,
-      padding: small
-          ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
-          : const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: selected ? AppColors.primaryBlue : Colors.black,
-        borderRadius: BorderRadius.circular(small ? 6 : 15),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Text(
-        v.plateNumber.isEmpty ? '—' : v.plateNumber,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: small ? 10 : 12,
-          fontWeight: FontWeight.bold,
-          height: 1,
-        ),
-      ),
-    );
+    final out = <Marker>[];
+    for (var i = 0; i < n; i++) {
+      final v = group[i];
+      final selected = v.id == selectedId;
+      final dx = (i - (n - 1) / 2) * step;
+      final carIcon = await icons.topCar(
+        color: _statusColor(v.status),
+        course: v.course ?? 0,
+        size: car,
+      );
+      final label = await icons.label(plate: v.plateNumber, selected: selected);
+      // Leftmost car's name on top, so every name stays readable.
+      final above = car / 2 + labelGap + (n - 1 - i) * labelRow;
+      out
+        ..add(Marker(
+          markerId: MarkerId('c-${v.id}'),
+          position: p.point,
+          icon: carIcon.descriptor,
+          anchor: carIcon.anchor(Offset(dx, 0)),
+          zIndexInt: 1,
+          consumeTapEvents: true,
+          onTap: () => _openVehicle(v),
+        ))
+        ..add(Marker(
+          markerId: MarkerId('l-${v.id}'),
+          position: p.point,
+          icon: label.descriptor,
+          anchor: label.anchor(Offset(dx, -above)),
+          zIndexInt: selected ? 4 : 3,
+          consumeTapEvents: true,
+          onTap: () => _openVehicle(v),
+        ));
+    }
+    return out;
   }
 
   void _openVehicle(Vehicle v) {

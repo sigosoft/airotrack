@@ -10,7 +10,11 @@ class StatisticsView extends GetView<StatisticsController> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
+    // White behind the SafeArea too: the status-bar strip above it showed
+    // through as a black bar.
+    return ColoredBox(
+      color: Colors.white,
+      child: SafeArea(
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
@@ -227,6 +231,7 @@ class StatisticsView extends GetView<StatisticsController> {
             plate: controller.selectedPlate.value,
           ),
         ),
+      ),
       ),
     );
   }

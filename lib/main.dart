@@ -1,3 +1,4 @@
+import 'package:airotrack/Services/AppSettings.dart';
 import 'package:airotrack/Services/FcmService.dart';
 import 'package:airotrack/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -40,6 +41,9 @@ void main() async {
       'If you see MissingPluginException, please fully restart the app to link native plugins.',
     );
   }
+
+  // General Settings (units, time format, map type, …) before any screen.
+  await AppSettings.init();
 
   await FcmService.instance.init();
 

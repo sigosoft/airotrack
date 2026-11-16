@@ -1,119 +1,107 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../../Utils/app_colors.dart';
 import '../../../../widgets/map_widget.dart';
+import '../../../widgets/vehicle_details_dialog.dart';
+import '../../home/controllers/home_controller.dart';
 import '../controllers/location_controller.dart';
 
-class LocationView extends GetView<LocationController> {
+class LocationView extends StatefulWidget {
   const LocationView({super.key});
 
   @override
+  State<LocationView> createState() => _LocationViewState();
+}
+
+class _LocationViewState extends State<LocationView> {
+  final LocationController controller = Get.find<LocationController>();
+  final MapController _mapController = MapController();
+
+  @override
+  void initState() {
+    super.initState();
+    controller.attachMap(_mapController);
+  }
+
+  @override
+  void dispose() {
+    controller.detachMap(_mapController);
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final topInset = math.max(45.0, MediaQuery.of(context).padding.top + 10);
     return Scaffold(
       body: Stack(
         children: [
-          AiroMapWidget(),
+          Obx(() {
+            final selectedId = controller.selectedId.value;
+            final groups =
+                controller.groupedVehicles(controller.zoomStep.value);
+            // The group holding the selected vehicle draws last, on top.
+            groups.sort((a, b) =>
+                (a.any((v) => v.id == selectedId) ? 1 : 0) -
+                (b.any((v) => v.id == selectedId) ? 1 : 0));
+            return AiroMapWidget(
+              mapController: _mapController,
+              mapStyle: controller.mapStyle.value,
+              traffic: controller.trafficEnabled.value,
+              initialCenter: controller.lastCenter,
+              initialZoom: controller.lastZoom,
+              onMapReady: controller.onMapReady,
+              onPositionChanged: controller.onPositionChanged,
+              markers: [
+                for (final group in groups) _groupMarker(group, selectedId),
+              ],
+            );
+          }),
           Positioned(
-            top: 45,
+            top: topInset,
             left: 15,
-            child: _buildFloatingButton(
-              'lib/Asset/Icons/map.png',
-              onTap: () {},
-            ),
-          ),
-          Positioned(
-            top: 45,
-            right: 15,
             child: Column(
               children: [
                 _buildFloatingButton(
-                  'lib/Asset/Icons/Filters.png',
-                  onTap: () {},
+                  'lib/Asset/Icons/map.png',
+                  onTap: controller.cycleMapStyle,
                 ),
                 const SizedBox(height: 10),
-                _buildFloatingButton('lib/Asset/Icons/Zoom.png', onTap: () {}),
-                const SizedBox(height: 10),
-                _buildFloatingButton(
-                  'lib/Asset/Icons/Traffic.png',
-                  onTap: controller.toggleTraffic,
-                ),
-                const SizedBox(height: 10),
-                _buildFloatingButton(
-                  'lib/Asset/Icons/Refresh.png',
-                  onTap: () {},
+                // Live traffic on/off, as on Track; blue border while on.
+                Obx(
+                  () => _buildFloatingButton(
+                    'lib/Asset/Icons/Traffic.png',
+                    onTap: controller.toggleTraffic,
+                    active: controller.trafficEnabled.value,
+                    tint: false,
+                  ),
                 ),
               ],
             ),
           ),
           Positioned(
-            left: 5,
-            top: MediaQuery.of(context).size.height * 0.45,
-            child: _buildSideArrow(Icons.chevron_left),
-          ),
-          Positioned(
-            right: 5,
-            top: MediaQuery.of(context).size.height * 0.45,
-            child: _buildSideArrow(Icons.chevron_right),
-          ),
-          Center(
-            child: Obx(() {
-              final vehicle = controller.selectedVehicle.value;
-              final plate = vehicle?.name ?? 'KL 07 A 0518';
-              return GestureDetector(
-                onTap: () {
-                  if (vehicle != null) {
-                    _showVehicleDetailsDialog(context, vehicle);
-                  }
-                },
-                behavior: HitTestBehavior.opaque,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(15),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        plate,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Image.asset(
-                      'lib/Asset/Images/Green right Car.png',
-                      width: 55,
-                      height: 55,
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ),
-          Positioned(
-            bottom: 130,
+            top: topInset,
             right: 15,
             child: Column(
               children: [
+                Obx(
+                  () => _buildFloatingButton(
+                    'lib/Asset/Icons/Filters.png',
+                    onTap: () => _showFilterSheet(context),
+                    badge: controller.statusFilter.value != 'All',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // Zoom.png tints to a solid dot, so use a Material icon.
                 _buildFloatingButton(
-                  'lib/Asset/Icons/Locations.png',
-                  onTap: controller.centerOnVehicle,
+                  null,
+                  icon: Icons.zoom_out_map,
+                  onTap: controller.fitAll,
                 ),
                 const SizedBox(height: 10),
                 _buildFloatingButton(
@@ -128,93 +116,342 @@ class LocationView extends GetView<LocationController> {
               ],
             ),
           ),
+          Positioned(
+            top: topInset + 4,
+            left: 60,
+            right: 60,
+            child: Center(child: Obx(_buildStatusChip)),
+          ),
         ],
       ),
     );
   }
 
-  void _showVehicleDetailsDialog(
-    BuildContext context,
-    LocationVehicleInfo vehicle,
-  ) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: Colors.white,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _detailRow('Name:', vehicle.name),
-                const SizedBox(height: 10),
-                _detailRow(
-                  'Status:',
-                  '${vehicle.status} Since ${vehicle.statusDuration}',
-                ),
-                const SizedBox(height: 10),
-                _detailRow('Device Time:', vehicle.deviceTime),
-                const SizedBox(height: 10),
-                _detailRow('Location:', vehicle.location, maxLines: 2),
-                const SizedBox(height: 10),
-                _detailRow('Engine:', vehicle.engine),
-                const SizedBox(height: 10),
-                _detailRow('Voltage:', vehicle.voltage),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(40),
-                          side: BorderSide(color: Colors.grey.shade300),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+  // ---------------------------------------------------------------------
+  // Markers
+  // ---------------------------------------------------------------------
+
+  /// One marker per group. A group of several vehicles shows the first (or
+  /// selected) plate with a "+N" badge; tapping it lists them to pick from.
+  Marker _groupMarker(List<Vehicle> group, int? selectedId) {
+    final v = group.first;
+    final selected = group.any((g) => g.id == selectedId);
+    final extra = group.length - 1;
+    return Marker(
+      point: LatLng(v.latitude!, v.longitude!),
+      // Wide enough for full plate names like "TCP TSAIRO MICRA".
+      width: 180,
+      height: 38 + 52 * controller.iconScale,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (extra == 0) {
+            _openVehicle(v);
+          } else {
+            _showGroupSheet(group);
+          }
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primaryBlue : Colors.black,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      v.plateNumber.isEmpty ? '—' : v.plateNumber,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          // Track navigation will be wired when integrated.
-                          Navigator.pop(dialogContext);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryBlue,
-                          minimumSize: const Size.fromHeight(40),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text(
-                          'Track',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
+                  ),
+                  if (extra > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '+$extra',
+                        style: TextStyle(
+                          color: selected
+                              ? AppColors.primaryBlue
+                              : Colors.black,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
                   ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Image.asset(
+              _statusCarImage(v.status),
+              width: (selected ? 52 : 44) * controller.iconScale,
+              height: (selected ? 52 : 44) * controller.iconScale,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openVehicle(Vehicle v) {
+    controller.selectVehicle(v);
+    showVehicleDetailsDialog(context, v);
+  }
+
+  /// Vehicles parked at (almost) the same spot: pick one from a list.
+  void _showGroupSheet(List<Vehicle> group) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.6,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text(
+                      '${group.length} vehicles here',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final v in group)
+                          ListTile(
+                            dense: true,
+                            leading: Image.asset(
+                              _statusCarImage(v.status),
+                              width: 40,
+                              height: 40,
+                            ),
+                            title: Text(
+                              v.plateNumber.isEmpty ? '—' : v.plateNumber,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Row(
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: _statusColor(v.status),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(v.statusLabel),
+                              ],
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () {
+                              Navigator.pop(sheetContext);
+                              _openVehicle(v);
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Car picture for each status, matching Home.
+  String _statusCarImage(String status) {
+    switch (status) {
+      case 'Running':
+        return 'lib/Asset/Images/Green right Car.png';
+      case 'Idle':
+        return 'lib/Asset/Images/Idle_yellow_rightcar.png';
+      case 'Expired':
+        return 'lib/Asset/Images/Expired_GlossyOrange_rightcar.png';
+      case 'Inactive':
+        return 'lib/Asset/Images/Inactive_blue_rightcar.png';
+      case 'No data':
+        return 'lib/Asset/Images/No data_grey_rightcar.png';
+      default:
+        return 'lib/Asset/Images/Red right Car.png';
+    }
+  }
+
+  /// Same colours as the status cards on Home.
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'Running':
+        return const Color(0xFF00C853);
+      case 'Idle':
+        return const Color(0xFFFFD600);
+      case 'Expired':
+        return const Color(0xFFFF9100);
+      case 'Inactive':
+        return Colors.blue;
+      case 'No data':
+        return Colors.grey;
+      case 'All':
+        return AppColors.primaryBlue;
+      default:
+        return const Color(0xFFFF3D00);
+    }
+  }
+
+  /// Loading / empty notice at the top of the map; nothing when vehicles show.
+  Widget _buildStatusChip() {
+    final String? text;
+    if (controller.mapVehicles.isNotEmpty) {
+      text = null;
+    } else if (controller.isLoading) {
+      text = 'Loading vehicles…';
+    } else if (controller.statusFilter.value == 'All') {
+      text = 'No vehicles with a location';
+    } else {
+      text = 'No ${controller.statusFilter.value} vehicles';
+    }
+    if (text == null) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Filter sheet
+  // ---------------------------------------------------------------------
+
+  void _showFilterSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    'Show vehicles',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
                 ),
+                for (final filter in LocationController.statusFilters)
+                  Obx(() {
+                    final active = controller.statusFilter.value == filter;
+                    return ListTile(
+                      dense: true,
+                      leading: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: _statusColor(filter),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      title: Text(
+                        filter,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${controller.countFor(filter)}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            active
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            size: 20,
+                            color: active
+                                ? AppColors.primaryBlue
+                                : Colors.black26,
+                          ),
+                        ],
+                      ),
+                      onTap: () {
+                        controller.setFilter(filter);
+                        Navigator.pop(sheetContext);
+                      },
+                    );
+                  }),
               ],
             ),
           ),
@@ -223,43 +460,11 @@ class LocationView extends GetView<LocationController> {
     );
   }
 
-  Widget _detailRow(String label, String value, {int maxLines = 3}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 95,
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: Colors.black87,
-              height: 1.25,
-            ),
-            maxLines: maxLines,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
+  // ---------------------------------------------------------------------
+  // Buttons
+  // ---------------------------------------------------------------------
 
-  Widget _buildFloatingButton(String iconPath, {required VoidCallback onTap}) {
-    return Container(
-      width: 35,
-      height: 35,
-      decoration: BoxDecoration(
+  BoxDecoration get _buttonDecoration => BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         boxShadow: [
@@ -269,36 +474,60 @@ class LocationView extends GetView<LocationController> {
             offset: const Offset(0, 4),
           ),
         ],
-      ),
+      );
+
+  Widget _buildFloatingButton(
+    String? iconPath, {
+    IconData? icon,
+    required VoidCallback onTap,
+    bool badge = false,
+    bool active = false,
+    bool tint = true,
+  }) {
+    return Container(
+      width: 35,
+      height: 35,
+      decoration: active
+          ? _buttonDecoration.copyWith(
+              border: Border.all(color: AppColors.primaryBlue, width: 2),
+            )
+          : _buttonDecoration,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
-          child: Center(
-            child: Image.asset(
-              iconPath,
-              width: 20,
-              height: 20,
-              color: Colors.black,
-            ),
+          child: Stack(
+            children: [
+              Center(
+                child: iconPath != null
+                    ? Image.asset(
+                        iconPath,
+                        width: 20,
+                        height: 20,
+                        color: tint ? Colors.black : null,
+                      )
+                    : Icon(icon, size: 22, color: Colors.black),
+              ),
+              if (badge)
+                Positioned(
+                  top: 5,
+                  right: 5,
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primaryBlue,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSideArrow(IconData icon) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.25),
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Icon(icon, color: Colors.black.withOpacity(0.7), size: 32),
-      ),
-    );
-  }
+
 }

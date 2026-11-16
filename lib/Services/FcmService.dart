@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../Screens/routes/app_routes.dart';
 import '../Configs/ApiConfigs.dart';
@@ -47,6 +48,28 @@ class FcmService {
   int _notificationId = 0;
 
   String get token => _token?.trim() ?? '';
+
+  /// General Settings → Notification. Read from storage so it also works in
+  /// the background isolate, where AppSettings isn't set up.
+  static Future<bool> notificationsEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('set_notifications') ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Off: the device token is removed, so no pushes reach this phone.
+  /// On: a fresh token is registered with the server again.
+  Future<void> setEnabled(bool on) async {
+    if (on) {
+      await _refreshToken();
+      await registerTokenWithServer();
+    } else {
+      await removeDeviceToken();
+    }
+  }
 
   /// Stops Firebase from delivering pushes to this phone. Called on logout.
   /// The next login asks Firebase for a fresh token through [getToken].
@@ -158,6 +181,7 @@ class FcmService {
   /// Sends the device token to the website API (base URL) so the backend knows
   /// where to push alerts. Needs a logged-in user; failures are logged only.
   Future<void> registerTokenWithServer() async {
+    if (!await notificationsEnabled()) return;
     final fcm = token;
     if (fcm.isEmpty) return;
     try {
@@ -180,6 +204,7 @@ class FcmService {
       'title=${message.notification?.title} '
       'body=${message.notification?.body}',
     );
+    if (!await notificationsEnabled()) return;
 
     final title = message.notification?.title?.trim();
     final body = message.notification?.body?.trim();
@@ -218,6 +243,7 @@ class FcmService {
   /// Push content comes from the push server ([ApiConfig.pushBaseUrl]). Reads
   /// the newest push there and shows it once as a system notification.
   Future<void> showFromPushServer({bool initLocal = false}) async {
+    if (!await notificationsEnabled()) return;
     final latest = await PushFeedService.latest();
     if (latest == null || !await PushFeedService.markShown(latest)) return;
     if (initLocal) {

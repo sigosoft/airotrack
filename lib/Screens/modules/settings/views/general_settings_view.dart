@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+
+import '../../../../Services/AppSettings.dart';
 import '../controllers/general_settings_controller.dart';
 
 class GeneralSettingsView extends GetView<GeneralSettingsController> {
   const GeneralSettingsView({Key? key}) : super(key: key);
+
+  AppSettings get s => controller.settings;
 
   @override
   Widget build(BuildContext context) {
@@ -29,76 +33,172 @@ class GeneralSettingsView extends GetView<GeneralSettingsController> {
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            children: [
-              const SizedBox(height: 10),
-              _buildSettingItem(
-                iconPath: 'lib/Asset/Icons/Bells.png',
-                label: 'Notification',
-                trailing: _buildToggle(true),
-              ),
-              const SizedBox(height: 10),
-              _buildSettingItem(
-                iconPath: 'lib/Asset/Icons/Live history.png',
-                label: 'Show History on Live',
-                trailing: _buildToggle(true),
-              ),
-              const SizedBox(height: 10),
-              // Vehicle Icon Size Expandable
-              Obx(
-                () => Column(
-                  children: [
-                    GestureDetector(
-                      onTap: () => controller.toggleVehicleIconSize(),
-                      child: _buildSettingItem(
-                        iconPath: 'lib/Asset/Icons/Vehicle size.png',
-                        label: 'Vehicle Icon Size',
-                        trailing: _buildDropdownArrow(
-                          isExpanded:
-                              controller.isVehicleIconSizeExpanded.value,
-                        ),
-                      ),
-                    ),
-                    if (controller.isVehicleIconSizeExpanded.value)
-                      _buildVehicleIconSizeOptions(),
-                  ],
+          child: Obx(
+            () => Column(
+              children: [
+                const SizedBox(height: 10),
+                _buildSettingItem(
+                  iconPath: 'lib/Asset/Icons/Bells.png',
+                  label: 'Notification',
+                  trailing: _buildToggle(
+                    s.notifications.value,
+                    controller.setNotifications,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              _buildSettingItem(
-                iconPath: 'lib/Asset/Icons/Time Format.png',
-                label: 'Time Format',
-                trailing: _buildDropdownArrow(isExpanded: false),
-              ),
-              const SizedBox(height: 10),
-              _buildSettingItem(
-                iconPath: 'lib/Asset/Icons/Speedometer.png',
-                label: 'Speedometer',
-                trailing: _buildDropdownArrow(isExpanded: false),
-              ),
-              const SizedBox(height: 10),
-              _buildSettingItem(
-                iconPath: 'lib/Asset/Icons/Map type.png',
-                label: 'Map Type',
-                trailing: _buildDropdownArrow(isExpanded: false),
-              ),
-              const SizedBox(height: 10),
-              _buildSettingItem(
-                iconPath: 'lib/Asset/Icons/Top speed.png',
-                label: 'Speed',
-                trailing: _buildDropdownArrow(isExpanded: false),
-              ),
-              const SizedBox(height: 10),
-              _buildSettingItem(
-                iconPath: 'lib/Asset/Icons/Distance map.png',
-                label: 'Distance',
-                trailing: _buildDropdownArrow(isExpanded: false),
-              ),
-              const SizedBox(height: 20),
-            ],
+                const SizedBox(height: 10),
+                _buildSettingItem(
+                  iconPath: 'lib/Asset/Icons/Live history.png',
+                  label: 'Show History on Live',
+                  trailing: _buildToggle(
+                    s.showHistoryOnLive.value,
+                    s.setShowHistoryOnLive,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _buildChoiceSection<VehicleIconSize>(
+                  key: 'icon',
+                  iconPath: 'lib/Asset/Icons/Vehicle size.png',
+                  label: 'Vehicle Icon Size',
+                  current: s.iconSize.value,
+                  options: const {
+                    VehicleIconSize.small: 'Small',
+                    VehicleIconSize.medium: 'Medium',
+                    VehicleIconSize.large: 'Large',
+                  },
+                  onSelect: s.setIconSize,
+                ),
+                const SizedBox(height: 10),
+                _buildChoiceSection<bool>(
+                  key: 'time',
+                  iconPath: 'lib/Asset/Icons/Time Format.png',
+                  label: 'Time Format',
+                  current: s.use24HourTime.value,
+                  options: const {true: '24 hour', false: '12 hour (AM/PM)'},
+                  onSelect: s.setUse24HourTime,
+                ),
+                const SizedBox(height: 10),
+                _buildChoiceSection<bool>(
+                  key: 'gauge',
+                  iconPath: 'lib/Asset/Icons/Speedometer.png',
+                  label: 'Speedometer',
+                  current: s.showSpeedometer.value,
+                  options: const {true: 'Show on Track', false: 'Hide'},
+                  onSelect: s.setShowSpeedometer,
+                ),
+                const SizedBox(height: 10),
+                _buildChoiceSection<AppMapType>(
+                  key: 'map',
+                  iconPath: 'lib/Asset/Icons/Map type.png',
+                  label: 'Map Type',
+                  current: s.mapType.value,
+                  options: const {
+                    AppMapType.normal: 'Default',
+                    AppMapType.satellite: 'Satellite',
+                    AppMapType.terrain: 'Terrain',
+                  },
+                  onSelect: s.setMapType,
+                ),
+                const SizedBox(height: 10),
+                _buildChoiceSection<SpeedUnit>(
+                  key: 'speed',
+                  iconPath: 'lib/Asset/Icons/Top speed.png',
+                  label: 'Speed',
+                  current: s.speedUnit.value,
+                  options: const {
+                    SpeedUnit.kmh: 'km/h',
+                    SpeedUnit.mph: 'mph',
+                  },
+                  onSelect: s.setSpeedUnit,
+                ),
+                const SizedBox(height: 10),
+                _buildChoiceSection<DistanceUnit>(
+                  key: 'distance',
+                  iconPath: 'lib/Asset/Icons/Distance map.png',
+                  label: 'Distance',
+                  current: s.distanceUnit.value,
+                  options: const {
+                    DistanceUnit.km: 'Kilometres (km)',
+                    DistanceUnit.miles: 'Miles (mi)',
+                  },
+                  onSelect: s.setDistanceUnit,
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  /// A row that opens to a list of choices; the current one is shown on the
+  /// row and marked in the list.
+  Widget _buildChoiceSection<T>({
+    required String key,
+    required String iconPath,
+    required String label,
+    required T current,
+    required Map<T, String> options,
+    required void Function(T) onSelect,
+  }) {
+    final open = controller.expanded.value == key;
+    return Column(
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => controller.toggleSection(key),
+          child: _buildSettingItem(
+            iconPath: iconPath,
+            label: label,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  options[current] ?? '',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF009FE3),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildDropdownArrow(isExpanded: open),
+              ],
+            ),
+          ),
+        ),
+        if (open)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.grey.shade100),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                for (final entry in options.entries) ...[
+                  _buildOption(
+                    entry.value,
+                    selected: entry.key == current,
+                    onTap: () => onSelect(entry.key),
+                  ),
+                  if (entry.key != options.keys.last)
+                    const SizedBox(height: 10),
+                ],
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -124,21 +224,18 @@ class GeneralSettingsView extends GetView<GeneralSettingsController> {
         ],
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Image.asset(iconPath, width: 32, height: 32),
-              const SizedBox(width: 15),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                ),
+          Image.asset(iconPath, width: 32, height: 32),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
               ),
-            ],
+            ),
           ),
           trailing,
         ],
@@ -146,8 +243,23 @@ class GeneralSettingsView extends GetView<GeneralSettingsController> {
     );
   }
 
-  Widget _buildToggle(bool initialValue) {
-    return SwipeToggle(initialValue: initialValue);
+  /// Same artwork as before; flipped means off.
+  Widget _buildToggle(bool isOn, void Function(bool) onChanged) {
+    return GestureDetector(
+      onTap: () => onChanged(!isOn),
+      child: Transform.scale(
+        scaleX: isOn ? 1.0 : -1.0,
+        child: Opacity(
+          opacity: isOn ? 1 : 0.45,
+          child: Image.asset(
+            'lib/Asset/Icons/swipe button.png',
+            width: 40,
+            height: 30,
+            fit: BoxFit.contain,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildDropdownArrow({required bool isExpanded}) {
@@ -162,122 +274,59 @@ class GeneralSettingsView extends GetView<GeneralSettingsController> {
     );
   }
 
-  Widget _buildVehicleIconSizeOptions() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.grey.shade100),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          _buildSizeOption("Small"),
-          const SizedBox(height: 12),
-          _buildSizeOption("Medium"),
-          const SizedBox(height: 12),
-          _buildSizeOption("Large"),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSizeOption(String label) {
-    return Container(
-      width: 250,
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F8FA),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.black87,
+  /// Option row with the existing pill switch on the right.
+  Widget _buildOption(
+    String label, {
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F8FA),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: Colors.black87,
+              ),
             ),
-          ),
-          Obx(() {
-            bool isSelected = controller.selectedSize.value == label;
-            return GestureDetector(
-              onTap: () => controller.selectSize(label),
-              child: Container(
-                width: 38,
-                height: 22,
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: AnimatedAlign(
-                  duration: const Duration(milliseconds: 200),
-                  alignment: isSelected
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: const BoxDecoration(
-                      color: Colors.black,
-                      shape: BoxShape.circle,
-                    ),
+            Container(
+              width: 38,
+              height: 22,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: selected
+                    ? const Color(0xFF009FE3)
+                    : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 200),
+                alignment:
+                    selected ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
                   ),
                 ),
               ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
-
-class SwipeToggle extends StatefulWidget {
-  final bool initialValue;
-  const SwipeToggle({Key? key, required this.initialValue}) : super(key: key);
-
-  @override
-  _SwipeToggleState createState() => _SwipeToggleState();
-}
-
-class _SwipeToggleState extends State<SwipeToggle> {
-  late bool _isOn;
-
-  @override
-  void initState() {
-    super.initState();
-    _isOn = widget.initialValue;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _isOn = !_isOn;
-        });
-      },
-      child: Transform.scale(
-        scaleX: _isOn ? 1.0 : -1.0,
-        child: Image.asset(
-          'lib/Asset/Icons/swipe button.png',
-          width: 40,
-          height: 30,
-          fit: BoxFit.contain,
+            ),
+          ],
         ),
       ),
     );

@@ -5,6 +5,7 @@ import '../controllers/alerts_controller.dart';
 import 'alerts_filter_sheet.dart';
 import 'widgets/alert_card.dart';
 import '../../../routes/app_routes.dart';
+import '../../../../widgets/app_bottom_nav_bar.dart';
 
 class AlertsView extends GetView<AlertsController> {
   const AlertsView({Key? key}) : super(key: key);
@@ -222,6 +223,15 @@ class AlertsView extends GetView<AlertsController> {
           ),
         ],
       ),
+      // Opened from a vehicle's Track / History / Statistics bar: keep that
+      // bar here too, so the other tabs stay one tap away.
+      bottomNavigationBar: (Get.parameters['trackImei'] ?? '').isEmpty
+          ? null
+          : AppBottomNavBar(
+              selected: AppNavTab.alerts,
+              imei: Get.parameters['trackImei']!,
+              plate: Get.parameters['trackPlate'] ?? '',
+            ),
     );
   }
 

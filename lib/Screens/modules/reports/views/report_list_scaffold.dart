@@ -71,32 +71,54 @@ class _ReportListScaffoldState extends State<ReportListScaffold> {
       ),
       body: Column(
         children: [
+          // Every report is for one vehicle: pick which one here.
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Container(
-              height: 45,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: TextField(
-                      onChanged: (v) => controller.searchQuery.value = v,
-                      decoration: const InputDecoration(
-                        hintText: "Search Vehicles",
-                        border: InputBorder.none,
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                        contentPadding: EdgeInsets.only(bottom: 12),
-                      ),
+            child: GestureDetector(
+              onTap: _showVehiclePicker,
+              child: Container(
+                height: 45,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 12),
+                    const Icon(
+                      Icons.directions_car,
+                      color: Color(0xFF009FE3),
+                      size: 22,
                     ),
-                  ),
-                  const Icon(Icons.search, color: Colors.grey, size: 24),
-                  const SizedBox(width: 16),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Obx(() {
+                        final hasVehicle =
+                            controller.selectedImei.value.trim().isNotEmpty;
+                        return Text(
+                          hasVehicle
+                              ? controller.selectedPlate.value
+                              : 'Select vehicle',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: hasVehicle ? Colors.black : Colors.grey,
+                            fontSize: 14,
+                            fontWeight:
+                                hasVehicle ? FontWeight.w600 : FontWeight.w400,
+                          ),
+                        );
+                      }),
+                    ),
+                    const Icon(
+                      Icons.arrow_drop_down,
+                      color: Color(0xFF009FE3),
+                      size: 30,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
               ),
             ),
           ),
@@ -254,6 +276,134 @@ class _ReportListScaffoldState extends State<ReportListScaffold> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Searchable list of the fleet; picking one reloads this report for it.
+  void _showVehiclePicker() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final vehicles = controller.vehicles
+        .where((v) => v.deviceId.trim().isNotEmpty)
+        .toList();
+    var query = '';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final q = query.trim().toLowerCase();
+            final shown = q.isEmpty
+                ? vehicles
+                : vehicles
+                    .where(
+                      (v) =>
+                          v.plateNumber.toLowerCase().contains(q) ||
+                          v.deviceId.toLowerCase().contains(q),
+                    )
+                    .toList();
+            final selectedImei = controller.selectedImei.value.trim();
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: SafeArea(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+                        child: Text(
+                          'Select vehicle',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: TextField(
+                          onChanged: (v) => setSheetState(() => query = v),
+                          decoration: InputDecoration(
+                            hintText: 'Search vehicles',
+                            prefixIcon: const Icon(Icons.search),
+                            isDense: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (shown.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Center(
+                            child: Text(
+                              'No vehicles found',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: shown.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (_, i) {
+                              final v = shown[i];
+                              final imei = v.deviceId.trim();
+                              final active = imei == selectedImei;
+                              return ListTile(
+                                title: Text(
+                                  v.plateNumber.isEmpty ? imei : v.plateNumber,
+                                  style: TextStyle(
+                                    fontWeight: active
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                                subtitle: Text(imei),
+                                trailing: active
+                                    ? const Icon(
+                                        Icons.check_circle,
+                                        color: Color(0xFF009FE3),
+                                      )
+                                    : null,
+                                onTap: () {
+                                  Navigator.pop(sheetContext);
+                                  if (active) return;
+                                  controller.selectVehicle(
+                                    imei: imei,
+                                    plate: v.plateNumber.isEmpty
+                                        ? imei
+                                        : v.plateNumber,
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

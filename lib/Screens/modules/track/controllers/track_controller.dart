@@ -16,6 +16,8 @@ import '../../../../Utils/Utils.dart';
 import '../../../../Utils/vehicle_geofence_map_overlay.dart';
 import '../../../../Services/LiveTrackWebSocketService.dart';
 import '../../../../Services/DirectionsService.dart';
+import '../../../../Services/OdometerOffsetService.dart';
+import '../../../../Services/AppSettings.dart';
 import '../../home/controllers/home_controller.dart';
 
 /// Live tracking flow (snapshot once + WebSocket only):
@@ -136,8 +138,23 @@ class TrackController extends GetxController {
   /// Stable marker child. Rebuilding Image/Obx every frame causes flicker.
   Widget? _vehicleMarkerChild;
 
-  /// Streets map by default; the map button switches to satellite or terrain.
-  final mapType = gmaps.MapType.normal.obs;
+  /// Starts on the General Settings map type; the map button switches it for
+  /// this screen only.
+  final mapType = _settingsMapType().obs;
+
+  static gmaps.MapType _settingsMapType() {
+    switch (AppSettings.maybe?.mapType.value) {
+      case AppMapType.satellite:
+        return gmaps.MapType.hybrid;
+      case AppMapType.terrain:
+        return gmaps.MapType.terrain;
+      default:
+        return gmaps.MapType.normal;
+    }
+  }
+
+  /// Car icon size from General Settings → Vehicle Icon Size.
+  double get _carPx => 44 * (AppSettings.maybe?.iconScale ?? 1.0);
 
   /// Google's live traffic layer (green / orange / red roads). Free in the
   /// phone map SDK; off by default, toggled by the traffic button.
@@ -1015,11 +1032,32 @@ class TrackController extends GetxController {
   // Publishing. Marker and camera commit in the SAME frame, every frame.
   // ---------------------------------------------------------------------
 
+  /// Where the car has driven since Track opened, drawn when General
+  /// Settings → Show History on Live is on.
+  final liveTrail = <gmaps.LatLng>[].obs;
+  static const double _trailStepMeters = 8;
+
+  void _extendTrail(LatLng p) {
+    if (AppSettings.maybe?.showHistoryOnLive.value == false) return;
+    final last = liveTrail.isEmpty ? null : liveTrail.last;
+    if (last != null &&
+        const Distance().as(
+              LengthUnit.Meter,
+              LatLng(last.latitude, last.longitude),
+              p,
+            ) <
+            _trailStepMeters) {
+      return;
+    }
+    liveTrail.add(gmaps.LatLng(p.latitude, p.longitude));
+  }
+
   void _publishFrame({bool force = false}) {
     if (_pauseMarkerUi && !force) return;
     if (_pathLat == 0.0 && _pathLng == 0.0) return;
 
     final point = _publishedPoint();
+    _extendTrail(point);
 
     // While the map is moved by the user (drag, fling, or not following), the
     // car is a Google marker: Google draws it in the same pass as the map, so
@@ -1242,6 +1280,33 @@ class TrackController extends GetxController {
     return null;
   }
 
+  /// Where the map starts: this vehicle's last known spot from Home, so the
+  /// camera does not jump there from a fixed default far away. After such a
+  /// jump the map stayed blank until it was touched.
+  gmaps.CameraPosition get initialCameraPosition {
+    final imei = vehicleImei.value.trim();
+    if (imei.isNotEmpty && Get.isRegistered<HomeController>()) {
+      for (final v in Get.find<HomeController>().allVehicles) {
+        if (v.deviceId.trim() == imei && v.hasValidCoordinates) {
+          return gmaps.CameraPosition(
+            target: gmaps.LatLng(v.latitude!, v.longitude!),
+            zoom: _followZoom,
+          );
+        }
+      }
+    }
+    if (!(_pathLat == 0.0 && _pathLng == 0.0)) {
+      return gmaps.CameraPosition(
+        target: gmaps.LatLng(_pathLat, _pathLng),
+        zoom: _followZoom,
+      );
+    }
+    return const gmaps.CameraPosition(
+      target: gmaps.LatLng(11.8745, 75.3704),
+      zoom: _followZoom,
+    );
+  }
+
   String? _homeVehicleStatus() {
     final imei = vehicleImei.value.trim();
     if (imei.isEmpty || !Get.isRegistered<HomeController>()) return null;
@@ -1283,7 +1348,11 @@ class TrackController extends GetxController {
     // 48, not 44: measured on a device, Google drew a 44 marker at ~91% of
     // the 44 Flutter car (54x108 px vs 60x118 px), so the car shrank when a
     // drag started. 44 * 118 / 108 = 48 matches the Flutter car.
-    final icon = gmaps.BitmapDescriptor.bytes(png, width: 48, height: 48);
+    final icon = gmaps.BitmapDescriptor.bytes(
+      png,
+      width: _vehicleMarkerSize,
+      height: _vehicleMarkerSize,
+    );
     _carIcon = icon;
     final marker = dragCarMarker.value;
     if (marker != null) {
@@ -2565,18 +2634,30 @@ class TrackController extends GetxController {
   String get displayPlate =>
       liveTrackData.value?.vehicleInfo?.vehicleNumber ?? vehiclePlate.value;
   String get displayImei => vehicleImei.value;
-  String get displaySpeed =>
-      liveTrackData.value?.currentPosition?.speed?.toStringAsFixed(1) ?? '0.0';
+  // Speed, distance and time follow General Settings (AppSettings).
+  String get displaySpeed {
+    final kmh = liveTrackData.value?.currentPosition?.speed;
+    if (kmh == null) return '0.0';
+    return AppSettings.to.speed(kmh, withUnit: false);
+  }
+
+  String get speedUnitLabel => AppSettings.to.speedLabel;
+  String get distanceUnitLabel => AppSettings.to.distanceLabel;
+
   String get displayStatus =>
       liveTrackData.value?.currentStatus ??
       liveTrackData.value?.currentPosition?.derivedStatus ??
       'Stopped';
-  String get displayDeviceTime =>
-      liveTrackData.value?.currentPosition?.deviceTime ?? '-';
-  String get displayLastUpdate =>
-      liveTrackData.value?.currentPosition?.lastUpdate ??
-      liveTrackData.value?.currentPositionApi?.data?.lastUpdate ??
-      '-';
+  String get displayDeviceTime {
+    final raw = liveTrackData.value?.currentPosition?.deviceTime;
+    return raw == null ? '-' : AppSettings.to.dateTime(raw);
+  }
+
+  String get displayLastUpdate {
+    final raw = liveTrackData.value?.currentPosition?.lastUpdate ??
+        liveTrackData.value?.currentPositionApi?.data?.lastUpdate;
+    return raw == null ? '-' : AppSettings.to.dateTime(raw);
+  }
 
   String get displayLatitude => animatedLat.value != 0.0
       ? animatedLat.value.toStringAsFixed(7)
@@ -2618,10 +2699,11 @@ class TrackController extends GetxController {
     return '-';
   }
 
-  String get displayTodayKm =>
-      liveTrackData.value?.todayStatistics?.totalKilometersToday
-          ?.toStringAsFixed(2) ??
-      '0.00';
+  String get displayTodayKm {
+    final km = liveTrackData.value?.todayStatistics?.totalKilometersToday;
+    if (km == null) return '0.00';
+    return AppSettings.to.distance(km, withUnit: false);
+  }
 
   String get displayOdometer {
     final value =
@@ -2630,9 +2712,12 @@ class TrackController extends GetxController {
     return value.toStringAsFixed(2);
   }
 
+  /// Odometer digits on the card, in the chosen distance unit. (The update
+  /// dialog uses [displayOdometer], which stays in km as the server expects.)
   String get displayOdometerDigits {
-    final value =
+    final km =
         odometerKm.value ?? liveTrackData.value?.currentPosition?.odometer ?? 0;
+    final value = AppSettings.to.convertDistance(km);
     final wholeKm = value.floor().clamp(0, 99999999);
     return wholeKm.toString().padLeft(8, '0');
   }
@@ -2658,10 +2743,19 @@ class TrackController extends GetxController {
       liveTrackData.value?.todayStatistics?.displayInactiveDuration ??
       '00:00:00';
 
-  String get displayAvgSpeed =>
-      liveTrackData.value?.todayStatistics?.avgSpeed?.toStringAsFixed(2) ?? '-';
-  String get displayMaxSpeed =>
-      liveTrackData.value?.todayStatistics?.maxSpeed?.toStringAsFixed(0) ?? '-';
+  String get displayAvgSpeed {
+    final kmh = liveTrackData.value?.todayStatistics?.avgSpeed;
+    return kmh == null
+        ? '-'
+        : AppSettings.to.speed(kmh, decimals: 2, withUnit: false);
+  }
+
+  String get displayMaxSpeed {
+    final kmh = liveTrackData.value?.todayStatistics?.maxSpeed;
+    return kmh == null
+        ? '-'
+        : AppSettings.to.speed(kmh, decimals: 0, withUnit: false);
+  }
 
   Color get displayStatusColor {
     final status =
@@ -2682,7 +2776,8 @@ class TrackController extends GetxController {
   // Marker
   // ---------------------------------------------------------------------
 
-  static const double _vehicleMarkerSize = 48.0;
+  /// Box for the car overlay; follows General Settings → Vehicle Icon Size.
+  double get _vehicleMarkerSize => 48.0 * (AppSettings.maybe?.iconScale ?? 1.0);
 
   /// Called from the view's build. Only stores the size; the next frame
   /// publishes the car position, so nothing notifies during build.
@@ -2860,16 +2955,16 @@ class TrackController extends GetxController {
             builder: (context, bytes, _) => bytes == null
                 ? Image.asset(
                     'lib/Asset/Icons/Track Vehicle Top.png',
-                    width: 44,
-                    height: 44,
+                    width: _carPx,
+                    height: _carPx,
                     fit: BoxFit.contain,
                     gaplessPlayback: true,
                     filterQuality: FilterQuality.medium,
                   )
                 : Image.memory(
                     bytes,
-                    width: 44,
-                    height: 44,
+                    width: _carPx,
+                    height: _carPx,
                     fit: BoxFit.contain,
                     gaplessPlayback: true,
                     filterQuality: FilterQuality.medium,
@@ -2961,6 +3056,8 @@ class TrackController extends GetxController {
 
       final msg =
           (raw is Map ? raw['message']?.toString() : null) ?? 'Odometer updated';
+      // Statistics/Reports convert device km with the old gap otherwise.
+      OdometerOffsetService.forget(imei);
       return (ok: true, value: value, message: msg);
     } catch (e) {
       showErrorMessage(e);
@@ -2981,6 +3078,7 @@ class TrackController extends GetxController {
     if (plate != null && plate.isNotEmpty) vehiclePlate.value = plate;
 
     liveTrackData.value = null;
+    liveTrail.clear();
     _wsConfig = null;
     _wsInfo = null;
     _hasInitialCameraFocus = false;

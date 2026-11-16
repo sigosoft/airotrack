@@ -9,6 +9,8 @@ enum AiroMapStyle {
   mapboxStreets,
   /// Satellite + road labels (top-down hybrid, matches live-track screenshot).
   mapboxSatellite,
+  /// Terrain / outdoors (contours and hill shading).
+  mapboxOutdoors,
 }
 
 class AiroMapWidget extends StatelessWidget {
@@ -22,13 +24,19 @@ class AiroMapWidget extends StatelessWidget {
   final VoidCallback? onTap;
   final void Function(MapEvent)? onMapEvent;
   final void Function(MapCamera, bool)? onPositionChanged;
+  /// Called once the map is laid out and [mapController] can move it.
+  final VoidCallback? onMapReady;
   final AiroMapStyle mapStyle;
   /// Keep map north-up (no rotate / perspective). Always a top-down view.
   final bool lockNorthUp;
+  /// Live traffic: shows Mapbox's street map with traffic colours on the
+  /// roads (green / orange / red) in place of [mapStyle].
+  final bool traffic;
 
   AiroMapWidget({
     Key? key,
     this.onPositionChanged,
+    this.onMapReady,
     this.onMapEvent,
     this.initialCenter,
     this.initialZoom = 13.0,
@@ -40,6 +48,7 @@ class AiroMapWidget extends StatelessWidget {
     this.onTap,
     this.mapStyle = AiroMapStyle.osm,
     this.lockNorthUp = true,
+    this.traffic = false,
   }) : super(key: key);
 
   String _tileUrl() {
@@ -53,9 +62,11 @@ class AiroMapWidget extends StatelessWidget {
       return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
     }
 
-    final styleId = mapStyle == AiroMapStyle.mapboxSatellite
-        ? 'satellite-streets-v12'
-        : 'streets-v12';
+    final styleId = traffic ? 'traffic-day-v2' : switch (mapStyle) {
+      AiroMapStyle.mapboxSatellite => 'satellite-streets-v12',
+      AiroMapStyle.mapboxOutdoors => 'outdoors-v12',
+      _ => 'streets-v12',
+    };
     return 'https://api.mapbox.com/styles/v1/mapbox/$styleId'
         '/tiles/256/{z}/{x}/{y}@2x?access_token=$token';
   }
@@ -76,10 +87,11 @@ class AiroMapWidget extends StatelessWidget {
         onTap: (tapPosition, point) => onTap?.call(),
         onMapEvent: onMapEvent,
         onPositionChanged: onPositionChanged,
+        onMapReady: onMapReady,
       ),
       children: [
         TileLayer(
-          key: ValueKey(mapStyle),
+          key: ValueKey('$mapStyle|$traffic'),
           urlTemplate: _tileUrl(),
           userAgentPackageName: 'com.airotrack.app',
           maxZoom: 22,

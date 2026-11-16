@@ -10,6 +10,7 @@ import '../../settings/views/settings_view.dart';
 import '../../location/views/location_view.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../widgets/vehicle_details_dialog.dart';
 
 class HomeView extends GetView<HomeController> {
   const HomeView({Key? key}) : super(key: key);
@@ -17,7 +18,13 @@ class HomeView extends GetView<HomeController> {
   @override
   Widget build(BuildContext context) {
     // Screen width usually ~393 on modern devices, designing for that scale.
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        controller.onBackPressed();
+      },
+      child: Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: Colors.white, // Pure white background to match design
       body: SafeArea(
@@ -51,6 +58,7 @@ class HomeView extends GetView<HomeController> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -420,7 +428,7 @@ class HomeView extends GetView<HomeController> {
 
     return GestureDetector(
       key: ValueKey('vehicle-${vehicle.id}-${vehicle.deviceId}'),
-      onTap: () => _showVehicleDialog(context, vehicle),
+      onTap: () => showVehicleDetailsDialog(context, vehicle),
       child: Container(
         width: 358,
         height: 165,
@@ -479,16 +487,16 @@ class HomeView extends GetView<HomeController> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            vehicle.speed,
+                            vehicle.displaySpeed,
                             style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w400,
                               fontFamily: 'Roboto Mono',
                             ),
                           ),
-                          const Text(
-                            "Kmph",
-                            style: TextStyle(
+                          Text(
+                            vehicle.speedUnitLabel,
+                            style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
                             ),
@@ -532,15 +540,18 @@ class HomeView extends GetView<HomeController> {
                           _buildTimelineItem(
                             color: statusColor,
                             icon: null,
-                            text:
-                                "${vehicle.statusLabel.toUpperCase()} since ${vehicle.statusDuration}",
+                            // The home API sends no duration today: show
+                            // "since …" only when there is one.
+                            text: vehicle.statusDuration.trim().isEmpty
+                                ? vehicle.statusLabel.toUpperCase()
+                                : "${vehicle.statusLabel.toUpperCase()} since ${vehicle.statusDuration.trim()}",
                             isFirst: true,
                           ),
                           _buildTimelineItem(
                             color: Colors.transparent,
                             icon: Icons.access_time,
                             iconColor: statusColor,
-                            text: vehicle.lastUpdated,
+                            text: vehicle.displayLastUpdated,
                           ),
                           _buildTimelineItem(
                             color: Colors.transparent,
@@ -588,7 +599,7 @@ class HomeView extends GetView<HomeController> {
 
                     const SizedBox(width: 10),
 
-                    _buildInfoPill(Icons.speed, vehicle.todayKm),
+                    _buildInfoPill(Icons.speed, vehicle.displayTodayKm),
                     const SizedBox(width: 6),
                     _buildInfoPill(
                       Icons.calendar_today,
@@ -707,186 +718,6 @@ class HomeView extends GetView<HomeController> {
           ],
         ),
       ),
-    );
-  }
-
-  void _showVehicleDialog(BuildContext context, Vehicle vehicle) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          // Height follows the content (long addresses wrap) instead of a
-          // fixed 250 that clipped on narrow phones.
-          child: Container(
-            width: 380,
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildDialogRow("Name:", vehicle.plateNumber),
-                const SizedBox(height: 8),
-                // The home API sends no status duration today; show
-                // "Since …" only when there is one, not a dangling "Since".
-                _buildDialogRow(
-                  "Status:",
-                  vehicle.statusDuration.trim().isEmpty
-                      ? vehicle.statusLabel
-                      : "${vehicle.statusLabel} since ${vehicle.statusDuration.trim()}",
-                ),
-                const SizedBox(height: 8),
-                _buildDialogRow("Device Time:", vehicle.lastUpdated),
-                const SizedBox(height: 8),
-                _buildDialogRow("Location:", vehicle.locationLabel),
-                const SizedBox(height: 8),
-                _buildDialogRow("Engine:", vehicle.isIgnitionOn ? "On" : "Off"),
-                const SizedBox(height: 8),
-                _buildDialogRow("Voltage:", "13.78 V"),
-                const SizedBox(height: 20),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Cancel Button
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          width: 120,
-                          height: 35,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(7),
-                            border: Border.all(color: Colors.grey.shade200),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Center(
-                            child: Text(
-                              "Cancel",
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.pop(context);
-                          Get.toNamed(
-                            Routes.HISTORY,
-                            parameters: {
-                              'imei': vehicle.deviceId,
-                              'vehicleId': vehicle.plateNumber,
-                            },
-                          );
-                        },
-                        child: Container(
-                          width: 100,
-                          height: 35,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF009FE3),
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              "History",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: () {
-                          // Dismiss keyboard before navigating
-                          if (FocusManager.instance.primaryFocus != null) {
-                            FocusManager.instance.primaryFocus!.unfocus();
-                          }
-                          Navigator.pop(context);
-                          Get.toNamed(
-                            Routes.TRACK,
-                            parameters: {
-                              'imei': vehicle.deviceId,
-                              'vehicleId': vehicle.plateNumber,
-                            },
-                          );
-                        },
-                        child: Container(
-                          width: 120,
-                          height: 35,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF009FE3),
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              "Track",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDialogRow(String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 90,
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-              color: Colors.black,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade800,
-              fontWeight: FontWeight.w400,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
     );
   }
 }

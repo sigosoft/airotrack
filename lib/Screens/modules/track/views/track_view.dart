@@ -7,6 +7,7 @@ import '../../../routes/app_routes.dart';
 import 'lock_command_view.dart';
 import 'widgets/select_geofence_sheet.dart';
 import '../../../../widgets/app_bottom_nav_bar.dart';
+import '../../../../Services/AppSettings.dart';
 
 class TrackView extends GetView<TrackController> {
   const TrackView({Key? key}) : super(key: key);
@@ -41,10 +42,8 @@ class TrackView extends GetView<TrackController> {
                             key: ValueKey(
                               'live-map-${controller.vehicleImei.value}',
                             ),
-                            initialCameraPosition: const CameraPosition(
-                              target: LatLng(11.8745, 75.3704),
-                              zoom: 18,
-                            ),
+                            initialCameraPosition:
+                                controller.initialCameraPosition,
                             mapType: controller.mapType.value,
                             trafficEnabled: controller.trafficEnabled.value,
                             onMapCreated: controller.onMapCreated,
@@ -55,6 +54,17 @@ class TrackView extends GetView<TrackController> {
                             markers: {
                               if (controller.dragCarMarker.value != null)
                                 controller.dragCarMarker.value!,
+                            },
+                            // General Settings → Show History on Live.
+                            polylines: {
+                              if (AppSettings.to.showHistoryOnLive.value &&
+                                  controller.liveTrail.length >= 2)
+                                Polyline(
+                                  polylineId: const PolylineId('live-trail'),
+                                  points: controller.liveTrail.toList(),
+                                  color: const Color(0xFF009FE3),
+                                  width: 4,
+                                ),
                             },
                             circles: controller.vehicleGeofenceCircles.toSet(),
                             polygons: controller.vehicleGeofencePolygons.toSet(),
@@ -439,7 +449,7 @@ class TrackView extends GetView<TrackController> {
                     ),
                   ),
                   Text(
-                    "Km/h",
+                    controller.speedUnitLabel,
                     style: TextStyle(
                       fontSize: width * 0.022,
                       color: Colors.grey,
@@ -706,7 +716,7 @@ class TrackView extends GetView<TrackController> {
                               child: _buildMetricCard(
                                 "Avg Speed",
                                 controller.displayAvgSpeed,
-                                "Kmph",
+                                controller.speedUnitLabel,
                                 'lib/Asset/Icons/AVG speed.png',
                                 const Color(0xFF009FE3),
                               ),
@@ -716,7 +726,7 @@ class TrackView extends GetView<TrackController> {
                               child: _buildMetricCard(
                                 "Max Speed",
                                 controller.displayMaxSpeed,
-                                "Kmph",
+                                controller.speedUnitLabel,
                                 'lib/Asset/Icons/Max Distance.png',
                                 const Color(0xFFFF5252),
                               ),
@@ -724,9 +734,9 @@ class TrackView extends GetView<TrackController> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: _buildMetricCard(
-                                "Today Km",
+                                "Today",
                                 controller.displayTodayKm,
-                                "Km",
+                                controller.distanceUnitLabel,
                                 'lib/Asset/Icons/location outlined.png',
                                 Colors.black,
                               ),
@@ -874,7 +884,12 @@ class TrackView extends GetView<TrackController> {
               top: -height * 0.055,
               left: 0,
               right: 0,
-              child: Center(child: _buildSpeedometerIndicator()),
+              // General Settings → Speedometer can hide the gauge.
+              child: Center(
+                child: AppSettings.to.showSpeedometer.value
+                    ? _buildSpeedometerIndicator()
+                    : const SizedBox.shrink(),
+              ),
             ),
           ],
         );

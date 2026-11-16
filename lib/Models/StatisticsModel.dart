@@ -1,3 +1,5 @@
+import 'package:airotrack/Services/AppSettings.dart';
+import 'package:airotrack/Services/OdometerOffsetService.dart';
 import 'package:airotrack/Utils/ApiHelpers.dart';
 
 class StatisticsModel {
@@ -26,10 +28,13 @@ class StatisticsModel {
   });
 
   /// Maps `GET statistics` → `data.statistics` fields from the API.
-  factory StatisticsModel.fromJson(dynamic raw) {
+  /// [odometerOffset] turns the device's km count into the vehicle odometer
+  /// (see OdometerOffsetService).
+  factory StatisticsModel.fromJson(dynamic raw, {num odometerOffset = 0}) {
     final root = asStringKeyedMap(raw) ?? {};
     final data = asStringKeyedMap(root['data']) ?? root;
-    final stats = asStringKeyedMap(data['statistics']) ?? data;
+    final rawStats = asStringKeyedMap(data['statistics']) ?? data;
+    final stats = OdometerOffsetService.applyTo(rawStats, odometerOffset);
 
     return StatisticsModel(
       routeLength: _formatKm(stats['route_length_km']),
@@ -45,20 +50,27 @@ class StatisticsModel {
     );
   }
 
+  // Distance and speed in the General Settings units.
   static String _formatKm(dynamic raw) {
     if (raw == null) return '—';
-    final n = raw is num ? raw.toDouble() : double.tryParse(raw.toString());
-    if (n == null) return '—';
-    if (n == n.roundToDouble()) return '${n.toInt()} km';
-    return '${n.toStringAsFixed(2)} km';
+    final km = raw is num ? raw.toDouble() : double.tryParse(raw.toString());
+    if (km == null) return '—';
+    final s = AppSettings.maybe;
+    final n = s?.convertDistance(km).toDouble() ?? km;
+    final unit = s?.distanceLabel ?? 'km';
+    if (n == n.roundToDouble()) return '${n.toInt()} $unit';
+    return '${n.toStringAsFixed(2)} $unit';
   }
 
   static String _formatSpeed(dynamic raw) {
     if (raw == null) return '—';
-    final n = raw is num ? raw.toDouble() : double.tryParse(raw.toString());
-    if (n == null) return '—';
-    if (n == n.roundToDouble()) return '${n.toInt()} kmph';
-    return '${n.toStringAsFixed(2)} kmph';
+    final kmh = raw is num ? raw.toDouble() : double.tryParse(raw.toString());
+    if (kmh == null) return '—';
+    final s = AppSettings.maybe;
+    final n = s?.convertSpeed(kmh).toDouble() ?? kmh;
+    final unit = s?.speedLabel ?? 'km/h';
+    if (n == n.roundToDouble()) return '${n.toInt()} $unit';
+    return '${n.toStringAsFixed(2)} $unit';
   }
 
   static String _formatDuration(dynamic raw) {

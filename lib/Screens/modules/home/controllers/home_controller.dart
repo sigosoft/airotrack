@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:get/get.dart';
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
+import 'package:airotrack/Services/AppSettings.dart';
 import 'package:airotrack/Utils/Utils.dart';
 import 'package:airotrack/Screens/routes/app_routes.dart';
 
@@ -74,6 +77,28 @@ class Vehicle {
         return 0;
     }
   }
+
+  // What screens show, in the General Settings units and time format. The
+  // raw fields above stay in km / km/h / API time.
+  String get displaySpeed => AppSettings.maybe == null
+      ? speed
+      : AppSettings.to.speed(num.tryParse(speed) ?? 0, withUnit: false);
+
+  String get speedUnitLabel => AppSettings.maybe?.speedLabel ?? 'km/h';
+
+  String get displayTodayKm {
+    final km = num.tryParse(todayKm.replaceAll(RegExp(r'[^0-9.]'), ''));
+    if (km == null || AppSettings.maybe == null) return todayKm;
+    final s = AppSettings.to;
+    final v = s.convertDistance(km);
+    final text = v == v.roundToDouble()
+        ? v.toInt().toString()
+        : v.toStringAsFixed(2);
+    return '$text ${s.distanceLabel}';
+  }
+
+  String get displayLastUpdated =>
+      AppSettings.maybe?.dateTime(lastUpdated) ?? lastUpdated;
 
   /// Everything the home card shows. Equal signatures mean nothing visible
   /// changed, so a background refresh can skip the rebuild.
@@ -441,13 +466,15 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   /// observable lists when something visible changed, so the screen never
   /// blinks. Errors keep the current list.
   /// Whether a screen that shows this list live is open: the vehicle list
-  /// tab on Home, or Live Track (its car colour follows this list's status).
-  /// Elsewhere (Dashboard, Reports, Settings, pushed pages) the list is only
-  /// read once for pickers, so polling it every 3 s just costs data.
+  /// tab on Home, the Location map tab, or Live Track (its car colour follows
+  /// this list's status). Elsewhere (Dashboard, Reports, Settings, pushed
+  /// pages) the list is only read once for pickers, so polling it every 3 s
+  /// just costs data.
   bool get _liveListOnScreen {
     final route = Uri.tryParse(Get.currentRoute)?.path ?? Get.currentRoute;
     if (route == Routes.TRACK) return true;
-    return route == Routes.HOME && selectedIndex.value == 1;
+    return route == Routes.HOME &&
+        (selectedIndex.value == 1 || selectedIndex.value == 2);
   }
 
   Future<void> refreshSilently() async {
@@ -531,11 +558,31 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     return 'plate:${v.plateNumber.trim().toLowerCase()}';
   }
 
+  DateTime? _lastBackPress;
+
+  /// Back on the main screen: other tabs return to Home; on Home, a second
+  /// Back within 2 seconds closes the app.
+  void onBackPressed() {
+    if (selectedIndex.value != 1) {
+      changeTab(1);
+      return;
+    }
+    final now = DateTime.now();
+    final last = _lastBackPress;
+    if (last != null && now.difference(last) < const Duration(seconds: 2)) {
+      SystemNavigator.pop();
+      return;
+    }
+    _lastBackPress = now;
+    Fluttertoast.showToast(msg: 'Press back again to exit');
+  }
+
   void changeTab(int index) {
-    final wasList = selectedIndex.value == 1;
+    final previous = selectedIndex.value;
     selectedIndex.value = index;
-    // Polling pauses on the other tabs: refresh at once when coming back.
-    if (index == 1 && !wasList) refreshSilently();
+    // Polling runs only on Home (1) and Location (2): refresh at once when
+    // coming back to either.
+    if ((index == 1 || index == 2) && index != previous) refreshSilently();
   }
 
   @override

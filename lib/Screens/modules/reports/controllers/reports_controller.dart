@@ -2,6 +2,7 @@ import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
 import 'package:airotrack/Models/ReportItem.dart';
 import 'package:airotrack/Screens/modules/home/controllers/home_controller.dart';
+import 'package:airotrack/Services/OdometerOffsetService.dart';
 import 'package:airotrack/Utils/ApiHelpers.dart';
 import 'package:airotrack/Utils/Utils.dart';
 import 'package:dio/dio.dart';
@@ -194,10 +195,16 @@ class ReportsController extends GetxController {
     }
   }
 
+  /// Bumped per request. Switching vehicle or period while a request is in
+  /// flight must not let the older response overwrite the newer one.
+  int _requestId = 0;
+
   Future<void> loadItems({bool reset = true}) async {
     if (reportType == null) return;
     final imei = selectedImei.value.trim();
     if (imei.isEmpty) return;
+    final requestId = ++_requestId;
+    bool stale() => requestId != _requestId;
     try {
       if (reset) {
         currentPage = 1;
@@ -215,14 +222,22 @@ class ReportsController extends GetxController {
       // Dates only: when `period` is sent the server ignores from_date/to_date
       // (week = calendar week from Monday, custom = 422), so the range the
       // app shows would not match the data.
-      final response = await DioClient().get(
-        reportType!.endpoint,
-        query: range.toQuery(
-          imei: imei,
-          limit: _pageLimit,
-          includePeriod: false,
+      final results = await Future.wait<dynamic>([
+        DioClient().get(
+          reportType!.endpoint,
+          query: range.toQuery(
+            imei: imei,
+            limit: _pageLimit,
+            includePeriod: false,
+          ),
         ),
-      );
+        // Reports give the device's km count; shift it to the vehicle
+        // odometer that Home and Track show.
+        OdometerOffsetService.offsetFor(imei),
+      ]);
+      final response = results[0];
+      final odometerOffset = results[1] as num;
+      if (stale()) return;
 
       if (response.data != null) {
         final data = response.data['data'] ?? response.data;
@@ -257,7 +272,12 @@ class ReportsController extends GetxController {
         final parsed = rows
             .map(
               (json) => ReportItem.fromJson(
-                json,
+                json is Map
+                    ? OdometerOffsetService.applyTo(
+                        Map<String, dynamic>.from(json),
+                        odometerOffset,
+                      )
+                    : json,
                 fallbackVehicleNumber: fallbackVehicle,
               ),
             )
@@ -272,13 +292,14 @@ class ReportsController extends GetxController {
         hasMore.value = false;
       }
     } catch (e) {
+      if (stale()) return;
       showErrorMessage(e);
       hasMore.value = false;
       // First page failed: say so in the list (with Retry) rather than
       // showing "No reports found", which reads as "there is no data".
       if (reset) loadError.value = _loadErrorText(e);
     } finally {
-      isLoading.value = false;
+      if (!stale()) isLoading.value = false;
     }
   }
 

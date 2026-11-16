@@ -1,6 +1,7 @@
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
 import 'package:airotrack/Models/StatisticsModel.dart';
+import 'package:airotrack/Services/OdometerOffsetService.dart';
 import 'package:airotrack/Screens/modules/home/controllers/home_controller.dart';
 import 'package:airotrack/Utils/ApiHelpers.dart';
 import 'package:airotrack/Utils/Utils.dart';
@@ -97,14 +98,21 @@ class StatisticsController extends GetxController {
         customFrom: customFrom,
         customTo: customTo,
       );
-      final response = await DioClient().get(
-        ApiEndPoints.statistics,
-        // Dates only: with `period` the server ignores from_date/to_date
-        // (week = calendar week from Monday, custom = 422).
-        query: range.toQuery(imei: imei, includePeriod: false),
-      );
+      final results = await Future.wait([
+        DioClient().get(
+          ApiEndPoints.statistics,
+          // Dates only: with `period` the server ignores from_date/to_date
+          // (week = calendar week from Monday, custom = 422).
+          query: range.toQuery(imei: imei, includePeriod: false),
+        ),
+        OdometerOffsetService.offsetFor(imei),
+      ]);
+      final response = results[0] as dynamic;
+      final offset = results[1] as num;
+      if (imei != selectedImei.value.trim()) return;
       if (response.data != null) {
-        stats.value = StatisticsModel.fromJson(response.data);
+        stats.value =
+            StatisticsModel.fromJson(response.data, odometerOffset: offset);
       }
     } catch (e) {
       showErrorMessage(e);

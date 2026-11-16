@@ -57,20 +57,12 @@ class _LocationViewState extends State<LocationView> {
               initialZoom: controller.lastZoom,
               onMapReady: controller.onMapReady,
               onPositionChanged: controller.onPositionChanged,
-              // Cars moved aside at the closest zoom: a thin line back to
-              // where they really are.
-              polylines: [
-                for (final p in placements)
-                  if (p.anchor != null)
-                    Polyline(
-                      points: [p.anchor!, p.point],
-                      color: Colors.black54,
-                      strokeWidth: 1.5,
-                    ),
-              ],
               markers: [
                 for (final p in placements)
-                  _groupMarker(p.vehicles, selectedId, at: p.point),
+                  if (p.vehicles.length > 1 && controller.atMaxZoom)
+                    _stackMarker(p.vehicles, selectedId, p.point)
+                  else
+                    _groupMarker(p.vehicles, selectedId, at: p.point),
               ],
             );
           }),
@@ -230,6 +222,86 @@ class _LocationViewState extends State<LocationView> {
               height: (selected ? 52 : 44) * controller.iconScale,
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Cars reporting the same spot, at the closest zoom: one name label per
+  /// car (each opens that car), and the cars overlapped like cards right on
+  /// the real location.
+  Marker _stackMarker(List<Vehicle> group, int? selectedId, LatLng point) {
+    const labelH = 30.0;
+    const gap = 4.0;
+    const step = 18.0; // how far each car sits from the one before it
+    final car = 44 * controller.iconScale;
+    final carsW = car + step * (group.length - 1);
+    final labelsH = group.length * (labelH + gap);
+    // Same empty height below as the labels above, so the cars sit centred
+    // on the real spot.
+    return Marker(
+      point: point,
+      width: math.max(180, carsW),
+      height: labelsH * 2 + car,
+      child: Column(
+        children: [
+          for (final v in group)
+            Padding(
+              padding: const EdgeInsets.only(bottom: gap),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openVehicle(v),
+                child: _plateLabel(v, selected: v.id == selectedId),
+              ),
+            ),
+          SizedBox(
+            width: carsW,
+            height: car,
+            child: Stack(
+              children: [
+                for (var i = 0; i < group.length; i++)
+                  Positioned(
+                    left: i * step,
+                    child: GestureDetector(
+                      onTap: () => _openVehicle(group[i]),
+                      child: Image.asset(
+                        _statusCarImage(group[i].status),
+                        width: car,
+                        height: car,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _plateLabel(Vehicle v, {required bool selected}) {
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: selected ? AppColors.primaryBlue : Colors.black,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        v.plateNumber.isEmpty ? '—' : v.plateNumber,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );

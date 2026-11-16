@@ -83,6 +83,10 @@ class AiroMapWidget extends StatelessWidget {
         initialCenter: initialCenter ?? const LatLng(11.8745, 75.3704),
         initialZoom: initialZoom,
         initialRotation: 0,
+        // Without a limit, pinch / double-tap zoomed past the deepest map
+        // tiles and the whole map turned grey.
+        minZoom: 3,
+        maxZoom: 19,
         interactionOptions: InteractionOptions(flags: interactionFlags),
         onTap: (tapPosition, point) => onTap?.call(),
         onMapEvent: onMapEvent,

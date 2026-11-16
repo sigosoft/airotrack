@@ -22,6 +22,12 @@ class _LocationViewState extends State<LocationView> {
   LocationMarkerIcons? _icons;
   Set<Marker> _markers = {};
   int _markerGen = 0;
+
+  /// Closest zoom: where each car and name label is drawn, to tell which
+  /// one a finger touched. Google's own tap areas for these marker pictures
+  /// don't match what's drawn, so a tap could open the car next to it.
+  List<_HitTarget> _hitTargets = const [];
+  Offset? _lastPointer;
   final List<Worker> _workers = [];
 
   @override
@@ -65,7 +71,10 @@ class _LocationViewState extends State<LocationView> {
               controller.mapSize = constraints.biggest;
               return Listener(
                 // Any finger on the map stops following the selected car.
-                onPointerDown: (_) => controller.onUserTouch(),
+                onPointerDown: (e) {
+                  _lastPointer = e.localPosition;
+                  controller.onUserTouch();
+                },
                 child: Obx(
                   () => GoogleMap(
                     initialCameraPosition: controller.initialCamera,
@@ -174,10 +183,11 @@ class _LocationViewState extends State<LocationView> {
     final atMax = controller.atMaxZoom;
     final placements = controller.markerPlacements(controller.zoomStep.value);
     final out = <Marker>{};
+    final targets = <_HitTarget>[];
     try {
       for (final p in placements) {
         if (atMax) {
-          out.addAll(await _topCarMarkers(icons, p, selectedId));
+          out.addAll(await _topCarMarkers(icons, p, selectedId, targets));
         } else {
           out.add(await _groupMarker(icons, p, selectedId));
         }
@@ -187,7 +197,51 @@ class _LocationViewState extends State<LocationView> {
       return;
     }
     if (!mounted || gen != _markerGen) return;
-    setState(() => _markers = out);
+    setState(() {
+      _markers = out;
+      _hitTargets = targets;
+    });
+  }
+
+  /// A closest-zoom car or label was tapped: open the car whose car or name
+  /// is under the finger (nearest one if none is), else [fallback].
+  void _openTapped(Vehicle fallback) {
+    final finger = _lastPointer;
+    final center = controller.lastCenter;
+    if (finger == null || center == null || _hitTargets.isEmpty) {
+      _openVehicle(fallback);
+      return;
+    }
+    final scale = 256 * math.pow(2, controller.lastZoom);
+    Offset world(LatLng p) {
+      final lat = p.latitude * math.pi / 180;
+      return Offset(
+        (p.longitude + 180) / 360 * scale,
+        (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) /
+            2 *
+            scale,
+      );
+    }
+
+    final origin = world(center) -
+        Offset(controller.mapSize.width / 2, controller.mapSize.height / 2);
+    _HitTarget? best;
+    var bestDist = double.infinity;
+    for (final t in _hitTargets) {
+      final at = world(t.point) - origin;
+      final rect = Rect.fromLTWH(
+        at.dx - t.anchor.dx * t.size.width,
+        at.dy - t.anchor.dy * t.size.height,
+        t.size.width,
+        t.size.height,
+      );
+      final d = rect.contains(finger) ? 0.0 : (rect.center - finger).distance;
+      if (d < bestDist) {
+        bestDist = d;
+        best = t;
+      }
+    }
+    _openVehicle(best?.vehicle ?? fallback);
   }
 
   /// One marker per group. A group of several vehicles shows the first (or
@@ -236,8 +290,10 @@ class _LocationViewState extends State<LocationView> {
     LocationMarkerIcons icons,
     MarkerPlacement p,
     int? selectedId,
+    List<_HitTarget> targets,
   ) async {
-    final group = p.vehicles;
+    // Fixed order, so selecting a car doesn't make the cars swap places.
+    final group = [...p.vehicles]..sort((a, b) => a.id.compareTo(b.id));
     final car = 48 * controller.iconScale;
     final step = car * 0.55; // close together, like cars parked side by side
     const labelGap = 3.0;
@@ -256,24 +312,31 @@ class _LocationViewState extends State<LocationView> {
       final label = await icons.label(plate: v.plateNumber, selected: selected);
       // Leftmost car's name on top, so every name stays readable.
       final above = car / 2 + labelGap + (n - 1 - i) * labelRow;
+      // Each car and label gets its own map position, moved by screen px at
+      // this zoom.
+      final carAt = controller.offsetPx(p.point, dx, 0);
+      final labelAt = controller.offsetPx(p.point, dx, -above);
+      targets
+        ..add(_HitTarget(v, carAt, carIcon.size, carIcon.anchor()))
+        ..add(_HitTarget(v, labelAt, label.size, label.anchor()));
       out
         ..add(Marker(
           markerId: MarkerId('c-${v.id}'),
-          position: p.point,
+          position: carAt,
           icon: carIcon.descriptor,
-          anchor: carIcon.anchor(Offset(dx, 0)),
+          anchor: carIcon.anchor(),
           zIndexInt: 1,
           consumeTapEvents: true,
-          onTap: () => _openVehicle(v),
+          onTap: () => _openTapped(v),
         ))
         ..add(Marker(
           markerId: MarkerId('l-${v.id}'),
-          position: p.point,
+          position: labelAt,
           icon: label.descriptor,
-          anchor: label.anchor(Offset(dx, -above)),
+          anchor: label.anchor(),
           zIndexInt: selected ? 4 : 3,
           consumeTapEvents: true,
-          onTap: () => _openVehicle(v),
+          onTap: () => _openTapped(v),
         ));
     }
     return out;
@@ -589,4 +652,15 @@ class _LocationViewState extends State<LocationView> {
   }
 
 
+}
+
+/// A car or name label drawn at the closest zoom, for finding what a finger
+/// touched.
+class _HitTarget {
+  const _HitTarget(this.vehicle, this.point, this.size, this.anchor);
+
+  final Vehicle vehicle;
+  final LatLng point;
+  final Size size;
+  final Offset anchor;
 }

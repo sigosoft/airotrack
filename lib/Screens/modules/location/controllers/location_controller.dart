@@ -143,6 +143,22 @@ class LocationController extends GetxController {
   /// A finger touched the map: stop following the selected vehicle.
   void onUserTouch() => _following = false;
 
+  /// [p] moved [dx], [dy] screen px (right, down) at the current zoom step.
+  LatLng offsetPx(LatLng p, double dx, double dy) {
+    final scale = 256 * math.pow(2, zoomStep.value);
+    final lat = p.latitude * math.pi / 180;
+    final x = (p.longitude + 180) / 360 * scale + dx;
+    final y = (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) /
+            2 *
+            scale +
+        dy;
+    final n = math.pi - 2 * math.pi * y / scale;
+    return LatLng(
+      180 / math.pi * math.atan(0.5 * (math.exp(n) - math.exp(-n))),
+      x / scale * 360 - 180,
+    );
+  }
+
   /// True at the closest zoom the map allows.
   bool get atMaxZoom => zoomStep.value >= _maxZoom - 0.25;
 
@@ -167,7 +183,14 @@ class LocationController extends GetxController {
   List<List<Vehicle>> groupedVehicles(double zoom) {
     final vehicles = mapVehicles;
     final selected = selectedId.value;
-    vehicles.sort((a, b) => (b.id == selected ? 1 : 0) - (a.id == selected ? 1 : 0));
+    if (zoom >= _maxZoom - 0.25) {
+      // Every car shows at the closest zoom, so keep the groups fixed:
+      // selecting a car mustn't move it or its neighbours.
+      vehicles.sort((a, b) => a.id.compareTo(b.id));
+    } else {
+      vehicles.sort(
+          (a, b) => (b.id == selected ? 1 : 0) - (a.id == selected ? 1 : 0));
+    }
 
     // Marker label is up to ~180 px wide and the marker 82 px tall.
     const maxDx = 140.0;

@@ -118,11 +118,28 @@ class LocationMarkerIcons {
           0.2126 * b, 0.7152 * b, 0.0722 * b, 0, 0, //
           0, 0, 0, 1, 0,
         ]);
-      return _render(Size(size, size), Offset(size / 2, size / 2), (c) {
-        c.translate(size / 2, size / 2);
-        c.rotate(course * math.pi / 180);
-        c.translate(-size / 2, -size / 2);
-        _drawContain(c, img, Rect.fromLTWH(0, 0, size, size), paint);
+      // The artwork is a square with the car in its middle; keep only the
+      // car. The empty sides would otherwise make neighbouring cars' tap
+      // areas overlap, and Google would open the wrong car.
+      final iw = img.width.toDouble();
+      final ih = img.height.toDouble();
+      final src = Rect.fromLTRB(iw * 0.264, ih * 0.034, iw * 0.732, ih * 0.942);
+      final s = size / math.max(iw, ih); // same car size as the full square
+      final w = src.width * s;
+      final h = src.height * s;
+      // Picture just big enough for the car at this angle.
+      final a = course * math.pi / 180;
+      final bw = (w * math.cos(a)).abs() + (h * math.sin(a)).abs();
+      final bh = (w * math.sin(a)).abs() + (h * math.cos(a)).abs();
+      return _render(Size(bw, bh), Offset(bw / 2, bh / 2), (c) {
+        c.translate(bw / 2, bh / 2);
+        c.rotate(a);
+        c.drawImageRect(
+          img,
+          src,
+          Rect.fromCenter(center: Offset.zero, width: w, height: h),
+          paint,
+        );
       });
     });
   }

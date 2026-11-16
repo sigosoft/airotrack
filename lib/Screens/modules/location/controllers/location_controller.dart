@@ -270,9 +270,19 @@ class LocationController extends GetxController {
   String _fixKey(Vehicle v) =>
       '${v.latitude!.toStringAsFixed(5)},${v.longitude!.toStringAsFixed(5)}';
 
+  /// Live Track only puts a car on the road once the car sends a live
+  /// update. Inactive and No-data cars send none, so Live Track shows them
+  /// at their GPS fix (often a yard or compound beside the road); keep them
+  /// there here too.
+  static bool _followsRoad(Vehicle v) =>
+      v.status != 'Inactive' && v.status != 'No data';
+
   /// Where [v] is drawn: on the nearest road once known, else its GPS fix.
-  LatLng pointOf(Vehicle v) =>
-      _roadPoints[_fixKey(v)] ?? LatLng(v.latitude!, v.longitude!);
+  LatLng pointOf(Vehicle v) {
+    final fix = LatLng(v.latitude!, v.longitude!);
+    if (!_followsRoad(v)) return fix;
+    return _roadPoints[_fixKey(v)] ?? fix;
+  }
 
   /// Looks up the road point of every shown car not looked up yet, a few at
   /// a time. A parked car is looked up once; a moving one at each new fix.
@@ -280,6 +290,7 @@ class LocationController extends GetxController {
     if (_roadPoints.length > 2000) _roadPoints.clear();
     for (final v in mapVehicles) {
       if (_roadLookups.length >= 6) return;
+      if (!_followsRoad(v)) continue;
       final key = _fixKey(v);
       if (_roadPoints.containsKey(key) || _roadLookups.contains(key)) continue;
       _roadLookups.add(key);

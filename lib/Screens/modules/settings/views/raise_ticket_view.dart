@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../../routes/app_routes.dart';
 import '../controllers/raise_ticket_controller.dart';
 
 class RaiseTicketView extends GetView<RaiseTicketController> {

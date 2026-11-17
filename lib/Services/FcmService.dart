@@ -8,7 +8,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../Screens/routes/app_routes.dart';
 import '../Configs/ApiConfigs.dart';
 import '../Configs/DioClient.dart';
 import '../Utils/Utils.dart';

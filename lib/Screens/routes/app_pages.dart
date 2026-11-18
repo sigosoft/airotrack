@@ -5,8 +5,6 @@ import '../modules/welcome/bindings/welcome_binding.dart';
 import '../modules/welcome/views/welcome_view.dart';
 import '../modules/login/bindings/login_binding.dart';
 import '../modules/login/views/login_view.dart';
-import '../modules/register/bindings/register_binding.dart';
-import '../modules/register/views/register_view.dart';
 
 import '../modules/home/bindings/home_binding.dart';
 import '../modules/home/views/home_view.dart';
@@ -79,11 +77,6 @@ class AppPages {
       name: Routes.LOGIN,
       page: () => const LoginView(),
       binding: LoginBinding(),
-    ),
-    GetPage(
-      name: Routes.REGISTER,
-      page: () => const RegisterView(),
-      binding: RegisterBinding(),
     ),
     // Added a placeholder for HOME route
     GetPage(

@@ -1572,107 +1572,152 @@ class TrackView extends GetView<TrackController> {
     );
   }
 
+  /// Street View: where the vehicle is now (status, last update, coordinates,
+  /// address) and a button that opens Google Street View at that spot.
   void _showStreetViewDetailsDialog(BuildContext context) {
+    controller.loadStreetViewAddress();
     showDialog(
       context: context,
       builder: (context) {
         final width = MediaQuery.of(context).size.width;
-        final height = MediaQuery.of(context).size.height;
         return Dialog(
           backgroundColor: Colors.transparent,
           elevation: 0,
+          insetPadding: EdgeInsets.symmetric(horizontal: width * 0.05),
           child: Container(
-            width: width * 0.6,
-            height: height * 0.13,
-            padding: EdgeInsets.fromLTRB(
-              width * 0.04,
-              height * 0.01,
-              width * 0.04,
-              height * 0.01,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(width * 0.04),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: width * 0.025,
-                  offset: Offset(0, height * 0.005),
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildStreetViewDetailRow(
-                  "Arrival Time:",
-                  "08 Oct 2025 11:00 AM",
-                ),
-                SizedBox(height: height * 0.006),
-                _buildStreetViewDetailRow(
-                  "Departure Time:",
-                  "08 Oct 2025 12:30 PM",
-                ),
-                SizedBox(height: height * 0.006),
-                _buildStreetViewDetailRow("Duration:", "01h 30m"),
-                SizedBox(height: height * 0.006),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: width * 0.19,
-                        child: Text(
-                          "Address:",
-                          style: TextStyle(
-                            fontSize: width * 0.025,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
+            child: Obx(() {
+              // Re-read when the live position/status changes.
+              controller.liveTrackData.value;
+              final pos = controller.currentLatLng;
+              final status = controller.shareStatusLabel;
+              final running = status.toLowerCase() == 'running';
+              final address = controller.streetViewAddress.value;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Center(
+                    child: Text(
+                      "Street View",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
                       ),
-                      Expanded(
-                        child: Text(
-                          "Puthiyakavu Junction, Karunagappalli, Kerala 690539, India",
-                          style: TextStyle(
-                            fontSize: width * 0.025,
-                            color: Colors.black87,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildStreetViewDetailRow(
+                    "Vehicle:",
+                    controller.displayPlate,
+                  ),
+                  _buildStreetViewDetailRow(
+                    "Status:",
+                    running
+                        ? '$status · ${controller.displaySpeed} ${controller.speedUnitLabel}'
+                        : status,
+                  ),
+                  _buildStreetViewDetailRow(
+                    "Last Update:",
+                    controller.displayDeviceTime,
+                  ),
+                  _buildStreetViewDetailRow(
+                    "Latlong:",
+                    pos == null
+                        ? '-'
+                        : '${pos.$1.toStringAsFixed(6)}, ${pos.$2.toStringAsFixed(6)}',
+                    valueColor: const Color(0xFF009FE3),
+                  ),
+                  _buildStreetViewDetailRow(
+                    "Address:",
+                    controller.isLoadingStreetViewAddress.value
+                        ? 'Loading address…'
+                        : (address ?? 'Address unavailable'),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildShareActionButton(
+                        "Close",
+                        isSelected: false,
+                        width: width * 0.38,
+                        onTap: () => Navigator.pop(context),
+                      ),
+                      _buildShareActionButton(
+                        controller.isOpeningStreetView.value
+                            ? "Opening…"
+                            : "Open",
+                        isSelected: true,
+                        width: width * 0.38,
+                        onTap: () async {
+                          final opened = await controller.openStreetView();
+                          if (opened && context.mounted) {
+                            Navigator.pop(context);
+                          }
+                        },
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
+                ],
+              );
+            }),
           ),
         );
       },
     );
   }
 
-  Widget _buildStreetViewDetailRow(String label, String value) {
-    final width = MediaQuery.of(Get.context!).size.width;
-    return Row(
-      children: [
-        SizedBox(
-          width: width * 0.19,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: width * 0.025,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+  Widget _buildStreetViewDetailRow(
+    String label,
+    String value, {
+    Color? valueColor,
+    int maxLines = 1,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
             ),
           ),
-        ),
-        Text(
-          value,
-          style: TextStyle(fontSize: width * 0.025, color: Colors.black87),
-        ),
-      ],
+          Expanded(
+            child: Text(
+              value,
+              maxLines: maxLines,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: valueColor ?? Colors.black87,
+                fontWeight:
+                    valueColor != null ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
@@ -20,6 +21,7 @@ import '../../../../Services/OdometerOffsetService.dart';
 import '../../../../Services/AppSettings.dart';
 import '../../../../Services/ReverseGeocodeService.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../home/controllers/home_controller.dart';
 
 /// Live tracking flow (snapshot once + WebSocket only):
@@ -349,6 +351,129 @@ class TrackController extends GetxController {
 
 
   final isSharingLocation = false.obs;
+
+  /// Address shown in the Street View dialog (null while loading / unknown).
+  final streetViewAddress = RxnString();
+  final isLoadingStreetViewAddress = false.obs;
+
+  /// Looks up the address of the car's current position for the Street
+  /// View dialog.
+  Future<void> loadStreetViewAddress() async {
+    final pos = currentLatLng;
+    streetViewAddress.value = null;
+    if (pos == null) return;
+    isLoadingStreetViewAddress.value = true;
+    try {
+      final (lat, lng) = pos;
+      final address = await ReverseGeocodeService.instance
+          .reverse(lat, lng)
+          .timeout(const Duration(seconds: 8));
+      final text = address?.trim();
+      streetViewAddress.value =
+          (text == null || text.isEmpty) ? null : text;
+    } catch (_) {
+      streetViewAddress.value = null;
+    } finally {
+      isLoadingStreetViewAddress.value = false;
+    }
+  }
+
+  final isOpeningStreetView = false.obs;
+
+  /// How far from the car to look for Street View imagery.
+  static const int _streetViewRadiusM = 200;
+
+  /// Nearest Street View panorama to [lat],[lng] within
+  /// [_streetViewRadiusM], from Google's Street View metadata service
+  /// (free; no image is loaded). Returns `(lat, lng, panoId)`, or null when
+  /// there is no imagery nearby. Throws when the lookup itself failed.
+  Future<(double, double, String?)?> _nearestStreetViewPano(
+    double lat,
+    double lng,
+  ) async {
+    final response = await Dio().get(
+      'https://maps.googleapis.com/maps/api/streetview/metadata',
+      queryParameters: {
+        'location': '$lat,$lng',
+        'radius': '$_streetViewRadiusM',
+        'source': 'outdoor',
+        'key': ApiConfig.googleMapsApiKey,
+      },
+      options: Options(receiveTimeout: const Duration(seconds: 8)),
+    );
+    final data = response.data;
+    if (data is! Map) throw Exception('unexpected Street View response');
+    final status = data['status'];
+    if (status == 'ZERO_RESULTS' || status == 'NOT_FOUND') return null;
+    final loc = data['location'];
+    if (status != 'OK' || loc is! Map) {
+      throw Exception('Street View metadata status $status');
+    }
+    final pLat = (loc['lat'] as num?)?.toDouble();
+    final pLng = (loc['lng'] as num?)?.toDouble();
+    if (pLat == null || pLng == null) return null;
+    return (pLat, pLng, data['pano_id'] as String?);
+  }
+
+  /// Opens Google Street View (Google Maps app, or the browser) at the
+  /// panorama nearest the car. Opening it at the car's exact point showed
+  /// nothing when the car was parked off the road, away from the imagery.
+  /// Returns false when it could not be opened.
+  Future<bool> openStreetView() async {
+    if (isOpeningStreetView.value) return false;
+    final pos = currentLatLng;
+    if (pos == null) {
+      Get.snackbar(
+        'Location not available',
+        'The vehicle\'s current location is not loaded yet. Please try again in a moment.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return false;
+    }
+    isOpeningStreetView.value = true;
+    try {
+      return await _openStreetViewNear(pos.$1, pos.$2);
+    } finally {
+      isOpeningStreetView.value = false;
+    }
+  }
+
+  Future<bool> _openStreetViewNear(double lat, double lng) async {
+    var viewLat = lat, viewLng = lng;
+    String? panoId;
+    try {
+      final pano = await _nearestStreetViewPano(lat, lng);
+      if (pano == null) {
+        Get.snackbar(
+          'Street View not available',
+          'Google has no Street View imagery within $_streetViewRadiusM m of this vehicle.',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return false;
+      }
+      (viewLat, viewLng, panoId) = pano;
+    } catch (e) {
+      // Lookup failed (offline, key problem): still try the car's point.
+      debugPrint('Street View lookup failed: $e');
+    }
+    final uri = Uri.parse(
+      'https://www.google.com/maps/@?api=1&map_action=pano'
+      '&viewpoint=${viewLat.toStringAsFixed(6)},${viewLng.toStringAsFixed(6)}'
+      '${panoId == null ? '' : '&pano=${Uri.encodeQueryComponent(panoId)}'}',
+    );
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (opened) return true;
+    } catch (e) {
+      debugPrint('Open Street View failed: $e');
+    }
+    Get.snackbar(
+      'Error',
+      'Could not open Street View.',
+      snackPosition: SnackPosition.BOTTOM,
+    );
+    return false;
+  }
 
   /// Vehicle state for sharing (Running, Idle, Stopped…), from the same
   /// status the car icon uses. [displayStatus] can be an event name such

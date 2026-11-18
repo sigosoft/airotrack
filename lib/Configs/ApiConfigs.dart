@@ -20,6 +20,10 @@ class ApiConfig {
   /// Mapbox public token for Map Matching API (snap GPS track to road).
   static const String mapboxAccessToken =
       'pk.eyJ1Ijoic2FpbXBleGRldmxvcG1lbnQiLCJhIjoiY21rZXg1ZDA4MGFjZDNqcXptZmN6eXJwYyJ9.MhqmUUhQgPHXj-0nwnz9ww';
+
+  /// Google Maps key (same as the Android manifest and iOS AppDelegate),
+  /// used for the Street View metadata lookup.
+  static const String googleMapsApiKey = 'AIzaSyAUlzhkvYVB3FFJH3Cwx7DojTBCgViBMAw';
 }
 
 class ApiEndPoints {

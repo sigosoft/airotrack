@@ -145,7 +145,24 @@ class NotificationController extends GetxController {
     _topUpFiltered();
   }
 
+  /// Text typed in the "Search Vehicles" box.
+  final searchQuery = ''.obs;
+
+  /// Search box changed: show only alerts whose vehicle plate or name
+  /// contains the text, loading older pages if too few match.
+  void onSearchChanged(String value) {
+    searchQuery.value = value;
+    _applyLocalFilters();
+    _autoPages = 0;
+    _topUpFiltered();
+  }
+
+  /// Lower case without spaces, so "kl07" finds "KL 07 D 0518".
+  static String _searchKey(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+
   bool get _hasActiveFilter =>
+      _searchKey(searchQuery.value).isNotEmpty ||
       selectedEventTypes.isNotEmpty ||
       selectedVehicles.isNotEmpty ||
       fromDate.value != null ||
@@ -286,13 +303,20 @@ class NotificationController extends GetxController {
     isLoading.value = false;
   }
 
-  /// Event type, vehicle and date filters, applied to what has been loaded.
+  /// Search, event type, vehicle and date filters, applied to what has been
+  /// loaded.
   void _applyLocalFilters() {
     final types = selectedEventTypes.map((e) => e.toLowerCase()).toSet();
     final from = fromDate.value;
     final to = toDate.value;
+    final query = _searchKey(searchQuery.value);
 
     bool matches(AlertModel a) {
+      if (query.isNotEmpty &&
+          !_searchKey(a.plateNumber).contains(query) &&
+          !_searchKey(a.deviceName).contains(query)) {
+        return false;
+      }
       if (types.isNotEmpty &&
           !types.contains(a.filterKey.toLowerCase())) {
         return false;

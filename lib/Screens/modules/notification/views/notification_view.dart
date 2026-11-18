@@ -63,8 +63,10 @@ class NotificationView extends GetView<NotificationController> {
                       ),
                     ],
                   ),
-                  child: const TextField(
-                    decoration: InputDecoration(
+                  child: TextField(
+                    onChanged: controller.onSearchChanged,
+                    textInputAction: TextInputAction.search,
+                    decoration: const InputDecoration(
                       hintText: "Search Vehicles",
                       hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
                       border: InputBorder.none,

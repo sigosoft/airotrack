@@ -4,7 +4,6 @@ import 'package:airotrack/Utils/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/login_controller.dart';
-import '../../../routes/app_routes.dart';
 
 class LoginView extends GetView<LoginController> {
   const LoginView({Key? key}) : super(key: key);
@@ -78,20 +77,6 @@ class LoginView extends GetView<LoginController> {
                             color: Colors.grey,
                           ),
                           onPressed: controller.togglePasswordVisibility,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () => Get.toNamed(Routes.FORGOT_PASSWORD),
-                      child: Text(
-                        'Forgot Password?',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                          fontSize: width * 0.03,
                         ),
                       ),
                     ),

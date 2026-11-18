@@ -1172,8 +1172,10 @@ class TrackView extends GetView<TrackController> {
         final width = MediaQuery.of(context).size.width;
         return Container(
           width: width,
-          height: height * 0.63,
           margin: EdgeInsets.only(top: height * 0.02),
+          padding: EdgeInsets.only(
+            bottom: 24 + MediaQuery.of(context).padding.bottom,
+          ),
           decoration: const BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.only(
@@ -1182,12 +1184,13 @@ class TrackView extends GetView<TrackController> {
             ),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 15),
               Center(
                 child: Text(
-                  "Share Live Location",
+                  "Share Current Location",
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -1201,27 +1204,46 @@ class TrackView extends GetView<TrackController> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "KL 07 D 0518",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
+                    Obx(
+                      () => Text(
+                        controller.displayPlate,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    _buildShareOption("Only Once"),
-                    const SizedBox(height: 15),
-                    _buildShareOption("1 Hour"),
-                    const SizedBox(height: 15),
-                    _buildShareOption("1 Day"),
-                    const SizedBox(height: 15),
-                    _buildShareOption("1 Week"),
-                    const SizedBox(height: 15),
-                    _buildShareOption("2 Weeks"),
-                    const SizedBox(height: 15),
-                    _buildShareOption("Custom Hours"),
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 6),
+                    Obx(() {
+                      // Re-read when the live position/status changes.
+                      controller.liveTrackData.value;
+                      final status = controller.shareStatusLabel;
+                      final running = status.toLowerCase() == 'running';
+                      return Text(
+                        running
+                            ? '$status · ${controller.displaySpeed} ${controller.speedUnitLabel}'
+                            : status,
+                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                      );
+                    }),
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        "Sends the vehicle's location right now as a Google Maps "
+                        "link, with its status, speed and address. The link "
+                        "shows where the vehicle is at the moment you share; "
+                        "it does not keep updating.",
+                        style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1230,13 +1252,20 @@ class TrackView extends GetView<TrackController> {
                           isSelected: false,
                           onTap: () => Navigator.pop(context),
                         ),
-                        _buildShareActionButton(
-                          "Share",
-                          isSelected: true,
-                          onTap: () {
-                            // Logic for sharing
-                            Navigator.pop(context);
-                          },
+                        Obx(
+                          () => _buildShareActionButton(
+                            controller.isSharingLocation.value
+                                ? "Sharing…"
+                                : "Share",
+                            isSelected: true,
+                            onTap: () async {
+                              final shared =
+                                  await controller.shareCurrentLocation();
+                              if (shared && context.mounted) {
+                                Navigator.pop(context);
+                              }
+                            },
+                          ),
                         ),
                       ],
                     ),
@@ -1248,65 +1277,6 @@ class TrackView extends GetView<TrackController> {
         );
       },
     );
-  }
-
-  Widget _buildShareOption(String title) {
-    final width = MediaQuery.of(Get.context!).size.width;
-    final height = MediaQuery.of(Get.context!).size.height;
-    return Obx(() {
-      final isSelected = controller.selectedShareOption.value == title;
-      return GestureDetector(
-        onTap: () => controller.updateShareOption(title),
-        child: Container(
-          width: width * 0.88,
-          height: height * 0.047,
-          padding: EdgeInsets.symmetric(horizontal: width * 0.04),
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.transparent : const Color(0xFFF5F5F5),
-            borderRadius: BorderRadius.circular(16),
-            border: isSelected
-                ? Border.all(color: const Color(0xFF009FE3), width: 1)
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isSelected ? Colors.black : Colors.grey[700],
-                  fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-                ),
-              ),
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: const Color(0xFF009FE3),
-                    width: 1.5,
-                  ),
-                ),
-                child: isSelected
-                    ? Center(
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFF009FE3),
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-            ],
-          ),
-        ),
-      );
-    });
   }
 
   Widget _buildShareActionButton(

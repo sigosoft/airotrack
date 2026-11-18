@@ -18,6 +18,8 @@ import '../../../../Services/LiveTrackWebSocketService.dart';
 import '../../../../Services/DirectionsService.dart';
 import '../../../../Services/OdometerOffsetService.dart';
 import '../../../../Services/AppSettings.dart';
+import '../../../../Services/ReverseGeocodeService.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../home/controllers/home_controller.dart';
 
 /// Live tracking flow (snapshot once + WebSocket only):
@@ -337,7 +339,6 @@ class TrackController extends GetxController {
 
   final fenceNameController = TextEditingController();
   final fenceNameError = RxnString();
-  final selectedShareOption = '24h'.obs;
   final isUpdatingOdometer = false.obs;
 
   /// Light odometer source for UI.
@@ -346,7 +347,103 @@ class TrackController extends GetxController {
   /// Pause marker UI while an input sheet is open (prevents ANR with IME).
   bool _pauseMarkerUi = false;
 
-  void updateShareOption(String value) => selectedShareOption.value = value;
+
+  final isSharingLocation = false.obs;
+
+  /// Vehicle state for sharing (Running, Idle, Stopped…), from the same
+  /// status the car icon uses. [displayStatus] can be an event name such
+  /// as "Location Update", so it is not used here.
+  String get shareStatusLabel {
+    switch (_carStatusKey) {
+      case 'running':
+        return 'Running';
+      case 'idle':
+        return 'Idle';
+      case 'inactive':
+        return 'Inactive';
+      case 'expired':
+        return 'Expired';
+      case 'nodata':
+        return 'No Data';
+      default:
+        return 'Stopped';
+    }
+  }
+
+  /// Latest position of the car: the animated live position when tracking
+  /// is running, else the last position from the snapshot.
+  (double, double)? get currentLatLng {
+    if (animatedLat.value != 0.0 && animatedLng.value != 0.0) {
+      return (animatedLat.value, animatedLng.value);
+    }
+    final p = liveTrackData.value?.currentPosition;
+    final lat = double.tryParse(p?.latitude ?? '');
+    final lng = double.tryParse(p?.longitude ?? '');
+    if (lat == null || lng == null || (lat == 0 && lng == 0)) return null;
+    return (lat, lng);
+  }
+
+  /// Shares the car's current location (a Google Maps link plus plate,
+  /// status, speed, address and time) through the phone's share sheet.
+  /// This is a one-time snapshot: the link does not update afterwards.
+  Future<bool> shareCurrentLocation() async {
+    if (isSharingLocation.value) return false;
+    final pos = currentLatLng;
+    if (pos == null) {
+      Get.snackbar(
+        'Location not available',
+        'The vehicle\'s current location is not loaded yet. Please try again in a moment.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return false;
+    }
+    isSharingLocation.value = true;
+    try {
+      final (lat, lng) = pos;
+      String? address;
+      try {
+        address = await ReverseGeocodeService.instance
+            .reverse(lat, lng)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {
+        address = null; // share without the address rather than fail
+      }
+      final plate = displayPlate.trim();
+      final status = shareStatusLabel;
+      final speed = '$displaySpeed $speedUnitLabel';
+      // When the device reported this position; else the moment of sharing.
+      final reported = displayDeviceTime;
+      final time = reported != '-'
+          ? reported
+          : AppSettings.to.dateTime(DateTime.now().toIso8601String());
+      final link =
+          'https://www.google.com/maps/search/?api=1&query=${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+      final text = [
+        if (plate.isNotEmpty) 'Vehicle: $plate',
+        'Status: $status${status.toLowerCase() == 'running' ? ' ($speed)' : ''}',
+        'Time: $time',
+        if (address != null && address.trim().isNotEmpty) 'Location: ${address.trim()}',
+        link,
+      ].join('\n');
+      await SharePlus.instance.share(
+        ShareParams(
+          text: text,
+          subject: plate.isEmpty ? 'Vehicle location' : '$plate location',
+        ),
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Share location failed: $e');
+      Get.snackbar(
+        'Error',
+        'Could not share the location.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return false;
+    } finally {
+      isSharingLocation.value = false;
+    }
+  }
 
   void submitFence() {
     if (fenceNameController.text.isEmpty) {

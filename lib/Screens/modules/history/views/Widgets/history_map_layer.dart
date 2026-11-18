@@ -319,6 +319,17 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
     super.dispose();
   }
 
+  /// Colour matrix that turns Mapbox Streets colours into Google Maps ones:
+  /// beige land -> light grey (#F1F3F4), water -> #AADAFF, parks -> soft
+  /// green, highways -> pale yellow (#FDE293), black labels -> dark grey.
+  /// Fitted on Mapbox Streets v12 tile colours; white stays white.
+  static const ColorFilter _googleLookFilter = ColorFilter.matrix(<double>[
+    0.8109, 0.1198, -0.0520, 0, 32.61, //
+    0.0924, 0.7839, 0.0054, 0, 33.20, //
+    0.1199, -0.0719, 0.8294, 0, 38.20, //
+    0, 0, 0, 1, 0, //
+  ]);
+
   String _mapboxTileUrl() {
     final token = ApiConfig.mapboxAccessToken.trim();
     final hasInvalidTokenFormat =
@@ -515,6 +526,11 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
             urlTemplate: _mapboxTileUrl(),
             userAgentPackageName: 'com.airotrack.app',
             fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            // Recolour Mapbox Streets to look like Google Maps.
+            tileBuilder: (context, tileWidget, tile) => ColorFiltered(
+              colorFilter: _googleLookFilter,
+              child: tileWidget,
+            ),
           ),
           PolylineLayer(polylines: polylines),
           MarkerLayer(markers: markers),

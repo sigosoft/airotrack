@@ -75,4 +75,36 @@ class ApiEndPoints {
   static String reportsOverspeed = "reports/overspeed";
   static String reportsGeofence = "reports/geofence";
   static String reportsAlerts = "reports/alerts";
+
+  // Vehicle reminders
+  static String reminderTypes = "reminder_types";
+  static String vehicleReminders = "vehicle_reminders";
+  static String addVehicleReminder = "add_vehicle_reminder";
+  static String viewVehicleReminder = "view_vehicle_reminder";
+  static String updateVehicleReminder = "update_vehicle_reminder";
+  static String deleteVehicleReminder = "delete_vehicle_reminder";
+
+  // Expenses
+  static String expenseOptions = "expense_options";
+  static String expenses = "expenses";
+  static String addExpense = "add_expense";
+  static String viewExpense = "view_expense";
+  static String updateExpense = "update_expense";
+  static String deleteExpense = "delete_expense";
+
+  // Support tickets
+  static String supportTicketOptions = "support_ticket_options";
+  static String supportTickets = "support_tickets";
+  static String addSupportTicket = "add_support_ticket";
+  static String viewSupportTicket = "view_support_ticket";
+}
+
+/// Full URL for a file path the API returns (e.g. `expenses/abc.png`).
+/// Uploaded files are served from `/storage/` on the same host as [ApiConfig.baseUrl].
+String storageFileUrl(String path) {
+  final p = path.trim();
+  if (p.isEmpty || p.startsWith('http')) return p;
+  final uri = Uri.parse(ApiConfig.baseUrl);
+  final clean = p.startsWith('/') ? p.substring(1) : p;
+  return '${uri.scheme}://${uri.authority}/storage/$clean';
 }

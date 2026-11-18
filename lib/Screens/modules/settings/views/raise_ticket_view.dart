@@ -1,3 +1,4 @@
+import 'package:airotrack/Screens/widgets/records_support.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/raise_ticket_controller.dart';
@@ -33,145 +34,54 @@ class RaiseTicketView extends GetView<RaiseTicketController> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 10),
-              // Select Vehicle Section
-              const Text(
-                'Select Vehicle',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                ),
-              ),
+              _label('Select Vehicle'),
               const SizedBox(height: 9),
-              GestureDetector(
-                onTap: () {
-                  // Simulate vehicle selection
-                  controller.selectedVehicle.value = 'KL 07 D 0518';
-                },
-                child: Container(
-                  width: double.infinity,
-                  height: 40,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Obx(
-                        () => Text(
-                          controller.selectedVehicle.value.isEmpty
-                              ? 'Select Vehicle'
-                              : controller.selectedVehicle.value,
-                          style: TextStyle(
-                            color: controller.selectedVehicle.value.isEmpty
-                                ? Colors.grey
-                                : Colors.black,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      Image.asset(
-                        'lib/Asset/Icons/Down arrow.png',
-                        width: 15,
-                        height: 10,
-                        color: Colors.blue.shade700,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
               Obx(
-                () => controller.vehicleError.value.isNotEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 4, left: 4),
-                        child: Text(
-                          controller.vehicleError.value,
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 12,
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              const SizedBox(height: 10),
-              // Type Section
-              const Text(
-                'Type',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
+                () => PickerField(
+                  hint: 'Select Vehicle',
+                  value: controller.selectedVehicle.value,
+                  onTap: controller.pickVehicle,
                 ),
               ),
+              FieldError(controller.vehicleError),
+              const SizedBox(height: 10),
+              _label('Type'),
               const SizedBox(height: 9),
-              GestureDetector(
-                onTap: () {
-                  // Simulate type selection
-                  controller.selectedType.value = 'General Issue';
-                },
-                child: Container(
-                  width: double.infinity,
-                  height: 40,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Obx(
-                        () => Text(
-                          controller.selectedType.value.isEmpty
-                              ? 'Select Ticket Type'
-                              : controller.selectedType.value,
-                          style: TextStyle(
-                            color: controller.selectedType.value.isEmpty
-                                ? Colors.grey
-                                : Colors.black,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      Image.asset(
-                        'lib/Asset/Icons/Down arrow.png',
-                        width: 15,
-                        height: 10,
-                        color: Colors.blue.shade700,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
               Obx(
-                () => controller.typeError.value.isNotEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 4, left: 4),
-                        child: Text(
-                          controller.typeError.value,
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 12,
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              const SizedBox(height: 10),
-              // Message Section
-              const Text(
-                'Message',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
+                () => PickerField(
+                  hint: 'Select Ticket Type',
+                  value: controller.selectedType.value?.label ?? '',
+                  onTap: controller.pickType,
                 ),
               ),
+              FieldError(controller.typeError),
+              const SizedBox(height: 10),
+              _label('Contact Number'),
+              const SizedBox(height: 9),
+              Container(
+                width: double.infinity,
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: TextField(
+                  controller: controller.contactController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    hintText: 'Number we can call you on',
+                    hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.only(bottom: 12),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+              FieldError(controller.contactError),
+              const SizedBox(height: 10),
+              _label('Message'),
               const SizedBox(height: 9),
               Container(
                 width: double.infinity,
@@ -194,76 +104,40 @@ class RaiseTicketView extends GetView<RaiseTicketController> {
                   ),
                 ),
               ),
-              Obx(
-                () => controller.messageError.value.isNotEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 4, left: 4),
-                        child: Text(
-                          controller.messageError.value,
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 12,
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
+              FieldError(controller.messageError),
               const SizedBox(height: 10),
-              // Upload Image Section
-              const Text(
-                'Upload Image',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                ),
-              ),
+              _label('Upload Image'),
               const SizedBox(height: 9),
-              Container(
-                width: 107.25,
-                height: 111.8,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.image_outlined,
-                      size: 30,
-                      color: Colors.blue.shade300,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Upload Image',
-                      style: TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
+              ImageUploadBox(file: controller.image),
               const SizedBox(height: 50),
-              // Submit Button
               SizedBox(
                 width: double.infinity,
                 height: 45,
-                child: ElevatedButton(
-                  onPressed: controller.submitTicket,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF009FE3),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                child: Obx(
+                  () => ElevatedButton(
+                    onPressed: controller.isSaving.value ? null : controller.submitTicket,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kRecordsBlue,
+                      disabledBackgroundColor: kRecordsBlue.withOpacity(0.6),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
                     ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    'Submit',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    child: controller.isSaving.value
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text(
+                            'Submit',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -301,4 +175,13 @@ class RaiseTicketView extends GetView<RaiseTicketController> {
       ),
     );
   }
+
+  Widget _label(String text) => Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Colors.black,
+        ),
+      );
 }

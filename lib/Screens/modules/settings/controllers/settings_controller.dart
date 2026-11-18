@@ -72,43 +72,10 @@ class SettingsController extends GetxController {
     }
   }
 
-  final ScrollController expensesScrollController = ScrollController();
-  final ScrollController supportTicketsScrollController = ScrollController();
-
-  var expenses = <int>[].obs;
-  var isLoadingExpenses = false.obs;
-  var hasMoreExpenses = true.obs;
-  var expensesPage = 1;
-
-  var supportTickets = <int>[].obs;
-  var isLoadingSupportTickets = false.obs;
-  var hasMoreSupportTickets = true.obs;
-  var supportTicketsPage = 1;
-
   @override
   void onInit() {
     super.onInit();
     loadProfile();
-    loadExpenses();
-    loadSupportTickets();
-
-    expensesScrollController.addListener(() {
-      if (expensesScrollController.position.pixels ==
-          expensesScrollController.position.maxScrollExtent) {
-        if (!isLoadingExpenses.value && hasMoreExpenses.value) {
-          loadMoreExpenses();
-        }
-      }
-    });
-
-    supportTicketsScrollController.addListener(() {
-      if (supportTicketsScrollController.position.pixels ==
-          supportTicketsScrollController.position.maxScrollExtent) {
-        if (!isLoadingSupportTickets.value && hasMoreSupportTickets.value) {
-          loadMoreSupportTickets();
-        }
-      }
-    });
   }
 
   Future<void> loadProfile() async {
@@ -125,52 +92,5 @@ class SettingsController extends GetxController {
     } finally {
       isLoadingProfile.value = false;
     }
-  }
-
-  void loadExpenses() {
-    isLoadingExpenses.value = true;
-    Future.delayed(const Duration(seconds: 1), () {
-      expenses.assignAll(List.generate(10, (index) => index));
-      isLoadingExpenses.value = false;
-    });
-  }
-
-  void loadMoreExpenses() {
-    isLoadingExpenses.value = true;
-    expensesPage++;
-    Future.delayed(const Duration(seconds: 1), () {
-      expenses.addAll(List.generate(10, (index) => index));
-      if (expensesPage >= 5) {
-        hasMoreExpenses.value = false;
-      }
-      isLoadingExpenses.value = false;
-    });
-  }
-
-  void loadSupportTickets() {
-    isLoadingSupportTickets.value = true;
-    Future.delayed(const Duration(seconds: 1), () {
-      supportTickets.assignAll(List.generate(10, (index) => index));
-      isLoadingSupportTickets.value = false;
-    });
-  }
-
-  void loadMoreSupportTickets() {
-    isLoadingSupportTickets.value = true;
-    supportTicketsPage++;
-    Future.delayed(const Duration(seconds: 1), () {
-      supportTickets.addAll(List.generate(10, (index) => index));
-      if (supportTicketsPage >= 5) {
-        hasMoreSupportTickets.value = false;
-      }
-      isLoadingSupportTickets.value = false;
-    });
-  }
-
-  @override
-  void onClose() {
-    expensesScrollController.dispose();
-    supportTicketsScrollController.dispose();
-    super.onClose();
   }
 }

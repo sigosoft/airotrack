@@ -1,11 +1,13 @@
-import 'package:airotrack/Screens/routes/app_routes.dart';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../alerts/controllers/alerts_controller.dart';
 import '../../alerts/views/widgets/alert_card.dart';
 import '../../reminders/controllers/reminders_controller.dart';
-import '../../reminders/views/reminders_view.dart' show ReminderTile;
+import '../../reminders/views/reminders_view.dart'
+    show ReminderTile, AddReminderButton;
+import 'package:airotrack/Models/VehicleRecordModels.dart';
+import 'package:airotrack/Screens/widgets/records_support.dart';
 import '../controllers/notification_controller.dart';
 import 'widgets/notification_filter_sheet.dart';
 
@@ -250,53 +252,21 @@ class _RemindersPane extends GetView<RemindersController> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Obx(() {
-          final count = controller.reminders.length;
-          final loadingMore = controller.isLoading.value &&
-              controller.hasMore.value;
-          return ListView.builder(
-            controller: controller.scrollController,
-            padding: const EdgeInsets.fromLTRB(17, 0, 17, 80),
-            itemCount: count + (loadingMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index < count) return const ReminderTile();
-              return const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Color(0xFF009FE3),
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        }),
+        RecordsListBody<ReminderModel>(
+          controller: controller,
+          emptyText: 'No reminders yet.\nTap + to add one.',
+          padding: const EdgeInsets.fromLTRB(17, 0, 17, 80),
+          itemBuilder: (context, r) => ReminderTile(
+            reminder: r,
+            onEdit: () => controller.openEdit(r),
+            onDelete: () => controller.delete(r),
+          ),
+        ),
         // Add reminder, as on the Reminders page.
         Positioned(
           bottom: 30,
           right: 16,
-          child: GestureDetector(
-            onTap: () => Get.toNamed(Routes.ADD_REMINDER),
-            child: Container(
-              width: 45,
-              height: 45,
-              decoration: BoxDecoration(
-                color: const Color(0xFF009FE3),
-                borderRadius: BorderRadius.circular(22.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.blue.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.add, color: Colors.white, size: 24),
-            ),
-          ),
+          child: AddReminderButton(onTap: controller.openAdd),
         ),
       ],
     );

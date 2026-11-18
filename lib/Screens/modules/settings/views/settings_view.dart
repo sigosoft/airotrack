@@ -158,7 +158,7 @@ class SettingsView extends GetView<SettingsController> {
             _buildSettingTile(
               iconPath: 'lib/Asset/Icons/Raise ticket.png',
               label: 'Raise Ticket',
-              onTap: () => Get.toNamed(Routes.RAISE_TICKET),
+              onTap: () => Get.toNamed(Routes.SUPPORT_TICKET),
             ),
             _buildSettingTile(
               iconPath: 'lib/Asset/Icons/Change password.png',

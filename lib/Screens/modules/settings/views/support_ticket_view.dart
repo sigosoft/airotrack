@@ -1,8 +1,26 @@
+import 'package:airotrack/Configs/ApiConfigs.dart';
+import 'package:airotrack/Models/VehicleRecordModels.dart';
+import 'package:airotrack/Screens/widgets/records_support.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../controllers/settings_controller.dart';
+import '../controllers/support_tickets_controller.dart';
 
-class SupportTicketView extends GetView<SettingsController> {
+/// Status chip colours by API status key (1 Pending, 2 Processing, 3 Solved, 4 Closed).
+Color ticketStatusColor(int status) {
+  switch (status) {
+    case 1:
+      return const Color(0xFFF5A623);
+    case 3:
+      return const Color(0xFF2EB872);
+    case 4:
+      return Colors.grey;
+    case 2:
+    default:
+      return kRecordsBlue;
+  }
+}
+
+class SupportTicketView extends GetView<SupportTicketsController> {
   const SupportTicketView({Key? key}) : super(key: key);
 
   @override
@@ -34,90 +52,30 @@ class SupportTicketView extends GetView<SettingsController> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 15),
-                // Search Bar
-                Container(
-                  width: double.infinity,
-                  height: 45,
-                  padding: const EdgeInsets.symmetric(horizontal: 15),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Search Device or Ticket Id',
-                            hintStyle: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 13,
-                            ),
-                            border: InputBorder.none,
-                          ),
-                        ),
-                      ),
-                      Icon(Icons.search, color: Colors.grey.shade400, size: 28),
-                    ],
-                  ),
+                RecordsSearchField(
+                  hint: 'Search Device or Ticket Id',
+                  controller: controller.searchController,
+                  onChanged: controller.onSearchChanged,
+                  radius: 25,
                 ),
                 const SizedBox(height: 20),
-                // Filter Days Row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _buildDayButton('Today', isSelected: true),
-                    _buildDayButton('Yesterday'),
-                    _buildDayButton('Week'),
-                    _buildDayButton('Month'),
-                    Image.asset(
-                      'lib/Asset/Icons/Calender.png',
-                      width: 25,
-                      height: 25,
-                    ),
-                  ],
-                ),
+                PeriodFilterRow(controller: controller),
                 const SizedBox(height: 25),
-                // Ticket Tiles List
                 Expanded(
-                  child: Obx(
-                    () => ListView.separated(
-                      padding: const EdgeInsets.only(top: 0),
-                      controller: controller.supportTicketsScrollController,
-                      itemCount:
-                          controller.supportTickets.length +
-                          (controller.isLoadingSupportTickets.value &&
-                                  controller.hasMoreSupportTickets.value
-                              ? 1
-                              : 0),
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        if (index < controller.supportTickets.length) {
-                          return _buildTicketTile(context);
-                        } else {
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Color(0xFF009FE3),
-                                ),
-                              ),
-                            ),
-                          );
-                        }
-                      },
+                  child: RecordsListBody<SupportTicketModel>(
+                    controller: controller,
+                    emptyText: 'No tickets found.\nTap + to raise one.',
+                    padding: const EdgeInsets.only(bottom: 160),
+                    spacing: 10,
+                    itemBuilder: (context, t) => _TicketTile(
+                      ticket: t,
+                      onTap: () => _showDetails(t),
                     ),
                   ),
                 ),
-                const SizedBox(height: 100), // Space for floating buttons
               ],
             ),
           ),
-          // Floating Buttons
           Positioned(
             bottom: 20,
             right: 20,
@@ -145,8 +103,9 @@ class SupportTicketView extends GetView<SettingsController> {
                 ),
                 const SizedBox(height: 10),
                 FloatingActionButton.small(
-                  onPressed: () {},
-                  backgroundColor: const Color(0xFF009FE3),
+                  heroTag: 'raise_ticket_fab',
+                  onPressed: controller.openRaise,
+                  backgroundColor: kRecordsBlue,
                   shape: const CircleBorder(),
                   elevation: 4,
                   child: const Icon(Icons.add, color: Colors.white, size: 24),
@@ -159,131 +118,255 @@ class SupportTicketView extends GetView<SettingsController> {
     );
   }
 
-  Widget _buildDayButton(String label, {bool isSelected = false}) {
-    return Container(
-      width: 72.2,
-      height: 26.89,
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFF009FE3) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isSelected ? const Color(0xFF009FE3) : Colors.grey.shade300,
+  void _showDetails(SupportTicketModel t) {
+    dismissKeyboard();
+    Get.bottomSheet(
+      _TicketDetailsSheet(controller: controller, initial: t),
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+    );
+  }
+}
+
+class _TicketTile extends StatelessWidget {
+  final SupportTicketModel ticket;
+  final VoidCallback onTap;
+  const _TicketTile({required this.ticket, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ticket;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 100,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    t.vehicleNumber,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RichText(
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    text: TextSpan(
+                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                      children: [
+                        const TextSpan(text: 'Ticket Type: '),
+                        TextSpan(
+                          text: t.typeLabel,
+                          style: TextStyle(
+                            color: Colors.black.withOpacity(0.7),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    t.createdAt == null ? '' : recordDateTimeFmt.format(t.createdAt!),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: kRecordsBlue, width: 1),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text('Ticket', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                      Text('Id:${t.id}', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                _StatusChip(status: t.status, label: t.statusLabel),
+              ],
+            ),
+          ],
         ),
       ),
-      child: Center(
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.grey,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final int status;
+  final String label;
+  const _StatusChip({required this.status, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: ticketStatusColor(status),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+}
+
+class _TicketDetailsSheet extends StatefulWidget {
+  final SupportTicketsController controller;
+  final SupportTicketModel initial;
+  const _TicketDetailsSheet({required this.controller, required this.initial});
+
+  @override
+  State<_TicketDetailsSheet> createState() => _TicketDetailsSheetState();
+}
+
+class _TicketDetailsSheetState extends State<_TicketDetailsSheet> {
+  late SupportTicketModel t = widget.initial;
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.fetchTicket(t.id).then((fresh) {
+      if (!mounted) return;
+      setState(() {
+        if (fresh != null) t = fresh;
+        loading = false;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = t.image.isEmpty ? '' : storageFileUrl(t.image);
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Ticket #${t.id}',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                  _StatusChip(status: t.status, label: t.statusLabel),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _row('Vehicle', t.vehicleNumber),
+              _row('Type', t.typeLabel),
+              if (t.contactNo.isNotEmpty) _row('Contact', t.contactNo),
+              _row('Raised on', t.createdAt == null ? '-' : recordDateTimeFmt.format(t.createdAt!)),
+              _row('Message', t.message),
+              if (imageUrl.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () => openImageViewer(imageUrl),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(imageUrl,
+                        width: 160,
+                        height: 120,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              const Text('Status History',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (loading)
+                const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2, color: kRecordsBlue),
+                  ),
+                )
+              else if (t.statusLogs.isEmpty)
+                const Text('No updates yet', style: TextStyle(color: Colors.grey, fontSize: 13))
+              else
+                for (final log in t.statusLogs)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Icon(Icons.circle, size: 10, color: ticketStatusColor(log.toStatus)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(log.toStatusLabel,
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                              if (log.remarks.isNotEmpty)
+                                Text(log.remarks,
+                                    style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                              if (log.createdAt != null)
+                                Text(recordDateTimeFmt.format(log.createdAt!),
+                                    style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildTicketTile(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
-    return Container(
-      width: screenWidth - 33,
-      height: 100,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'KL 07 D 0518',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                RichText(
-                  text: TextSpan(
-                    style: const TextStyle(fontSize: 13, color: Colors.grey),
-                    children: [
-                      const TextSpan(text: 'Ticket Type: '),
-                      TextSpan(
-                        text: 'Device offline',
-                        style: TextStyle(
-                          color: Colors.black.withOpacity(0.7),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                const Text(
-                  '02 Aug 2025, 11:00:09 PM',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
+  Widget _row(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 90,
+              child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
             ),
-          ),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF009FE3), width: 1),
-                ),
-                child: const Column(
-                  children: [
-                    Text(
-                      'Ticket',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'Id:50',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF009FE3),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: const Text(
-                  'Processing',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+            Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+          ],
+        ),
+      );
 }

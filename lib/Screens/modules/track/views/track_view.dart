@@ -856,7 +856,12 @@ class TrackView extends GetView<TrackController> {
                           ),
                           const SizedBox(width: 18),
                           GestureDetector(
-                            onTap: () => Get.toNamed(Routes.ADD_REMINDER),
+                            onTap: () => Get.toNamed(
+                              Routes.ADD_REMINDER,
+                              arguments: {
+                                'vehicleNumber': controller.displayPlate,
+                              },
+                            ),
                             child: _buildActionButton(
                               "Add \n Reminder",
                               'lib/Asset/Icons/Bells.png',

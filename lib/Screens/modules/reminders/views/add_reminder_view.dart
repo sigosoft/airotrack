@@ -1,3 +1,4 @@
+import 'package:airotrack/Screens/widgets/records_support.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -11,9 +12,9 @@ class AddReminderView extends GetView<AddReminderController> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text(
-          'Add Reminder',
-          style: TextStyle(
+        title: Text(
+          controller.isEdit ? 'Edit Reminder' : 'Add Reminder',
+          style: const TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.bold,
             fontSize: 20,
@@ -27,303 +28,146 @@ class AddReminderView extends GetView<AddReminderController> {
           onPressed: () => Get.back(),
         ),
       ),
-      body: GestureDetector(
-        onTap: controller.closeTypeDropdown,
-        behavior: HitTestBehavior.opaque,
-        child: Stack(
+      body: SafeArea(
+        child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 20),
-
-                  // Select Type
-                  const Text(
-                    'Select Type',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: controller.toggleTypeDropdown,
-                    child: Obx(() {
-                      final selected = controller.selectedType.value;
-                      return Container(
-                        width: double.infinity,
-                        height: 40,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade300),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.05),
-                              blurRadius: 2,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              selected ?? 'Select Reminder Type',
-                              style: TextStyle(
-                                color: selected == null
-                                    ? Colors.grey[400]
-                                    : Colors.black87,
-                                fontSize: 13,
-                                fontWeight: selected == null
-                                    ? FontWeight.w400
-                                    : FontWeight.w500,
-                              ),
-                            ),
-                            Icon(
-                              controller.isTypeDropdownOpen.value
-                                  ? Icons.arrow_drop_up
-                                  : Icons.arrow_drop_down,
-                              color: const Color(0xFF009FE3),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ),
-                  Obx(
-                    () => controller.typeError.value.isNotEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.only(top: 4, left: 4),
-                            child: Text(
-                              controller.typeError.value,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 12,
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Start
-                  const Text(
-                    'Start',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.05),
-                          blurRadius: 2,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      controller: controller.odometerController,
-                      onTap: controller.closeTypeDropdown,
-                      decoration: const InputDecoration(
-                        hintText: 'Enter Starting Odometer',
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 20),
+                    _label('Select Vehicle'),
+                    Obx(
+                      () => PickerField(
+                        hint: 'Select Vehicle',
+                        value: controller.selectedVehicle.value,
+                        onTap: controller.vehicleLocked.value
+                            ? null
+                            : controller.pickVehicle,
+                        trailing: controller.vehicleLocked.value
+                            ? const SizedBox.shrink()
+                            : null,
                       ),
-                      style: const TextStyle(fontSize: 13),
-                      keyboardType: TextInputType.number,
                     ),
-                  ),
-                  Obx(
-                    () => controller.odometerError.value.isNotEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.only(top: 4, left: 4),
-                            child: Text(
-                              controller.odometerError.value,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 12,
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Period
-                  const Text(
-                    'Period',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.05),
-                          blurRadius: 2,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      controller: controller.periodController,
-                      onTap: controller.closeTypeDropdown,
-                      decoration: const InputDecoration(
-                        hintText: 'Enter the Odometer Period for Alerts',
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
+                    FieldError(controller.vehicleError),
+                    const SizedBox(height: 16),
+                    _label('Select Type'),
+                    Obx(
+                      () => PickerField(
+                        hint: 'Select Reminder Type',
+                        value: controller.selectedType.value?.label ?? '',
+                        onTap: controller.pickType,
                       ),
-                      style: const TextStyle(fontSize: 13),
-                      keyboardType: TextInputType.number,
                     ),
-                  ),
-                  Obx(
-                    () => controller.periodError.value.isNotEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.only(top: 4, left: 4),
-                            child: Text(
-                              controller.periodError.value,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 12,
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                ],
+                    FieldError(controller.typeError),
+                    const SizedBox(height: 16),
+                    _label('Start'),
+                    _input(
+                      controller.odometerController,
+                      'Enter Starting Odometer',
+                      number: true,
+                    ),
+                    FieldError(controller.odometerError),
+                    const SizedBox(height: 16),
+                    _label('Period'),
+                    _input(
+                      controller.periodController,
+                      'Enter the Odometer Period for Alerts',
+                      number: true,
+                    ),
+                    FieldError(controller.periodError),
+                    const SizedBox(height: 16),
+                    _label('Remarks'),
+                    _input(controller.remarksController, 'Optional note'),
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
             ),
-
-            // Dropdown menu overlay (matches design)
-            Obx(() {
-              if (!controller.isTypeDropdownOpen.value) {
-                return const SizedBox.shrink();
-              }
-              return Positioned(
-                top: 88,
-                left: 16,
-                right: 16,
-                child: Material(
-                  color: Colors.transparent,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              child: Obx(
+                () => GestureDetector(
+                  onTap: controller.submit,
                   child: Container(
+                    height: 45,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: controller.isSaving.value
+                          ? kRecordsBlue.withOpacity(0.6)
+                          : kRecordsBlue,
                       borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.12),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: controller.reminderTypes.map((type) {
-                        final isLast = type == controller.reminderTypes.last;
-                        return InkWell(
-                          onTap: () => controller.selectType(type),
-                          borderRadius: BorderRadius.vertical(
-                            top: type == controller.reminderTypes.first
-                                ? const Radius.circular(10)
-                                : Radius.zero,
-                            bottom: isLast
-                                ? const Radius.circular(10)
-                                : Radius.zero,
-                          ),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
+                    alignment: Alignment.center,
+                    child: controller.isSaving.value
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
                             ),
-                            decoration: BoxDecoration(
-                              border: isLast
-                                  ? null
-                                  : Border(
-                                      bottom: BorderSide(
-                                        color: Colors.grey.shade100,
-                                      ),
-                                    ),
-                            ),
-                            child: Text(
-                              type,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w500,
-                              ),
+                          )
+                        : Text(
+                            controller.isEdit ? 'Update' : 'Submit',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
                             ),
                           ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-              );
-            }),
-
-            // Submit Button
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 30,
-              child: GestureDetector(
-                onTap: controller.submit,
-                child: Container(
-                  height: 45,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF009FE3),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    'Submit',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
                   ),
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Colors.black,
+          ),
+        ),
+      );
+
+  Widget _input(TextEditingController c, String hint, {bool number = false}) {
+    return Container(
+      width: double.infinity,
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.05),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: c,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+        style: const TextStyle(fontSize: 13),
+        inputFormatters: number ? decimalInputFormatters : null,
+        keyboardType: number
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : TextInputType.text,
       ),
     );
   }

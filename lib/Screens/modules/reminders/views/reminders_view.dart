@@ -1,5 +1,5 @@
-import 'package:airotrack/Screens/routes/app_routes.dart';
-
+import 'package:airotrack/Models/VehicleRecordModels.dart';
+import 'package:airotrack/Screens/widgets/records_support.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/reminders_controller.dart';
@@ -34,124 +34,91 @@ class RemindersView extends GetView<RemindersController> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               children: [
-                const SizedBox(
-                  height: 20,
-                ), // Adjust to match visual spacing ~114px from top including AppBar
-                // Search Bar
-                Container(
-                  width: double.infinity,
-                  height: 45,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  child: const TextField(
-                    decoration: InputDecoration(
-                      hintText: "Search Reminders",
-                      hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      suffixIcon: Icon(Icons.search, color: Colors.grey),
-                    ),
-                  ),
+                const SizedBox(height: 20),
+                RecordsSearchField(
+                  hint: 'Search Vehicle Number',
+                  controller: controller.searchController,
+                  onChanged: controller.onSearchChanged,
+                  radius: 12,
                 ),
                 const SizedBox(height: 16),
-
-                // List of Reminders
                 Expanded(
-                  child: Obx(
-                    () => ListView.builder(
-                      controller: controller.scrollController,
-                      itemCount:
-                          controller.reminders.length +
-                          (controller.isLoading.value &&
-                                  controller.hasMore.value
-                              ? 1
-                              : 0),
-                      padding: EdgeInsets.zero,
-                      itemBuilder: (context, index) {
-                        if (index < controller.reminders.length) {
-                          return const ReminderTile();
-                        } else {
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Color(0xFF009FE3),
-                                ),
-                              ),
-                            ),
-                          );
-                        }
-                      },
+                  child: RecordsListBody<ReminderModel>(
+                    controller: controller,
+                    emptyText: 'No reminders yet.\nTap + to add one.',
+                    padding: const EdgeInsets.only(bottom: 90),
+                    itemBuilder: (context, r) => ReminderTile(
+                      reminder: r,
+                      onEdit: () => controller.openEdit(r),
+                      onDelete: () => controller.delete(r),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-
-          //... (in build method)
-
-          // Floating Action Button
           Positioned(
-            bottom:
-                30, // Approx for pixel requests, ensuring it's on screen. User said Top 759, assumes specific screen height. Bottom alignment is safer.
-            right:
-                16, // User said 329 left on 393 width -> approx 16-20 from right
-            child: GestureDetector(
-              onTap: () => Get.toNamed(Routes.ADD_REMINDER),
-              child: Container(
-                width: 45,
-                height: 45,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF009FE3),
-                  borderRadius: BorderRadius.circular(22.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.add, color: Colors.white, size: 24),
-              ),
-            ),
+            bottom: 30,
+            right: 16,
+            child: AddReminderButton(onTap: controller.openAdd),
           ),
         ],
       ),
     );
   }
+}
 
+/// The round blue + button shared by the Reminders page and tab.
+class AddReminderButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const AddReminderButton({super.key, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 45,
+        height: 45,
+        decoration: BoxDecoration(
+          color: kRecordsBlue,
+          borderRadius: BorderRadius.circular(22.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.blue.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.add, color: Colors.white, size: 24),
+      ),
+    );
+  }
 }
 
 /// One reminder row. Shared by the Reminders page and the Reminders tab on
 /// the Notifications screen so both look the same.
 class ReminderTile extends StatelessWidget {
-  const ReminderTile({super.key});
+  final ReminderModel reminder;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  const ReminderTile({
+    super.key,
+    required this.reminder,
+    this.onEdit,
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final r = reminder;
+    final km = (num v) => '${formatAmount(v)} km';
     return Container(
       width: double.infinity,
-      height: 64,
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -166,23 +133,21 @@ class ReminderTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Icon Car
           Image.asset(
-            'lib/Asset/Icons/Car.png', // Assuming this asset exists from listing
+            'lib/Asset/Icons/Car.png',
             width: 24,
             height: 24,
-            color: const Color(0xFF009FE3),
+            color: kRecordsBlue,
           ),
           const SizedBox(width: 12),
-          // Texts
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text(
-                  "Oil Change",
-                  style: TextStyle(
+                Text(
+                  r.typeLabel.isEmpty ? 'Reminder' : r.typeLabel,
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
                     color: Colors.black,
@@ -190,32 +155,50 @@ class ReminderTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  "Type: Oil Change",
+                  'Vehicle: ${r.vehicleNumber}',
                   style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                 ),
                 Text(
-                  "Period: 5000 km",
+                  'Period: ${km(r.period)}  ·  Due at: ${km(r.dueAt)}',
                   style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                 ),
+                if (r.remarks.isNotEmpty)
+                  Text(
+                    r.remarks,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                  ),
               ],
             ),
           ),
-          // Actions
           Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(height: 10),
-              Image.asset(
-                'lib/Asset/Icons/Edit.png',
-                width: 15,
-                height: 15,
-                color: const Color(0xFF009FE3),
+              InkWell(
+                onTap: onEdit,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Image.asset(
+                    'lib/Asset/Icons/Edit.png',
+                    width: 15,
+                    height: 15,
+                    color: kRecordsBlue,
+                  ),
+                ),
               ),
-              const SizedBox(height: 5),
-              Image.asset(
-                'lib/Asset/Icons/Delete.png',
-                width: 20,
-                height: 20,
-                color: const Color.fromARGB(255, 252, 90, 9),
+              const SizedBox(height: 2),
+              InkWell(
+                onTap: onDelete,
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Image.asset(
+                    'lib/Asset/Icons/Delete.png',
+                    width: 20,
+                    height: 20,
+                    color: const Color.fromARGB(255, 252, 90, 9),
+                  ),
+                ),
               ),
             ],
           ),

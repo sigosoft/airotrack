@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Airotrack needs your photos to attach a bill or picture to an expense or support ticket.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Airotrack needs the camera to take a photo of a bill or issue for an expense or support ticket.</string>
 </dict>
 </plist>

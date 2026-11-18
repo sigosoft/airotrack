@@ -37,10 +37,11 @@ import '../modules/reports/views/daily_reports_view.dart';
 import '../modules/reports/views/summary_reports_view.dart';
 import '../modules/reports/views/over_speed_reports_view.dart';
 import '../modules/reports/views/geofence_reports_view.dart';
-import '../modules/settings/bindings/settings_binding.dart';
 import '../modules/settings/bindings/edit_profile_binding.dart';
 import '../modules/settings/bindings/raise_ticket_binding.dart';
 import '../modules/settings/bindings/add_expense_binding.dart';
+import '../modules/settings/bindings/expenses_binding.dart';
+import '../modules/settings/bindings/support_tickets_binding.dart';
 import '../modules/settings/bindings/change_password_binding.dart';
 import '../modules/settings/bindings/delete_account_binding.dart';
 import '../modules/settings/bindings/general_settings_binding.dart';
@@ -194,7 +195,7 @@ class AppPages {
     GetPage(
       name: Routes.SUPPORT_TICKET,
       page: () => const SupportTicketView(),
-      binding: SettingsBinding(),
+      binding: SupportTicketsBinding(),
     ),
     GetPage(
       name: Routes.CHANGE_PASSWORD,
@@ -209,7 +210,7 @@ class AppPages {
     GetPage(
       name: Routes.EXPENSES,
       page: () => const ExpensesView(),
-      binding: SettingsBinding(),
+      binding: ExpensesBinding(),
     ),
     GetPage(
       name: Routes.ADD_EXPENSE,

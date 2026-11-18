@@ -165,7 +165,52 @@ class _LocationViewState extends State<LocationView> {
             right: 60,
             child: Center(child: Obx(_buildStatusChip)),
           ),
+          // Left / right: previous or next vehicle; the map moves to it.
+          Obx(() {
+            if (controller.mapVehicles.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return Positioned.fill(
+              child: Align(
+                alignment: const Alignment(0, -0.05),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildArrowButton(
+                        Icons.chevron_left,
+                        () => controller.selectAdjacent(-1),
+                      ),
+                      _buildArrowButton(
+                        Icons.chevron_right,
+                        () => controller.selectAdjacent(1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
         ],
+      ),
+    );
+  }
+
+  /// Translucent grey circle at the screen edge with a white chevron, so
+  /// the map stays visible behind it.
+  Widget _buildArrowButton(IconData icon, VoidCallback onTap) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.45),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Icon(icon, size: 34, color: Colors.white),
+        ),
       ),
     );
   }

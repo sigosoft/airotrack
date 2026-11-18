@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
 import 'package:airotrack/Models/ReportItem.dart';
@@ -8,6 +10,11 @@ import 'package:airotrack/Utils/Utils.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import 'report_pdf.dart';
 
 enum ReportType {
   ignition,
@@ -213,81 +220,17 @@ class ReportsController extends GetxController {
         loadError.value = '';
       }
       isLoading.value = true;
-      await ensureApiToken();
-      final range = PeriodQuery.fromLabel(
-        selectedPeriod.value,
-        customFrom: customFrom.value,
-        customTo: customTo.value,
-      );
-      // Dates only: when `period` is sent the server ignores from_date/to_date
-      // (week = calendar week from Monday, custom = 422), so the range the
-      // app shows would not match the data.
-      final results = await Future.wait<dynamic>([
-        DioClient().get(
-          reportType!.endpoint,
-          query: range.toQuery(
-            imei: imei,
-            limit: _pageLimit,
-            includePeriod: false,
-          ),
-        ),
-        // Reports give the device's km count; shift it to the vehicle
-        // odometer that Home and Track show.
-        OdometerOffsetService.offsetFor(imei),
-      ]);
-      final response = results[0];
-      final odometerOffset = results[1] as num;
+      final page = await _fetchRows(reportType!, imei, _pageLimit);
       if (stale()) return;
 
-      if (response.data != null) {
-        final data = response.data['data'] ?? response.data;
-        final dataMap = asStringKeyedMap(data);
-        final vehicleMap = asStringKeyedMap(dataMap?['vehicle']);
-        final fallbackVehicle = pickString(vehicleMap, [
-          'vehicle_number',
-          'name',
-          'plate_number',
-        ]);
-
-        final list = extractList(
-          data,
-          preferredKeys: [
-            'items',
-            'reports',
-            reportType!.name,
-            '${reportType!.name}_reports',
-            'alerts',
-          ],
-        );
-
-        // Summary API returns a single `summary` object, not an items array.
-        List<dynamic> rows = list;
-        if (rows.isEmpty && dataMap != null) {
-          final summary = asStringKeyedMap(dataMap['summary']);
-          if (summary != null) {
-            rows = [summary];
-          }
-        }
-
-        final parsed = rows
-            .map(
-              (json) => ReportItem.fromJson(
-                json is Map
-                    ? OdometerOffsetService.applyTo(
-                        Map<String, dynamic>.from(json),
-                        odometerOffset,
-                      )
-                    : json,
-                fallbackVehicleNumber: fallbackVehicle,
-              ),
-            )
-            .toList();
+      if (page != null) {
         if (reset) {
-          items.assignAll(parsed);
+          items.assignAll(page.items);
         } else {
-          items.addAll(parsed);
+          items.addAll(page.items);
         }
-        hasMore.value = list.isNotEmpty && parsed.length >= _pageLimit;
+        hasMore.value =
+            page.listLength > 0 && page.items.length >= _pageLimit;
       } else {
         hasMore.value = false;
       }
@@ -300,6 +243,182 @@ class ReportsController extends GetxController {
       if (reset) loadError.value = _loadErrorText(e);
     } finally {
       if (!stale()) isLoading.value = false;
+    }
+  }
+
+  /// The date range for the selected period (or calendar range).
+  PeriodQuery get _range => PeriodQuery.fromLabel(
+        selectedPeriod.value,
+        customFrom: customFrom.value,
+        customTo: customTo.value,
+      );
+
+  /// Up to [limit] rows of [type] for [imei] in the selected range.
+  /// [listLength] is the size of the server's row list (0 for the Summary
+  /// report, which sends one `summary` object); [total] is the server's
+  /// total row count when it sends one. Null when the response had no body.
+  Future<({List<ReportItem> items, int listLength, int? total})?> _fetchRows(
+    ReportType type,
+    String imei,
+    int limit,
+  ) async {
+    await ensureApiToken();
+    // Dates only: when `period` is sent the server ignores from_date/to_date
+    // (week = calendar week from Monday, custom = 422), so the range the
+    // app shows would not match the data.
+    final results = await Future.wait<dynamic>([
+      DioClient().get(
+        type.endpoint,
+        query: _range.toQuery(
+          imei: imei,
+          limit: limit,
+          includePeriod: false,
+        ),
+      ),
+      // Reports give the device's km count; shift it to the vehicle
+      // odometer that Home and Track show.
+      OdometerOffsetService.offsetFor(imei),
+    ]);
+    final response = results[0];
+    final odometerOffset = results[1] as num;
+    if (response.data == null) return null;
+
+    final data = response.data['data'] ?? response.data;
+    final dataMap = asStringKeyedMap(data);
+    final vehicleMap = asStringKeyedMap(dataMap?['vehicle']);
+    final fallbackVehicle = pickString(vehicleMap, [
+      'vehicle_number',
+      'name',
+      'plate_number',
+    ]);
+
+    final list = extractList(
+      data,
+      preferredKeys: [
+        'items',
+        'reports',
+        type.name,
+        '${type.name}_reports',
+        'alerts',
+      ],
+    );
+
+    // Summary API returns a single `summary` object, not an items array.
+    List<dynamic> rows = list;
+    if (rows.isEmpty && dataMap != null) {
+      final summary = asStringKeyedMap(dataMap['summary']);
+      if (summary != null) {
+        rows = [summary];
+      }
+    }
+
+    final parsed = rows
+        .map(
+          (json) => ReportItem.fromJson(
+            json is Map
+                ? OdometerOffsetService.applyTo(
+                    Map<String, dynamic>.from(json),
+                    odometerOffset,
+                  )
+                : json,
+            fallbackVehicleNumber: fallbackVehicle,
+          ),
+        )
+        .toList();
+    return (
+      items: parsed,
+      listLength: list.length,
+      total: int.tryParse('${dataMap?['total'] ?? ''}'),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Download (PDF). There is no export endpoint, so the PDF is built on the
+  // phone from the report rows, like the Alerts download.
+  // ---------------------------------------------------------------------
+
+  /// Most rows the report endpoints return in one request.
+  static const int _maxDownloadRows = 2000;
+
+  /// The stoppage and trip endpoints time out (no reply in 60 s+) at 500
+  /// rows, while 200 rows take 2-4 s even for a month (a week can have 850
+  /// stops, a month 900 trips). The app gives up after 20 s.
+  static const int _maxSlowReportDownloadRows = 200;
+
+  static int _downloadLimit(ReportType type) =>
+      (type == ReportType.stoppage || type == ReportType.trip)
+          ? _maxSlowReportDownloadRows
+          : _maxDownloadRows;
+
+  /// True while a download is being prepared.
+  final isDownloading = false.obs;
+
+  /// Builds a PDF of the current report (selected vehicle and period, every
+  /// row, not just the loaded ones) and opens the share sheet so it can be
+  /// saved or sent.
+  Future<void> downloadReport() async {
+    final type = reportType;
+    final imei = selectedImei.value.trim();
+    if (isDownloading.value || type == null) return;
+    if (imei.isEmpty) {
+      Get.snackbar(
+        'Select a vehicle',
+        'Pick a vehicle to download its report.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    isDownloading.value = true;
+    try {
+      final range = _range;
+      final page = await _fetchRows(type, imei, _downloadLimit(type));
+      final rows = page?.items ?? const <ReportItem>[];
+      if (rows.isEmpty) {
+        Get.snackbar(
+          'No data',
+          'There is nothing in this report for the selected period.',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+
+      final from = DateTime.parse(range.fromDate);
+      final to = DateTime.parse(range.toDate);
+      final total = page?.total;
+      final bytes = await ReportPdf.build(
+        type: type,
+        vehicle: selectedPlate.value,
+        from: from,
+        to: to,
+        rows: rows,
+        total: (total != null && total > rows.length) ? total : null,
+      );
+
+      final dir = await getTemporaryDirectory();
+      final stamp = DateFormat('yyyyMMdd');
+      final plate = selectedPlate.value.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+      final name = '${type.name}_report_${plate}_'
+          '${stamp.format(from)}_${stamp.format(to)}.pdf';
+      final file = File('${dir.path}/$name');
+      await file.writeAsBytes(bytes);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'application/pdf')],
+          subject: name,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[Reports] Download failed: $e');
+      Get.snackbar(
+        'Error',
+        'Could not prepare the report file. Try again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    } finally {
+      isDownloading.value = false;
     }
   }
 

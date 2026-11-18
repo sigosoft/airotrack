@@ -59,12 +59,32 @@ class _ReportListScaffoldState extends State<ReportListScaffold> {
         ),
         centerTitle: false,
         actions: [
+          // Saves the whole report (vehicle + period) as a PDF.
           Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Image.asset(
-              'lib/Asset/Icons/download.png',
-              width: 32,
-              height: 32,
+            padding: const EdgeInsets.only(right: 8.0),
+            child: Obx(
+              () => IconButton(
+                tooltip: 'Download report',
+                onPressed: controller.isDownloading.value
+                    ? null
+                    : controller.downloadReport,
+                icon: controller.isDownloading.value
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFF009FE3),
+                          ),
+                        ),
+                      )
+                    : Image.asset(
+                        'lib/Asset/Icons/download.png',
+                        width: 32,
+                        height: 32,
+                      ),
+              ),
             ),
           ),
         ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:airotrack/Services/AppSettings.dart';
 import '../controllers/history_controller.dart';
 import 'Widgets/history_map_layer.dart';
 import 'Widgets/history_side_button.dart';
@@ -153,6 +154,8 @@ class HistoryView extends GetView<HistoryController> {
                       onManualFollowDisable: controller.disableFollowCamera,
                       onRouteTap: controller.onRouteTap,
                       routeTapPoint: controller.routeTapInfo.value?.point,
+                      mapType: controller.mapType.value,
+                      fitRouteRequest: controller.fitRouteRequest.value,
                     ),
                   ),
                   Obx(() {
@@ -171,8 +174,12 @@ class HistoryView extends GetView<HistoryController> {
                   Positioned(
                     top: topPadding,
                     left: horizontalPadding,
-                    child: HistorySideButton(
-                      assetPath: 'lib/Asset/Icons/map.png',
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showMapTypeSheet(context),
+                      child: HistorySideButton(
+                        assetPath: 'lib/Asset/Icons/map.png',
+                      ),
                     ),
                   ),
                   Positioned(
@@ -262,6 +269,88 @@ class HistoryView extends GetView<HistoryController> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Map type picker (top-left map button), same as on Track.
+  void _showMapTypeSheet(BuildContext context) {
+    const options = [
+      (AppMapType.normal, 'Default', Icons.map_outlined),
+      (AppMapType.satellite, 'Satellite', Icons.satellite_alt_outlined),
+      (AppMapType.terrain, 'Terrain', Icons.terrain_outlined),
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Map type',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Obx(
+                () => Row(
+                  children: [
+                    for (final (type, label, icon) in options)
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            controller.setMapType(type);
+                            Navigator.of(sheetContext).pop();
+                          },
+                          child: _mapTypeOption(
+                            label,
+                            icon,
+                            controller.mapType.value == type,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mapTypeOption(String label, IconData icon, bool selected) {
+    const blue = Color(0xFF009FE3);
+    return Column(
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: selected ? blue.withValues(alpha: 0.08) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? blue : Colors.grey.shade300,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Icon(icon, size: 30, color: selected ? blue : Colors.black87),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+            color: selected ? blue : Colors.black87,
+          ),
+        ),
+      ],
     );
   }
 }

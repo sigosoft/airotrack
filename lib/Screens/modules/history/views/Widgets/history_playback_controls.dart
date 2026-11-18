@@ -100,7 +100,9 @@ class HistoryPlaybackControls extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
+          // Shows the whole route (stops following the car).
           HistoryCircularControl(
+            onTap: controller.showWholeRoute,
             child: Image.asset(
               'lib/Asset/Icons/mapfromto.png',
               width: 30,

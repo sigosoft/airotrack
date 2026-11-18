@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Models/HistoryModel.dart';
+import 'package:airotrack/Services/AppSettings.dart';
 import 'package:airotrack/Services/ReverseGeocodeService.dart';
 import 'package:airotrack/Utils/app_colors.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +33,15 @@ class HistoryMapLayer extends StatefulWidget {
     this.routeTapPoint,
     this.movingMarkerAssetPath = 'lib/Asset/Images/marker2.png',
     this.bottomSheetFraction = 0.0,
+    this.mapType = AppMapType.normal,
+    this.fitRouteRequest = 0,
   }) : super(key: key);
+
+  /// Default (Google-look streets), Satellite or Terrain.
+  final AppMapType mapType;
+
+  /// When this changes, the map fits the whole route (route button).
+  final int fitRouteRequest;
 
   final ll.LatLng initialCenter;
   final double initialZoom;
@@ -164,6 +173,15 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
   @override
   void didUpdateWidget(HistoryMapLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Route button: show the whole route.
+    if (widget.fitRouteRequest != oldWidget.fitRouteRequest &&
+        widget.polylinePoints.length >= 2 &&
+        _isMapReady) {
+      _usePlaybackFollowZoom = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _isMapReady) _fitToPolyline();
+      });
+    }
     if (widget.polylinePoints.length < 2) {
       // New route load starts with empty/short polyline; allow one auto-fit when route appears again.
       _hasAutoFittedCurrentRoute = false;
@@ -350,7 +368,12 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
       _tileSourceLogged = true;
       debugPrint('[History] Tiles: using Mapbox style tiles');
     }
-    return 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=$token';
+    final style = switch (widget.mapType) {
+      AppMapType.satellite => 'satellite-streets-v12',
+      AppMapType.terrain => 'outdoors-v12',
+      AppMapType.normal => 'streets-v12',
+    };
+    return 'https://api.mapbox.com/styles/v1/mapbox/$style/tiles/256/{z}/{x}/{y}@2x?access_token=$token';
   }
 
   @override
@@ -523,14 +546,19 @@ class _HistoryMapLayerState extends State<HistoryMapLayer>
         ),
         children: [
           TileLayer(
+            // New layer per map type, so tiles of the old type are dropped.
+            key: ValueKey(widget.mapType),
             urlTemplate: _mapboxTileUrl(),
             userAgentPackageName: 'com.airotrack.app',
             fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            // Recolour Mapbox Streets to look like Google Maps.
-            tileBuilder: (context, tileWidget, tile) => ColorFiltered(
-              colorFilter: _googleLookFilter,
-              child: tileWidget,
-            ),
+            // Recolour Mapbox Streets to look like Google Maps (Default map
+            // type only; satellite photos and terrain keep their colours).
+            tileBuilder: widget.mapType == AppMapType.normal
+                ? (context, tileWidget, tile) => ColorFiltered(
+                      colorFilter: _googleLookFilter,
+                      child: tileWidget,
+                    )
+                : null,
           ),
           PolylineLayer(polylines: polylines),
           MarkerLayer(markers: markers),

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:airotrack/Configs/ApiConfigs.dart';
 import 'package:airotrack/Configs/DioClient.dart';
 import 'package:airotrack/Models/HistoryModel.dart';
+import 'package:airotrack/Services/AppSettings.dart';
 import 'package:airotrack/Services/ReverseGeocodeService.dart';
 import 'package:airotrack/Utils/Utils.dart';
 import 'package:dio/dio.dart';
@@ -355,6 +356,31 @@ class HistoryController extends GetxController {
       isFollowCameraEnabled.value = false;
       debugPrint('[History] Camera: follow disabled');
     }
+  }
+
+  /// Map type of the History map (top-left map button). Starts from the
+  /// Map Type in General Settings, like Track; changing it here is only for
+  /// this screen.
+  final mapType = (AppSettings.maybe?.mapType.value ?? AppMapType.normal).obs;
+
+  void setMapType(AppMapType type) => mapType.value = type;
+
+  /// Bumped by the route button on the playback bar; the map then shows the
+  /// whole route.
+  final fitRouteRequest = 0.obs;
+
+  /// Route button: stop following the car and fit the whole route on screen.
+  void showWholeRoute() {
+    if (polylinePoints.length < 2) {
+      Get.snackbar(
+        'No route',
+        'There is no route to show for this period.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    disableFollowCamera();
+    fitRouteRequest.value++;
   }
 
   /// Cycles playback speed: 1 → 1.5 → 2 → 1. Updates display and animation speed.

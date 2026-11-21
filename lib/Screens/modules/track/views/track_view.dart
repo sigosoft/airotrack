@@ -477,6 +477,18 @@ class TrackView extends GetView<TrackController> {
     });
   }
 
+  /// Extra space at the top of the sheet so the vehicle name starts below
+  /// the speedometer. The gauge floats 5.5% of the screen height above the
+  /// sheet and is 22% of the width tall, so its lower part covers the top of
+  /// the sheet; a long name used to run under it. The name, odometer and
+  /// date start 2.3% of the height down. 0 when the speedometer is hidden.
+  double _speedometerClearance(Size size) {
+    if (!AppSettings.to.showSpeedometer.value) return 0;
+    final gaugeBottom = size.width * 0.22 - size.height * 0.055;
+    final contentTop = size.height * 0.023;
+    return math.max(0.0, gaugeBottom - contentTop + 6);
+  }
+
   Widget _buildDraggableBottomSheet() {
     // Peek = the bottom nav (10% of the screen height, see AppBottomNavBar)
     // plus ~115 dp for the handle, plate, odometer and last-update date.
@@ -490,8 +502,11 @@ class TrackView extends GetView<TrackController> {
         final availH = constraints.maxHeight.isFinite
             ? constraints.maxHeight
             : screenH;
-        final peek =
-            ((0.10 * screenH + 115) / availH).clamp(0.20, 0.45).toDouble();
+        // Plus the space kept free under the speedometer.
+        final clearance = _speedometerClearance(MediaQuery.of(context).size);
+        final peek = ((0.10 * screenH + 115 + clearance) / availH)
+            .clamp(0.20, 0.45)
+            .toDouble();
         final mid = math.max(0.50, peek + 0.05);
         return _buildSheet(peek, mid);
       },
@@ -544,6 +559,10 @@ class TrackView extends GetView<TrackController> {
                       ),
                     ),
                     SizedBox(height: height * 0.01),
+                    // Start the name below the speedometer.
+                    SizedBox(
+                      height: _speedometerClearance(MediaQuery.of(context).size),
+                    ),
 
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,

@@ -352,6 +352,69 @@ class TrackController extends GetxController {
 
   final isSharingLocation = false.obs;
 
+  /// Address under the odometer on the bottom sheet. Starts from the
+  /// server's address on Home, then follows the car: looked up again when
+  /// it has moved more than [_addressMinMoveM], at most every
+  /// [_addressCheckEvery], so a moving car doesn't make constant lookups.
+  final liveAddress = ''.obs;
+  Timer? _addressTimer;
+  (double, double)? _addressAt;
+  bool _addressLoading = false;
+  static const Duration _addressCheckEvery = Duration(seconds: 30);
+  static const double _addressMinMoveM = 75;
+
+  void _startLiveAddress() {
+    final imei = vehicleImei.value.trim();
+    if (imei.isNotEmpty && Get.isRegistered<HomeController>()) {
+      for (final v in Get.find<HomeController>().allVehicles) {
+        if (v.deviceId.trim() == imei) {
+          final text = ReverseGeocodeService.withoutPincode(v.address);
+          if (text.isNotEmpty) {
+            liveAddress.value = text;
+            if (v.hasValidCoordinates) _addressAt = (v.latitude!, v.longitude!);
+          }
+          break;
+        }
+      }
+    }
+    _addressTimer?.cancel();
+    _addressTimer = Timer.periodic(_addressCheckEvery, (_) => _refreshAddress());
+    // First check soon after the live position arrives.
+    Future.delayed(const Duration(seconds: 3), _refreshAddress);
+  }
+
+  Future<void> _refreshAddress() async {
+    if (_disposed || _addressLoading) return;
+    final pos = currentLatLng;
+    if (pos == null) return;
+    final last = _addressAt;
+    if (last != null &&
+        liveAddress.value.isNotEmpty &&
+        const Distance().as(
+              LengthUnit.Meter,
+              LatLng(last.$1, last.$2),
+              LatLng(pos.$1, pos.$2),
+            ) <
+            _addressMinMoveM) {
+      return;
+    }
+    _addressLoading = true;
+    try {
+      final address = await ReverseGeocodeService.instance
+          .reverse(pos.$1, pos.$2)
+          .timeout(const Duration(seconds: 8));
+      final text = ReverseGeocodeService.withoutPincode(address);
+      if (!_disposed && text.isNotEmpty) {
+        liveAddress.value = text;
+        _addressAt = pos;
+      }
+    } catch (_) {
+      // Keep the last address; try again on the next check.
+    } finally {
+      _addressLoading = false;
+    }
+  }
+
   /// Address shown in the Street View dialog (null while loading / unknown).
   final streetViewAddress = RxnString();
   final isLoadingStreetViewAddress = false.obs;
@@ -592,6 +655,7 @@ class TrackController extends GetxController {
     }
     _startAnimationLoop();
     _loadCarIcon();
+    _startLiveAddress();
     // Recolour the car when the vehicle's status changes: on live updates,
     // and when Home's list (which the colour follows) refreshes.
     _carStatusWorker = ever(liveTrackData, (_) => _applyCarStatus());
@@ -3403,6 +3467,7 @@ class TrackController extends GetxController {
   @override
   void onClose() {
     _disposed = true;
+    _addressTimer?.cancel();
     _stopAnimationLoop();
     _mapController = null;
     _headingNotifier.dispose();

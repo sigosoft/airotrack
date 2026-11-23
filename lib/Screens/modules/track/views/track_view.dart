@@ -504,7 +504,8 @@ class TrackView extends GetView<TrackController> {
             : screenH;
         // Plus the space kept free under the speedometer.
         final clearance = _speedometerClearance(MediaQuery.of(context).size);
-        final peek = ((0.10 * screenH + 115 + clearance) / availH)
+        // Plus about 26 dp for the address line under the odometer.
+        final peek = ((0.10 * screenH + 141 + clearance) / availH)
             .clamp(0.20, 0.45)
             .toDouble();
         final mid = math.max(0.50, peek + 0.05);
@@ -622,6 +623,38 @@ class TrackView extends GetView<TrackController> {
                         ),
                       ],
                     ),
+                    // Where the vehicle is now, under the odometer.
+                    Obx(() {
+                      final address = controller.liveAddress.value;
+                      return Padding(
+                        padding: EdgeInsets.only(top: height * 0.008),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.location_on_outlined,
+                              size: width * 0.05,
+                              color: Colors.redAccent,
+                            ),
+                            SizedBox(width: width * 0.015),
+                            Expanded(
+                              child: Text(
+                                address.isEmpty
+                                    ? 'Loading location…'
+                                    : address,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: width * 0.033,
+                                  color: address.isEmpty
+                                      ? Colors.grey
+                                      : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
                     const SizedBox(height: 12),
 
                     // Status Icons Box

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -45,18 +46,21 @@ class LocationMarkerIcons {
         return (await codec.getNextFrame()).image;
       });
 
-  /// Name label with an optional "+N" badge, and the side-view car under it.
-  /// The car's centre sits on the location.
+  /// Name label with an optional "+N" badge, and the top-view car (as on
+  /// Live Track) under it, turned to [course]. The car's centre sits on the
+  /// location. [tint] null keeps the original green car (Running).
   Future<MarkerIcon> group({
     required String plate,
     required int extra,
     required bool selected,
-    required String carAsset,
+    required Color? tint,
+    required double course,
     required double carSize,
   }) {
-    final key = 'g|$plate|$extra|$selected|$carAsset|$carSize';
+    final key =
+        'g|$plate|$extra|$selected|${tint?.toARGB32()}|${course.round()}|$carSize';
     return _icons.putIfAbsent(key, () async {
-      final car = await _image(carAsset);
+      final car = _TopCarBox(await _topCar(tint), course, carSize);
       final label = _LabelPainter(
         plate,
         selected: selected,
@@ -65,12 +69,12 @@ class LocationMarkerIcons {
         maxWidth: 156,
       );
       const margin = 4.0; // room for the label shadow
-      final w = math.max(label.width, carSize) + margin * 2;
-      final h = margin + label.height + 4 + carSize + margin;
-      final carTop = margin + label.height + 4;
-      return _render(Size(w, h), Offset(w / 2, carTop + carSize / 2), (c) {
+      final w = math.max(label.width, car.boxW) + margin * 2;
+      final h = margin + label.height + 4 + car.boxH + margin;
+      final centre = Offset(w / 2, margin + label.height + 4 + car.boxH / 2);
+      return _render(Size(w, h), centre, (c) {
         label.paint(c, Offset((w - label.width) / 2, margin));
-        _drawContain(c, car, Rect.fromLTWH((w - carSize) / 2, carTop, carSize, carSize));
+        car.paint(c, centre);
       });
     });
   }
@@ -95,67 +99,61 @@ class LocationMarkerIcons {
     });
   }
 
-  /// Top-down car in [color], turned to [course] degrees; centre anchored.
+  /// Top-down car tinted as on Live Track ([tint] null = original green),
+  /// turned to [course] degrees; centre anchored.
   Future<MarkerIcon> topCar({
-    required Color color,
+    required Color? tint,
     required double course,
     required double size,
   }) {
-    final key = 't|${color.toARGB32()}|${course.round()}|$size';
+    final key = 't|${tint?.toARGB32()}|${course.round()}|$size';
     return _icons.putIfAbsent(key, () async {
-      final img = await _image(topCarAsset);
-      // Grey out the green artwork, then paint it in the status colour; the
-      // 1.65 keeps the body as bright as the colour itself.
-      const k = 1.65;
-      final r = color.r * k;
-      final g = color.g * k;
-      final b = color.b * k;
-      final paint = Paint()
-        ..filterQuality = FilterQuality.high
-        ..colorFilter = ColorFilter.matrix([
-          0.2126 * r, 0.7152 * r, 0.0722 * r, 0, 0, //
-          0.2126 * g, 0.7152 * g, 0.0722 * g, 0, 0, //
-          0.2126 * b, 0.7152 * b, 0.0722 * b, 0, 0, //
-          0, 0, 0, 1, 0,
-        ]);
-      // The artwork is a square with the car in its middle; keep only the
-      // car. The empty sides would otherwise make neighbouring cars' tap
-      // areas overlap, and Google would open the wrong car.
-      final iw = img.width.toDouble();
-      final ih = img.height.toDouble();
-      final src = Rect.fromLTRB(iw * 0.264, ih * 0.034, iw * 0.732, ih * 0.942);
-      final s = size / math.max(iw, ih); // same car size as the full square
-      final w = src.width * s;
-      final h = src.height * s;
-      // Picture just big enough for the car at this angle.
-      final a = course * math.pi / 180;
-      final bw = (w * math.cos(a)).abs() + (h * math.sin(a)).abs();
-      final bh = (w * math.sin(a)).abs() + (h * math.cos(a)).abs();
-      return _render(Size(bw, bh), Offset(bw / 2, bh / 2), (c) {
-        c.translate(bw / 2, bh / 2);
-        c.rotate(a);
-        c.drawImageRect(
-          img,
-          src,
-          Rect.fromCenter(center: Offset.zero, width: w, height: h),
-          paint,
-        );
+      final car = _TopCarBox(await _topCar(tint), course, size);
+      final centre = Offset(car.boxW / 2, car.boxH / 2);
+      return _render(Size(car.boxW, car.boxH), centre, (c) {
+        car.paint(c, centre);
       });
     });
   }
 
-  void _drawContain(Canvas c, ui.Image img, Rect box, [Paint? paint]) {
-    final iw = img.width.toDouble();
-    final ih = img.height.toDouble();
-    final s = math.min(box.width / iw, box.height / ih);
-    final dst = Rect.fromCenter(center: box.center, width: iw * s, height: ih * s);
-    c.drawImageRect(
-      img,
-      Rect.fromLTWH(0, 0, iw, ih),
-      dst,
-      paint ?? (Paint()..filterQuality = FilterQuality.high),
-    );
-  }
+  final Map<int?, Future<ui.Image>> _topCars = {};
+
+  /// The top-view car in [tint], recoloured the same way as on Live Track:
+  /// only the green body changes, keeping its shading; windows, lights and
+  /// outlines stay as they are.
+  Future<ui.Image> _topCar(Color? tint) =>
+      _topCars.putIfAbsent(tint?.toARGB32(), () async {
+        final src = await _image(topCarAsset);
+        if (tint == null) return src;
+        final data =
+            await src.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+        final px = data!.buffer.asUint8List();
+        final tr = (tint.r * 255).round();
+        final tg = (tint.g * 255).round();
+        final tb = (tint.b * 255).round();
+        for (var i = 0; i < px.length; i += 4) {
+          if (px[i + 3] == 0) continue;
+          final r = px[i];
+          final g = px[i + 1];
+          final b = px[i + 2];
+          if (g > r + 40 && g > b + 25) {
+            // The body green is ~190 in G: scale the colour by the shade.
+            final shade = g / 190.0;
+            px[i] = (tr * shade).round().clamp(0, 255);
+            px[i + 1] = (tg * shade).round().clamp(0, 255);
+            px[i + 2] = (tb * shade).round().clamp(0, 255);
+          }
+        }
+        final done = Completer<ui.Image>();
+        ui.decodeImageFromPixels(
+          px,
+          src.width,
+          src.height,
+          ui.PixelFormat.rgba8888,
+          done.complete,
+        );
+        return done.future;
+      });
 
   Future<MarkerIcon> _render(
     Size size,
@@ -178,6 +176,47 @@ class LocationMarkerIcons {
       height: size.height,
     );
     return MarkerIcon(descriptor, size, anchorPoint);
+  }
+}
+
+/// The top-view car cropped to the car itself, as big as a [size] square of
+/// the artwork, turned to [course] degrees. The artwork is a square with the
+/// car in its middle; its empty sides would make neighbouring cars' tap
+/// areas overlap, and Google would open the wrong car.
+class _TopCarBox {
+  _TopCarBox(this.img, double course, double size)
+      : a = course * math.pi / 180 {
+    final iw = img.width.toDouble();
+    final ih = img.height.toDouble();
+    src = Rect.fromLTRB(iw * 0.264, ih * 0.034, iw * 0.732, ih * 0.942);
+    final s = size / math.max(iw, ih);
+    w = src.width * s;
+    h = src.height * s;
+    boxW = (w * math.cos(a)).abs() + (h * math.sin(a)).abs();
+    boxH = (w * math.sin(a)).abs() + (h * math.cos(a)).abs();
+  }
+
+  final ui.Image img;
+  final double a;
+  late final Rect src;
+  late final double w;
+  late final double h;
+
+  /// Picture just big enough for the car at this angle.
+  late final double boxW;
+  late final double boxH;
+
+  void paint(Canvas c, Offset centre) {
+    c.save();
+    c.translate(centre.dx, centre.dy);
+    c.rotate(a);
+    c.drawImageRect(
+      img,
+      src,
+      Rect.fromCenter(center: Offset.zero, width: w, height: h),
+      Paint()..filterQuality = FilterQuality.high,
+    );
+    c.restore();
   }
 }
 

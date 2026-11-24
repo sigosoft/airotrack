@@ -310,8 +310,9 @@ class _LocationViewState extends State<LocationView> {
       plate: v.plateNumber,
       extra: extra,
       selected: selected,
-      carAsset: _statusCarImage(v.status),
-      carSize: (selected ? 52 : 44) * controller.iconScale,
+      tint: _topCarTint(v.status),
+      course: v.course ?? 0,
+      carSize: (selected ? 54 : 48) * controller.iconScale,
     );
     return Marker(
       markerId: MarkerId('g-${v.id}'),
@@ -356,7 +357,7 @@ class _LocationViewState extends State<LocationView> {
       final selected = v.id == selectedId;
       final dx = (i - (n - 1) / 2) * step;
       final carIcon = await icons.topCar(
-        color: _statusColor(v.status),
+        tint: _topCarTint(v.status),
         course: v.course ?? 0,
         size: car,
       );
@@ -497,6 +498,11 @@ class _LocationViewState extends State<LocationView> {
         return 'lib/Asset/Images/Red right Car.png';
     }
   }
+
+  /// Colour for the top-view car, as on Live Track: Running keeps the
+  /// artwork's own green (null), the others use the status colour.
+  Color? _topCarTint(String status) =>
+      status == 'Running' ? null : _statusColor(status);
 
   /// Same colours as the status cards on Home.
   Color _statusColor(String status) {

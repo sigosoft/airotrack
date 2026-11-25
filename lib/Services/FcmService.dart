@@ -13,6 +13,7 @@ import '../Configs/DioClient.dart';
 import '../Utils/Utils.dart';
 import '../firebase_options.dart';
 import 'PushFeedService.dart';
+import 'VoiceAlertService.dart';
 import '../Screens/modules/notification/controllers/notification_controller.dart';
 import 'package:get/get.dart';
 
@@ -27,6 +28,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // No title/body in the message: read the push from the push server instead.
   if (message.notification == null) {
     await FcmService.instance.showFromPushServer(initLocal: true);
+  } else if (await FcmService.notificationsEnabled()) {
+    // Android shows this notification itself; read it aloud too.
+    await VoiceAlertService.instance.speakAlert(
+      title: message.notification?.title,
+      body: message.notification?.body,
+    );
   }
 }
 
@@ -237,6 +244,7 @@ class FcmService {
       ),
       payload: message.data.isEmpty ? null : message.data.toString(),
     );
+    unawaited(VoiceAlertService.instance.speakAlert(title: title, body: body));
   }
 
   /// Push content comes from the push server ([ApiConfig.pushBaseUrl]). Reads
@@ -272,6 +280,13 @@ class FcmService {
           presentSound: true,
         ),
       ),
+    );
+    // Awaited: in the background the handler must stay alive until the
+    // alert has been read out.
+    await VoiceAlertService.instance.speakAlert(
+      vehicle: latest.plateNumber,
+      type: latest.type,
+      address: latest.address,
     );
   }
 

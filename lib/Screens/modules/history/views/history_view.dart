@@ -136,7 +136,9 @@ class HistoryView extends GetView<HistoryController> {
                     () => HistoryMapLayer(
                       initialCenter: controller.initialMapCenter,
                       initialZoom: controller.initialMapZoom,
-                      mapController: controller.mapController,
+                      zoomSteps: controller.zoomSteps.value,
+                      recenterRequest: controller.recenterRequest.value,
+                      onZoomChanged: (z) => controller.mapZoom = z,
                       polylinePoints: controller.polylinePoints,
                       markerPoints: controller.mapMarkerPoints,
                       stopLocations: controller.stopLocations.toList(),
@@ -188,7 +190,7 @@ class HistoryView extends GetView<HistoryController> {
                     child: Column(
                       children: [
                         GestureDetector(
-                          onTap: controller.enableFollowCamera,
+                          onTap: controller.recenterOnCar,
                           child: HistorySideButton(
                             assetPath: 'lib/Asset/Icons/Locations.png',
                           ),

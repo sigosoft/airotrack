@@ -10,7 +10,7 @@ import 'package:airotrack/Utils/Utils.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
@@ -177,12 +177,8 @@ class RouteTapInfo {
   /// null while loading; empty when no place name was found.
   final String? address;
 
-  RouteTapInfo withAddress(String value) => RouteTapInfo(
-    time: time,
-    point: point,
-    speed: speed,
-    address: value,
-  );
+  RouteTapInfo withAddress(String value) =>
+      RouteTapInfo(time: time, point: point, speed: speed, address: value);
 }
 
 /// One recorded GPS sample from location_history (raw, not snapped).
@@ -294,12 +290,16 @@ class HistoryController extends GetxController {
   }
 
   var currentSpeed = "0 Kmph".obs;
+
   /// Elapsed time from `vehicle_timing.vehicle_start_time` → `vehicle_end_time`.
   var duration = "00:00:00".obs;
+
   /// From `kilometer_statistics.total_kilometers_traveled` only (no fallback).
   var totalDistance = "–".obs;
+
   /// From `stop_analysis.total_stops`.
   var totalStops = "0".obs;
+
   /// From `stop_analysis.total_stop_duration`.
   var totalStopDuration = "0 h 0 m".obs;
   final vehicleStartTime = RxnString();
@@ -307,33 +307,23 @@ class HistoryController extends GetxController {
 
   /// Stops from `stop_analysis.stop_locations` — numbered markers on the route.
   final stopLocations = <HistoryStopLocation>[].obs;
+
   /// Segments from `vehicle__history` (ignition_off + trip) for the bottom sheet.
   final vehicleHistoryItems = <HistoryVehicleHistoryItem>[].obs;
   final selectedStopIndex = RxnInt();
   final selectedVehicleHistoryIndex = RxnInt();
   final showStopMarkers = true.obs;
 
-  final MapController mapController = MapController();
+  /// Net zoom-button presses (+1 in, -1 out). The map applies each change;
+  /// follow stays on and keeps the new zoom.
+  final zoomSteps = 0.obs;
 
-  void zoomIn() {
-    try {
-      final camera = mapController.camera;
-      // Keep follow enabled — HistoryMapLayer adopts the new zoom while tracking.
-      mapController.move(camera.center, camera.zoom + 1);
-    } catch (e) {
-      debugPrint('[History] zoomIn failed: $e');
-    }
-  }
+  /// Current map zoom, reported by the map (route-tap hit radius).
+  double mapZoom = 15.0;
 
-  void zoomOut() {
-    try {
-      final camera = mapController.camera;
-      // Keep follow enabled — HistoryMapLayer adopts the new zoom while tracking.
-      mapController.move(camera.center, camera.zoom - 1);
-    } catch (e) {
-      debugPrint('[History] zoomOut failed: $e');
-    }
-  }
+  void zoomIn() => zoomSteps.value++;
+
+  void zoomOut() => zoomSteps.value--;
 
   /// Playback speed multiplier: 1.0, 1.5, or 2.0. Used for smooth movement animation.
   final playbackSpeedMultiplier = 1.0.obs;
@@ -349,6 +339,15 @@ class HistoryController extends GetxController {
       isFollowCameraEnabled.value = true;
       debugPrint('[History] Camera: follow enabled');
     }
+  }
+
+  /// Bumped by the re-centre button: the map goes back to the car now,
+  /// even while it is waiting after a drag.
+  final recenterRequest = 0.obs;
+
+  void recenterOnCar() {
+    enableFollowCamera();
+    recenterRequest.value++;
   }
 
   void disableFollowCamera() {
@@ -429,16 +428,14 @@ class HistoryController extends GetxController {
       selectedStopIndex.value = null;
       return;
     }
-    final next =
-        selectedVehicleHistoryIndex.value == index ? null : index;
+    final next = selectedVehicleHistoryIndex.value == index ? null : index;
     selectedVehicleHistoryIndex.value = next;
     if (next == null) {
       selectedStopIndex.value = null;
       return;
     }
     final item = vehicleHistoryItems[next];
-    selectedStopIndex.value =
-        item.isIgnitionOff ? item.mapMarkerIndex : null;
+    selectedStopIndex.value = item.isIgnitionOff ? item.mapMarkerIndex : null;
   }
 
   void clearSelectedStop() {
@@ -471,13 +468,7 @@ class HistoryController extends GetxController {
     routeTapInfo.value = null;
   }
 
-  double _currentZoom() {
-    try {
-      return mapController.camera.zoom;
-    } catch (_) {
-      return 15.0;
-    }
-  }
+  double _currentZoom() => mapZoom.isFinite ? mapZoom : 15.0;
 
   /// Map tap handler: if the tap lands on the blue line, shows the GPS time
   /// and place where the vehicle passed that spot.
@@ -507,7 +498,8 @@ class HistoryController extends GetxController {
     final t = hit['t'] as double;
     final a = _routeSamples[segment];
     final b = _routeSamples[segment + 1];
-    final spanMs = b.time.millisecondsSinceEpoch - a.time.millisecondsSinceEpoch;
+    final spanMs =
+        b.time.millisecondsSinceEpoch - a.time.millisecondsSinceEpoch;
     final time = DateTime.fromMillisecondsSinceEpoch(
       a.time.millisecondsSinceEpoch + (spanMs * t).round(),
     );
@@ -673,17 +665,24 @@ class HistoryController extends GetxController {
 
   /// Bearing in degrees (0-360) for rotating the vehicle marker along the route.
   final Rxn<double> movingMarkerBearing = Rxn<double>();
-  Timer? _movingMarkerTimer;
+
+  /// Runs once per screen frame while playing. A 16 ms Timer wasn't tied
+  /// to frames and moved the car a fixed step per tick, so a late frame
+  /// left the car still and it never caught up (stutter when busy).
+  Ticker? _playTicker;
+  Duration? _lastPlayTick;
   int _movingSegmentIndex = 0;
   double _movingSegmentFraction = 0.0;
   List<LatLng> _playbackRoutePoints = [];
 
-  static const Duration _playbackFramePeriod = Duration(milliseconds: 16);
+  /// First frame's step, and the most one frame may move the car (a long
+  /// stall then moves it a bit, not a visible leap).
   static const double _playbackTickSeconds = 0.016;
+  static const double _maxPlaybackStepSeconds = 0.05;
   static const double _bearingSmoothing = 0.35;
 
   /// Whether the marker is currently animating along the route.
-  bool get isMovingMarkerActive => _movingMarkerTimer?.isActive ?? false;
+  bool get isMovingMarkerActive => _playTicker?.isActive ?? false;
 
   void _tryFulfillPendingPlay() {
     if (!_pendingPlayRequest) return;
@@ -730,7 +729,7 @@ class HistoryController extends GetxController {
     if (!_disposed) update();
     isPlaying.value = true;
 
-    void advanceFrame() {
+    void advanceFrame(double dtSeconds) {
       if (_disposed) return;
       final route = _playbackRoutePoints;
       if (route.length < 2) {
@@ -738,17 +737,18 @@ class HistoryController extends GetxController {
         return;
       }
 
-      final currentProgress = _getProgressFromMarkerPosition(route);
+      final currentProgress = _fastProgress(route);
       final backendKmph = _getBackendSpeedKmphAtProgress(currentProgress);
       double effectiveMps;
       if (_playbackSpeedSeries.isEmpty) {
         effectiveMps = _basePlaybackSpeedMps * playbackSpeedMultiplier.value;
       } else {
-        final effectiveKmph = math.max(_minPlaybackSpeedKmph, backendKmph) *
+        final effectiveKmph =
+            math.max(_minPlaybackSpeedKmph, backendKmph) *
             playbackSpeedMultiplier.value;
         effectiveMps = effectiveKmph / 3.6;
       }
-      double distanceBudgetMeters = effectiveMps * _playbackTickSeconds;
+      double distanceBudgetMeters = effectiveMps * dtSeconds;
 
       while (distanceBudgetMeters > 0) {
         if (_movingSegmentIndex >= route.length - 1) {
@@ -757,8 +757,11 @@ class HistoryController extends GetxController {
           final endBearing = route.length >= 2
               ? _getBearing(route[route.length - 2], route.last)
               : prevBearing;
-          movingMarkerBearing.value =
-              _lerpBearing(prevBearing, endBearing, _bearingSmoothing);
+          movingMarkerBearing.value = _lerpBearing(
+            prevBearing,
+            endBearing,
+            _bearingSmoothing,
+          );
           progress.value = 1.0;
           _syncCurrentSpeedWithProgress(1.0);
           debugPrint('[History] Playback: reached end');
@@ -794,8 +797,11 @@ class HistoryController extends GetxController {
         final endBearing = route.length >= 2
             ? _getBearing(route[route.length - 2], route.last)
             : prevBearing;
-        movingMarkerBearing.value =
-            _lerpBearing(prevBearing, endBearing, _bearingSmoothing);
+        movingMarkerBearing.value = _lerpBearing(
+          prevBearing,
+          endBearing,
+          _bearingSmoothing,
+        );
         progress.value = 1.0;
         _syncCurrentSpeedWithProgress(1.0);
         debugPrint('[History] Playback: reached end');
@@ -813,23 +819,32 @@ class HistoryController extends GetxController {
       movingMarkerPosition.value = interpolated;
       final targetBearing = _getBearing(a, b);
       final prevBearing = movingMarkerBearing.value ?? targetBearing;
-      movingMarkerBearing.value =
-          _lerpBearing(prevBearing, targetBearing, _bearingSmoothing);
-      progress.value = _getProgressFromMarkerPosition(route);
+      movingMarkerBearing.value = _lerpBearing(
+        prevBearing,
+        targetBearing,
+        _bearingSmoothing,
+      );
+      progress.value = _fastProgress(route);
       _syncCurrentSpeedWithProgress();
     }
 
-    advanceFrame();
+    advanceFrame(_playbackTickSeconds);
     debugPrint('[History] Playback: first movement frame applied');
     if (!isPlaying.value) return;
-    _movingMarkerTimer =
-        Timer.periodic(_playbackFramePeriod, (_) => advanceFrame());
+    _lastPlayTick = null;
+    _playTicker = Ticker((elapsed) {
+      final last = _lastPlayTick;
+      _lastPlayTick = elapsed;
+      if (last == null) return; // first frame: the step above already ran
+      final dt = (elapsed - last).inMicroseconds / 1e6;
+      advanceFrame(dt.clamp(0.0, _maxPlaybackStepSeconds));
+    })..start();
   }
 
   /// Stops the marker animation.
   void stopMovingMarker() {
-    _movingMarkerTimer?.cancel();
-    _movingMarkerTimer = null;
+    _playTicker?.dispose();
+    _playTicker = null;
     isPlaying.value = false;
   }
 
@@ -879,51 +894,88 @@ class HistoryController extends GetxController {
     return total;
   }
 
-  /// Distance covered from start up to (segmentIndex, segmentFraction). In km.
-  double _getDistanceCoveredKm(
-    List<LatLng> points,
-    int segmentIndex,
-    double segmentFraction,
-  ) {
-    if (points.length < 2) return 0.0;
-    double covered = 0.0;
-    for (int i = 0; i < segmentIndex && i < points.length - 1; i++) {
-      covered += _distanceKm(points[i], points[i + 1]);
-    }
-    if (segmentIndex < points.length - 1) {
-      covered +=
-          segmentFraction *
-          _distanceKm(points[segmentIndex], points[segmentIndex + 1]);
-    }
-    return covered;
-  }
-
-  /// Progress 0.0..1.0 from current marker position (distance covered / total distance).
-  double _getProgressFromMarkerPosition([List<LatLng>? routePoints]) {
-    final points = routePoints ?? _playbackRoutePoints;
-    if (points.isEmpty) {
-      final fallback = polylinePoints;
-      if (fallback.length < 2) return 0.0;
-      return _progressForRoute(fallback);
-    }
-    if (points.length < 2) return 0.0;
-    return _progressForRoute(points);
-  }
-
-  double _progressForRoute(List<LatLng> points) {
-    final total = _getTotalDistanceKm(points);
-    if (total <= 0) return 0.0;
-    final covered = _getDistanceCoveredKm(
-      points,
-      _movingSegmentIndex,
-      _movingSegmentFraction,
-    );
-    return (covered / total).clamp(0.0, 1.0);
-  }
-
   double _lerpBearing(double from, double to, double t) {
     final diff = ((to - from + 540) % 360) - 180;
     return (from + diff * t) % 360;
+  }
+
+  /// Switches playback to [route] (the snapped line replacing the raw one)
+  /// without moving the car: it goes to the nearest point of [route] around
+  /// the same share of the trip, and playback carries on from there.
+  /// Seeking by share alone jumped the car when the two lines differed.
+  void _remapPlaybackOntoRoute(List<LatLng> route) {
+    final pos = movingMarkerPosition.value;
+    final p = progress.value.clamp(0.0, 1.0);
+    _playbackRoutePoints = List<LatLng>.from(route);
+    final n = _playbackRoutePoints.length;
+    if (pos == null || n < 2) {
+      seekToProgress(p);
+      return;
+    }
+    // Search only near the expected place, so a road driven twice (there
+    // and back) doesn't pull the car to the other pass.
+    final expected = (p * (n - 1)).round();
+    final window = math.max(60, (n * 0.15).round());
+    final lo = (expected - window).clamp(0, n - 2);
+    final hi = (expected + window).clamp(lo + 1, n - 1);
+    var bestSeg = lo;
+    var bestT = 0.0;
+    var bestPoint = _playbackRoutePoints[lo];
+    var bestDist = double.infinity;
+    for (var i = lo; i < hi; i++) {
+      final a = _playbackRoutePoints[i];
+      final b = _playbackRoutePoints[i + 1];
+      final q = _projectPointOntoSegment(pos, a, b);
+      final d = _calculateDistanceMeters(pos, q);
+      if (d < bestDist) {
+        bestDist = d;
+        bestSeg = i;
+        bestPoint = q;
+        final seg = _distanceMeters(a, b);
+        bestT = seg > 0 ? (_distanceMeters(a, q) / seg).clamp(0.0, 1.0) : 0.0;
+      }
+    }
+    _movingSegmentIndex = bestSeg;
+    _movingSegmentFraction = bestT;
+    movingMarkerPosition.value = bestPoint;
+    progress.value = _fastProgress(_playbackRoutePoints);
+    _syncCurrentSpeedWithProgress();
+    debugPrint(
+      '[History] Playback: moved onto snapped route '
+      '(${bestDist.toStringAsFixed(1)} m), progress=${progress.value}',
+    );
+  }
+
+  /// Running distance along [_cumRoute], so progress needs no walk over the
+  /// whole route each frame (thousands of points, twice per frame before).
+  List<LatLng>? _cumRoute;
+  List<double> _cum = const [];
+
+  List<double> _cumulativeFor(List<LatLng> route) {
+    if (!identical(route, _cumRoute)) {
+      final c = List<double>.filled(route.length, 0.0);
+      for (var i = 1; i < route.length; i++) {
+        c[i] = c[i - 1] + _distanceMeters(route[i - 1], route[i]);
+      }
+      _cumRoute = route;
+      _cum = c;
+    }
+    return _cum;
+  }
+
+  /// Share (0..1) of [route]'s distance the car has covered, from the
+  /// cached running distances.
+  double _fastProgress(List<LatLng> route) {
+    if (route.length < 2) return 0.0;
+    final c = _cumulativeFor(route);
+    final total = c.last;
+    if (total <= 0) return 0.0;
+    final i = _movingSegmentIndex.clamp(0, route.length - 1);
+    var covered = c[i];
+    if (i < route.length - 1) {
+      covered += _movingSegmentFraction.clamp(0.0, 1.0) * (c[i + 1] - c[i]);
+    }
+    return (covered / total).clamp(0.0, 1.0);
   }
 
   /// Moves the marker to the position corresponding to [p] (0.0..1.0) along the route. Stops animation.
@@ -979,7 +1031,7 @@ class HistoryController extends GetxController {
       }
       cum += segKm;
     }
-    _movingSegmentIndex = points.length - 1;  
+    _movingSegmentIndex = points.length - 1;
     _movingSegmentFraction = 1.0;
     movingMarkerPosition.value = points.last;
     progress.value = 1.0;
@@ -1070,9 +1122,10 @@ class HistoryController extends GetxController {
     final p = progressValue.clamp(0.0, 1.0);
     final fractions = _playbackSpeedDistanceFraction;
     if (fractions.length != _playbackSpeedSeries.length) {
-      return (p * (_playbackSpeedSeries.length - 1))
-          .round()
-          .clamp(0, _playbackSpeedSeries.length - 1);
+      return (p * (_playbackSpeedSeries.length - 1)).round().clamp(
+        0,
+        _playbackSpeedSeries.length - 1,
+      );
     }
     // First sample at or past this distance.
     var lo = 0;
@@ -1378,7 +1431,6 @@ class HistoryController extends GetxController {
     };
   }
 
-
   /// Loads polyline step-by-step: sends points to Mapbox for snapping.
   /// Caller should already show the raw GPS line for instant feedback.
   void _runProgressiveSnapInBackground(List<LatLng> cleanPoints) {
@@ -1440,12 +1492,11 @@ class HistoryController extends GetxController {
           snapped = snapped.sublist(1);
         }
         snappedAccum.addAll(snapped);
-        // Update the blue line as soon as we have snapped geometry.
-        if (snappedAccum.length >= 2) {
-          _cachedPolylinePoints = List<LatLng>.from(snappedAccum);
-          _snapStopsToTraveledLine();
-          if (!_disposed) update();
-        }
+        // The raw line stays on screen until every part is snapped, then the
+        // snapped line replaces it once. Swapping in each part redrew the
+        // whole line, re-placed every stop and rebuilt the screen ~7 times
+        // in the first 2-3 s, which made the car and camera stutter, and a
+        // Play pressed meanwhile drove the car along a partial route.
         chunkIndex++;
       }
       if (_disposed || runId != _progressiveRunId) return;
@@ -1458,18 +1509,19 @@ class HistoryController extends GetxController {
       );
       _snapStopsToTraveledLine();
 
-      // First-play bug: Mapbox used to call placeMovingMarkerAtStart() here,
-      // which stopped any in-progress playback. Keep playing and remap onto
-      // the snapped route; only reset to start when idle.
-      if (isPlaying.value) {
-        final savedProgress = progress.value.clamp(0.0, 1.0);
+      // Playing (or paused part-way): keep the car where it is, moved onto
+      // the snapped line, and carry on. Only an untouched car goes back to
+      // the start.
+      final carMoved =
+          movingMarkerPosition.value != null &&
+          progress.value > 0.0 &&
+          progress.value < 1.0;
+      if (isPlaying.value || carMoved) {
         debugPrint(
           '[History] Progressive: done during playback — '
-          'continue at progress=$savedProgress on snapped route',
+          'car kept in place on the snapped route',
         );
-        _playbackRoutePoints = List<LatLng>.from(_cachedPolylinePoints);
-        seekToProgress(savedProgress);
-        startMovingMarker();
+        _remapPlaybackOntoRoute(_cachedPolylinePoints);
       } else {
         placeMovingMarkerAtStart();
         if (_disposed) return;
@@ -1597,9 +1649,7 @@ class HistoryController extends GetxController {
                   )
                 : null,
             stopAnalysis: asMap(dataJson['stop_analysis']) != null
-                ? HistoryStopAnalysis.fromJson(
-                    asMap(dataJson['stop_analysis']),
-                  )
+                ? HistoryStopAnalysis.fromJson(asMap(dataJson['stop_analysis']))
                 : null,
           ),
         );
@@ -1638,6 +1688,11 @@ class HistoryController extends GetxController {
           );
           _syncCurrentSpeedWithProgress(0.0);
           placeMovingMarkerAtStart();
+          // Show the whole of the newly loaded route. The map only did this
+          // when the previous route was empty, so after changing the date it
+          // stayed zoomed in on the old spot. (The snapped line that follows
+          // a few seconds later doesn't refit, so playback isn't disturbed.)
+          fitRouteRequest.value++;
           update();
           isLoading.value = false;
           _runProgressiveSnapInBackground(cleanList);
@@ -1693,9 +1748,7 @@ class HistoryController extends GetxController {
         );
       }
     }
-    debugPrint(
-      '[History] vehicle__history segments = ${segments.length}',
-    );
+    debugPrint('[History] vehicle__history segments = ${segments.length}');
 
     // Map markers: ignition_off points from vehicle__history, else stop_analysis.
     var stops = <HistoryStopLocation>[];
@@ -1704,9 +1757,7 @@ class HistoryController extends GetxController {
     if (segments.isNotEmpty) {
       for (final segment in segments) {
         if (segment.isIgnitionOff && segment.hasValidCoordinates) {
-          numberedSegments.add(
-            segment.copyWith(mapMarkerIndex: markerIndex),
-          );
+          numberedSegments.add(segment.copyWith(mapMarkerIndex: markerIndex));
           stops.add(
             HistoryStopLocation(
               latitude: segment.startLatitude,
@@ -1741,8 +1792,9 @@ class HistoryController extends GetxController {
         analysis?.stopLocations ?? const <HistoryStopLocation>[],
       );
 
-      final rawStops =
-          analysisMap is Map ? analysisMap['stop_locations'] : null;
+      final rawStops = analysisMap is Map
+          ? analysisMap['stop_locations']
+          : null;
       if (rawStops is List) {
         debugPrint(
           '[History] stop_analysis.total_stops=${analysis?.totalStops} '
@@ -1781,16 +1833,18 @@ class HistoryController extends GetxController {
       totalStops.value = '$stopCount';
       final stopDur = analysis?.totalStopDuration;
       if (stopDur != null) {
-        totalStopDuration.value =
-            HistoryStopLocation.formatDurationSeconds(stopDur);
+        totalStopDuration.value = HistoryStopLocation.formatDurationSeconds(
+          stopDur,
+        );
       } else if (stops.isNotEmpty) {
         totalStopDuration.value = '${stops.length} stops';
       } else {
         totalStopDuration.value = '0 h 0 m';
       }
     } else {
-      final ignitionCount =
-          vehicleHistoryItems.where((e) => e.isIgnitionOff).length;
+      final ignitionCount = vehicleHistoryItems
+          .where((e) => e.isIgnitionOff)
+          .length;
       totalStops.value = '$ignitionCount';
       totalStopDuration.value = '$ignitionCount stops';
     }
@@ -1886,12 +1940,16 @@ class HistoryController extends GetxController {
     await _resolveMissingStopAddresses(runId: runId);
   }
 
-  void _syncAddressToStopMarker(HistoryVehicleHistoryItem item, String address) {
+  void _syncAddressToStopMarker(
+    HistoryVehicleHistoryItem item,
+    String address,
+  ) {
     final markerIndex = item.mapMarkerIndex;
     if (markerIndex == null) return;
     if (markerIndex < 0 || markerIndex >= stopLocations.length) return;
-    stopLocations[markerIndex] =
-        stopLocations[markerIndex].copyWith(address: address);
+    stopLocations[markerIndex] = stopLocations[markerIndex].copyWith(
+      address: address,
+    );
   }
 
   /// Reverse-geocode stops from exact GPS coordinates.
@@ -1949,18 +2007,22 @@ class HistoryController extends GetxController {
       final aHas = a.arrivalTime != null && a.arrivalTime!.trim().isNotEmpty;
       final bHas = b.arrivalTime != null && b.arrivalTime!.trim().isNotEmpty;
       if (aHas && bHas) {
-        final cmp = _parseDeviceTime(a.arrivalTime)
-            .compareTo(_parseDeviceTime(b.arrivalTime));
+        final cmp = _parseDeviceTime(
+          a.arrivalTime,
+        ).compareTo(_parseDeviceTime(b.arrivalTime));
         if (cmp != 0) return cmp;
       } else if (aHas != bHas) {
         return aHas ? -1 : 1;
       }
 
-      final aDep = a.departureTime != null && a.departureTime!.trim().isNotEmpty;
-      final bDep = b.departureTime != null && b.departureTime!.trim().isNotEmpty;
+      final aDep =
+          a.departureTime != null && a.departureTime!.trim().isNotEmpty;
+      final bDep =
+          b.departureTime != null && b.departureTime!.trim().isNotEmpty;
       if (aDep && bDep) {
-        return _parseDeviceTime(a.departureTime)
-            .compareTo(_parseDeviceTime(b.departureTime));
+        return _parseDeviceTime(
+          a.departureTime,
+        ).compareTo(_parseDeviceTime(b.departureTime));
       }
       return 0;
     });
@@ -1969,8 +2031,7 @@ class HistoryController extends GetxController {
 
   List<HistoryStopLocation> _numberStops(List<HistoryStopLocation> stops) {
     return [
-      for (var i = 0; i < stops.length; i++)
-        stops[i].copyWith(index: i + 1),
+      for (var i = 0; i < stops.length; i++) stops[i].copyWith(index: i + 1),
     ];
   }
 
@@ -2114,10 +2175,8 @@ class HistoryController extends GetxController {
       final lng = coord(first, ['longitude', 'lng', 'lon']);
       if (lat == null || lng == null || (lat == 0 && lng == 0)) return;
 
-      final arrival =
-          (first['devicetime'] ?? first['device_time'])?.toString();
-      final departure =
-          (last['devicetime'] ?? last['device_time'])?.toString();
+      final arrival = (first['devicetime'] ?? first['device_time'])?.toString();
+      final departure = (last['devicetime'] ?? last['device_time'])?.toString();
       String? durationText;
       if (arrival != null && departure != null) {
         final a = _parseDeviceTime(arrival);
@@ -2152,14 +2211,12 @@ class HistoryController extends GetxController {
     if (clusterStart != null) closeCluster(points.length - 1);
 
     // Ignore tiny single-point blips with no meaningful duration.
-    return stops
-        .where((s) {
-          if (s.arrivalTime == null || s.departureTime == null) return true;
-          final a = _parseDeviceTime(s.arrivalTime);
-          final b = _parseDeviceTime(s.departureTime);
-          return b.difference(a).inSeconds >= 60;
-        })
-        .toList();
+    return stops.where((s) {
+      if (s.arrivalTime == null || s.departureTime == null) return true;
+      final a = _parseDeviceTime(s.arrivalTime);
+      final b = _parseDeviceTime(s.departureTime);
+      return b.difference(a).inSeconds >= 60;
+    }).toList();
   }
 
   /// Maps API summary blocks into bottom-sheet stats.
@@ -2181,18 +2238,20 @@ class HistoryController extends GetxController {
     final endRaw = timing?.vehicleEndTime;
     vehicleStartTime.value =
         (startRaw != null && startRaw.trim().isNotEmpty && startRaw != 'null')
-            ? startRaw.trim()
-            : null;
+        ? startRaw.trim()
+        : null;
     vehicleEndTime.value =
         (endRaw != null && endRaw.trim().isNotEmpty && endRaw != 'null')
-            ? endRaw.trim()
-            : null;
+        ? endRaw.trim()
+        : null;
 
     // 1) Explicit duration field from API (seconds or HH:MM:SS).
     final fromApiDuration = _formatFlexibleDuration(timing?.totalDuration);
     if (fromApiDuration != null) {
       duration.value = fromApiDuration;
-      debugPrint('[History] duration from vehicle_timing.total_duration=$fromApiDuration');
+      debugPrint(
+        '[History] duration from vehicle_timing.total_duration=$fromApiDuration',
+      );
       return;
     }
 
@@ -2276,11 +2335,12 @@ class HistoryController extends GetxController {
     for (final item in raw) {
       if (item is! Map) continue;
       final map = Map<String, dynamic>.from(item);
-      final t = (map['devicetime'] ??
-              map['device_time'] ??
-              map['deviceTime'] ??
-              map['created_at'])
-          ?.toString();
+      final t =
+          (map['devicetime'] ??
+                  map['device_time'] ??
+                  map['deviceTime'] ??
+                  map['created_at'])
+              ?.toString();
       if (t == null || t.trim().isEmpty || t.toLowerCase() == 'null') continue;
       final parsed = _parseDeviceTime(t);
       if (parsed.year <= 1970) continue;

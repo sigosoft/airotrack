@@ -14,6 +14,7 @@ import '../../../../Configs/ApiConfigs.dart';
 import '../../../../Models/LiveTrackModel.dart';
 import '../../../../Configs/DioClient.dart';
 import '../../../../Utils/Utils.dart';
+import '../../../../Utils/ApiHelpers.dart';
 import '../../../../Utils/vehicle_geofence_map_overlay.dart';
 import '../../../../Services/LiveTrackWebSocketService.dart';
 import '../../../../Services/DirectionsService.dart';
@@ -571,60 +572,56 @@ class TrackController extends GetxController {
     return (lat, lng);
   }
 
-  /// Shares the car's current location (a Google Maps link plus plate,
-  /// status, speed, address and time) through the phone's share sheet.
-  /// This is a one-time snapshot: the link does not update afterwards.
-  Future<bool> shareCurrentLocation() async {
+  /// Creates a live-tracking link for this vehicle on the server
+  /// (`share_live_location`) and opens the phone's share sheet with the
+  /// server's message, which includes the link. [hours] is how long the link
+  /// keeps working: 0 = only once, 1 = 1 hour, 24 = 1 day, 168 = 1 week…
+  Future<bool> shareLiveLocation(int hours) async {
     if (isSharingLocation.value) return false;
-    final pos = currentLatLng;
-    if (pos == null) {
+    final imei = vehicleImei.value.trim();
+    if (imei.isEmpty) {
       Get.snackbar(
-        'Location not available',
-        'The vehicle\'s current location is not loaded yet. Please try again in a moment.',
+        'Vehicle not loaded',
+        'Please try again in a moment.',
         snackPosition: SnackPosition.BOTTOM,
       );
       return false;
     }
     isSharingLocation.value = true;
     try {
-      final (lat, lng) = pos;
-      String? address;
-      try {
-        address = await ReverseGeocodeService.instance
-            .reverse(lat, lng)
-            .timeout(const Duration(seconds: 5));
-      } catch (_) {
-        address = null; // share without the address rather than fail
+      await ensureApiToken();
+      final response = await DioClient().post(
+        ApiEndPoints.shareLiveLocation,
+        body: {'imei': imei, 'hours': hours},
+      );
+      final raw = response.data;
+      final data = raw is Map ? raw['data'] : null;
+      final url = data is Map ? data['share_url']?.toString().trim() : null;
+      if (raw is! Map || raw['status'] != true || url == null || url.isEmpty) {
+        final msg = raw is Map ? raw['message']?.toString() : null;
+        Get.snackbar(
+          'Could not share',
+          (msg == null || msg.isEmpty) ? 'Please try again.' : msg,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return false;
       }
-      final plate = displayPlate.trim();
-      final status = shareStatusLabel;
-      final speed = '$displaySpeed $speedUnitLabel';
-      // When the device reported this position; else the moment of sharing.
-      final reported = displayDeviceTime;
-      final time = reported != '-'
-          ? reported
-          : AppSettings.to.dateTime(DateTime.now().toIso8601String());
-      final link =
-          'https://www.google.com/maps/search/?api=1&query=${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
-      final text = [
-        if (plate.isNotEmpty) 'Vehicle: $plate',
-        'Status: $status${status.toLowerCase() == 'running' ? ' ($speed)' : ''}',
-        'Time: $time',
-        if (address != null && address.trim().isNotEmpty) 'Location: ${address.trim()}',
-        link,
-      ].join('\n');
+      final message = (data as Map)['message']?.toString().trim();
+      final plate =
+          data['vehicle_number']?.toString().trim() ?? displayPlate.trim();
       await SharePlus.instance.share(
         ShareParams(
-          text: text,
-          subject: plate.isEmpty ? 'Vehicle location' : '$plate location',
+          // The server's message already contains the link.
+          text: (message == null || message.isEmpty) ? url : message,
+          subject: plate.isEmpty ? 'Live location' : '$plate live location',
         ),
       );
       return true;
     } catch (e) {
-      debugPrint('Share location failed: $e');
+      debugPrint('[Share] share_live_location failed: $e');
       Get.snackbar(
-        'Error',
-        'Could not share the location.',
+        'Could not share',
+        e is String && e.isNotEmpty ? e : 'Please try again.',
         snackPosition: SnackPosition.BOTTOM,
       );
       return false;

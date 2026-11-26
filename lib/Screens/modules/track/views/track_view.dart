@@ -6,6 +6,7 @@ import '../controllers/track_controller.dart';
 import '../../../routes/app_routes.dart';
 import 'lock_command_view.dart';
 import 'widgets/select_geofence_sheet.dart';
+import 'widgets/share_live_location_sheet.dart';
 import '../../../../widgets/app_bottom_nav_bar.dart';
 import '../../../../Services/AppSettings.dart';
 
@@ -1215,120 +1216,7 @@ class TrackView extends GetView<TrackController> {
   }
 
   void _showShareLocationBottomSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        final height = MediaQuery.of(context).size.height;
-        final width = MediaQuery.of(context).size.width;
-        return Container(
-          width: width,
-          margin: EdgeInsets.only(top: height * 0.02),
-          padding: EdgeInsets.only(
-            bottom: 24 + MediaQuery.of(context).padding.bottom,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(23),
-              topRight: Radius.circular(23),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 15),
-              Center(
-                child: Text(
-                  "Share Current Location",
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-              const Divider(height: 30),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 23),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Obx(
-                      () => Text(
-                        controller.displayPlate,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Obx(() {
-                      // Re-read when the live position/status changes.
-                      controller.liveTrackData.value;
-                      final status = controller.shareStatusLabel;
-                      final running = status.toLowerCase() == 'running';
-                      return Text(
-                        running
-                            ? '$status · ${controller.displaySpeed} ${controller.speedUnitLabel}'
-                            : status,
-                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                      );
-                    }),
-                    const SizedBox(height: 16),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5F5F5),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        "Sends the vehicle's location right now as a Google Maps "
-                        "link, with its status, speed and address. The link "
-                        "shows where the vehicle is at the moment you share; "
-                        "it does not keep updating.",
-                        style: TextStyle(fontSize: 13, color: Colors.grey[800]),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildShareActionButton(
-                          "Cancel",
-                          isSelected: false,
-                          onTap: () => Navigator.pop(context),
-                        ),
-                        Obx(
-                          () => _buildShareActionButton(
-                            controller.isSharingLocation.value
-                                ? "Sharing…"
-                                : "Share",
-                            isSelected: true,
-                            onTap: () async {
-                              final shared =
-                                  await controller.shareCurrentLocation();
-                              if (shared && context.mounted) {
-                                Navigator.pop(context);
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    ShareLiveLocationSheet.show(context, controller);
   }
 
   Widget _buildShareActionButton(

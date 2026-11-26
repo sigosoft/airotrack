@@ -39,6 +39,9 @@ class ApiEndPoints {
   static String liveTrack = "live_track";
   static String liveTrackSnapshot = "live_track_snapshot";
   static String updateOdometer = "update_odometer";
+  /// POST imei + hours (0 = only once, 1 = 1 hour, 24 = 1 day…): returns a
+  /// live-tracking link (`share_url`) and a ready-to-send `message`.
+  static String shareLiveLocation = "share_live_location";
   static String addGeofence = "add_geofence";
   static String updateGeofence = "update_geofence";
   static String deleteGeofence = "delete_geofence";

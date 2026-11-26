@@ -140,6 +140,10 @@ class DioClient {
     dio.options.headers.remove("Authorization");
   }
 
+  /// The same user-facing text [get] and [post] throw, for callers that
+  /// send through [dio] directly.
+  String errorMessage(DioException e) => _handleError(e);
+
   // GLOBAL ERROR HANDLING
   String _handleError(DioException e) {
     if (e.response != null) {

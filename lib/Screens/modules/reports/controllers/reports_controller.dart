@@ -9,7 +9,7 @@ import 'package:airotrack/Utils/ApiHelpers.dart';
 import 'package:airotrack/Utils/Utils.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+import 'package:get/get.dart' hide Response;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -236,7 +236,9 @@ class ReportsController extends GetxController {
       }
     } catch (e) {
       if (stale()) return;
-      showErrorMessage(e);
+      // A timeout is explained in the list itself (with Retry); a pop-up
+      // on top would say the same thing twice.
+      if (e is! _ReportTimeout || !reset) showErrorMessage(e);
       hasMore.value = false;
       // First page failed: say so in the list (with Retry) rather than
       // showing "No reports found", which reads as "there is no data".
@@ -267,9 +269,9 @@ class ReportsController extends GetxController {
     // (week = calendar week from Monday, custom = 422), so the range the
     // app shows would not match the data.
     final results = await Future.wait<dynamic>([
-      DioClient().get(
+      _getReport(
         type.endpoint,
-        query: _range.toQuery(
+        _range.toQuery(
           imei: imei,
           limit: limit,
           includePeriod: false,
@@ -342,7 +344,7 @@ class ReportsController extends GetxController {
 
   /// The stoppage and trip endpoints time out (no reply in 60 s+) at 500
   /// rows, while 200 rows take 2-4 s even for a month (a week can have 850
-  /// stops, a month 900 trips). The app gives up after 20 s.
+  /// stops, a month 900 trips). The app gives up after 60 s ([_reportTimeout]).
   static const int _maxSlowReportDownloadRows = 200;
 
   static int _downloadLimit(ReportType type) =>
@@ -422,19 +424,47 @@ class ReportsController extends GetxController {
     }
   }
 
-  static String _loadErrorText(Object e) {
-    if (e is DioException) {
-      switch (e.type) {
-        case DioExceptionType.connectionTimeout:
-        case DioExceptionType.receiveTimeout:
-        case DioExceptionType.sendTimeout:
-          return 'The server took too long to respond.';
-        case DioExceptionType.connectionError:
-          return 'No connection to the server.';
-        default:
-          break;
+  /// How long one report request may take. The weekly and monthly trip and
+  /// stoppage reports can take 20 s+ on the server's first build of them
+  /// (a repeat comes back in ~1-2 s), so reports wait longer than the rest
+  /// of the app (20 s).
+  static const Duration _reportTimeout = Duration(seconds: 60);
+
+  static bool _isTimeout(DioException e) =>
+      e.type == DioExceptionType.receiveTimeout ||
+      e.type == DioExceptionType.connectionTimeout ||
+      e.type == DioExceptionType.sendTimeout;
+
+  /// Gets one report, asking a second time if the server is too slow: by
+  /// then it has usually finished building the report and answers quickly.
+  /// Throws [_ReportTimeout] when both tries time out, otherwise the same
+  /// message text as [DioClient.get].
+  Future<Response<dynamic>> _getReport(
+    String path,
+    Map<String, dynamic> query,
+  ) async {
+    final client = DioClient();
+    final options = Options(receiveTimeout: _reportTimeout);
+    for (var attempt = 1; ; attempt++) {
+      try {
+        return await client.dio.get(
+          path,
+          queryParameters: query,
+          options: options,
+        );
+      } on DioException catch (e) {
+        if (!_isTimeout(e)) throw client.errorMessage(e);
+        if (attempt >= 2) throw const _ReportTimeout();
+        debugPrint('[Reports] $path timed out, asking again');
       }
     }
+  }
+
+  static String _loadErrorText(Object e) {
+    if (e is _ReportTimeout) {
+      return 'The server is taking too long.\nTap Retry.';
+    }
+    if (e == 'No Internet Connection') return 'No connection to the server.';
     return "Couldn't load this report.";
   }
 
@@ -449,4 +479,12 @@ class ReportsController extends GetxController {
     scrollController.dispose();
     super.onClose();
   }
+}
+
+/// A report request that timed out twice (see [ReportsController]).
+class _ReportTimeout implements Exception {
+  const _ReportTimeout();
+
+  @override
+  String toString() => 'The server is taking too long. Try again.';
 }

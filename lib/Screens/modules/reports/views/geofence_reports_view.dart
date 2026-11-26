@@ -27,9 +27,7 @@ class _GeofenceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isEnter = item.isGeofenceEnter;
     final screenWidth = MediaQuery.of(context).size.width;
-    final locationText = item.location.isNotEmpty
-        ? item.location
-        : item.startLocation;
+    final place = reportPlace(item);
 
     return Container(
       width: screenWidth - 32.62,
@@ -112,28 +110,28 @@ class _GeofenceTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Image.asset(
-                'lib/Asset/Icons/location outlined.png',
-                width: 12,
-                height: 12,
-                color: const Color(0xFFFF5252),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  reportDisplay(
-                    locationText,
-                    fallback: 'Location unavailable',
-                  ),
-                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                  overflow: TextOverflow.ellipsis,
+          // Shown only when the server sends an address or coordinates.
+          if (place != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Image.asset(
+                  'lib/Asset/Icons/location outlined.png',
+                  width: 12,
+                  height: 12,
+                  color: const Color(0xFFFF5252),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    place,
+                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

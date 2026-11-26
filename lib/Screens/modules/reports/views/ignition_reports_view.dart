@@ -27,9 +27,11 @@ class _IgnitionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOn = item.ignitionOn;
     final screenWidth = MediaQuery.of(context).size.width;
+    final place = reportPlace(item, useStartLocation: false);
     return Container(
       width: screenWidth - 32.62,
-      height: 90,
+      // Without a location line the card fits its two lines instead.
+      height: place == null ? null : 90,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -111,28 +113,28 @@ class _IgnitionTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Image.asset(
-                'lib/Asset/Icons/location outlined.png',
-                width: 12,
-                height: 12,
-                color: const Color(0xFFFF5252),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  reportDisplay(
-                    item.location,
-                    fallback: 'Location unavailable',
-                  ),
-                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                  overflow: TextOverflow.ellipsis,
+          // Shown only when the server sends an address or coordinates.
+          if (place != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Image.asset(
+                  'lib/Asset/Icons/location outlined.png',
+                  width: 12,
+                  height: 12,
+                  color: const Color(0xFFFF5252),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    place,
+                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

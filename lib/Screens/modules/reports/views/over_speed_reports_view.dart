@@ -29,13 +29,12 @@ class _OverSpeedTile extends StatelessWidget {
     final speedText = item.speed.isNotEmpty
         ? item.speed
         : (item.maxSpeed.isNotEmpty ? item.maxSpeed : '—');
-    final locationText = item.location.isNotEmpty
-        ? item.location
-        : item.startLocation;
+    final place = reportPlace(item);
 
     return Container(
       width: screenWidth - 32.62,
-      height: 95,
+      // Without a location line the card fits its other lines instead.
+      height: place == null ? null : 95,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -115,31 +114,31 @@ class _OverSpeedTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Image.asset(
-                'lib/Asset/Icons/location outlined.png',
-                width: 14,
-                height: 14,
-                color: const Color(0xFFFF5252),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  reportDisplay(
-                    locationText,
-                    fallback: 'Location unavailable',
-                  ),
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: Color(0xFF6E6D6D),
-                  ),
-                  overflow: TextOverflow.ellipsis,
+          // Shown only when the server sends an address or coordinates.
+          if (place != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Image.asset(
+                  'lib/Asset/Icons/location outlined.png',
+                  width: 14,
+                  height: 14,
+                  color: const Color(0xFFFF5252),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    place,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF6E6D6D),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

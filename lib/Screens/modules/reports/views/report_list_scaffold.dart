@@ -482,3 +482,20 @@ String reportDisplay(String value, {String fallback = '—'}) {
   if (text.isEmpty || text.toLowerCase() == 'null') return fallback;
   return text;
 }
+
+/// Where a report row happened: the server's address when it sends one,
+/// else its coordinates ("9.705854, 76.391654"), else null, so the row
+/// leaves out its location line instead of saying "Location unavailable".
+String? reportPlace(ReportItem item, {bool useStartLocation = true}) {
+  for (final value in [
+    item.location,
+    if (useStartLocation) item.startLocation,
+  ]) {
+    final text = value.trim();
+    if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+  }
+  final lat = item.latitude;
+  final lng = item.longitude;
+  if (lat == null || lng == null || (lat == 0 && lng == 0)) return null;
+  return '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}';
+}

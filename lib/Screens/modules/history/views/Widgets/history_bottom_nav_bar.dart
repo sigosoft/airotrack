@@ -53,12 +53,7 @@ class HistoryBottomNavBar extends StatelessWidget {
             isSelected: false,
             onTap: () => Get.offNamed(
               Routes.ALERTS,
-              // Lets Alerts return to this History screen, not to Home.
-              parameters: {
-                'trackImei': imei,
-                'trackPlate': vehicle,
-                'from': 'history',
-              },
+              parameters: {'trackImei': imei, 'trackPlate': vehicle},
             ),
           ),
           HistoryNavItem(
@@ -70,7 +65,9 @@ class HistoryBottomNavBar extends StatelessWidget {
             onTap: () {
               final statsImei = historyController.activeImei.trim();
               final plate = historyController.vehicleId.value.trim();
-              Get.toNamed(
+              // Replaces History like the other tabs, so back leaves the
+              // vehicle instead of returning here.
+              Get.offNamed(
                 Routes.STATISTICS,
                 parameters: statsImei.isEmpty
                     ? null

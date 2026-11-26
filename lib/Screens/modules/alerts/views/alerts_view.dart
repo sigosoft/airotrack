@@ -4,39 +4,15 @@ import 'package:get/get.dart';
 import '../controllers/alerts_controller.dart';
 import 'alerts_filter_sheet.dart';
 import 'widgets/alert_card.dart';
-import '../../../routes/app_routes.dart';
 import '../../../../widgets/app_bottom_nav_bar.dart';
 
 class AlertsView extends GetView<AlertsController> {
   const AlertsView({Key? key}) : super(key: key);
 
-  /// Back goes to the screen Alerts was opened from, with its vehicle. The
-  /// bottom bars replace that screen, so a plain pop would land on Home.
-  void _goBack() {
-    final imei = Get.parameters['trackImei'] ?? '';
-    final plate = Get.parameters['trackPlate'] ?? '';
-    if (imei.isEmpty) {
-      Get.back();
-      return;
-    }
-    switch (Get.parameters['from']) {
-      case 'history':
-        Get.offNamed(
-          Routes.HISTORY,
-          parameters: {'imei': imei, 'vehicleId': plate},
-        );
-      case 'statistics':
-        Get.offNamed(
-          Routes.STATISTICS,
-          parameters: {'imei': imei, 'plate': plate},
-        );
-      default:
-        Get.offNamed(
-          Routes.TRACK,
-          parameters: {'imei': imei, 'vehicleId': plate},
-        );
-    }
-  }
+  /// Back leaves the vehicle, like every vehicle tab: the tabs replace each
+  /// other, so this returns to where the vehicle was opened (Home, Location,
+  /// Notifications).
+  void _goBack() => Get.back();
 
   /// Asks for the date range, then saves the alerts in it as a CSV file.
   Future<void> _pickDatesAndDownload(BuildContext context) async {
@@ -57,13 +33,7 @@ class AlertsView extends GetView<AlertsController> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _goBack();
-      },
-      child: _buildScaffold(context),
-    );
+    return _buildScaffold(context);
   }
 
   Widget _buildScaffold(BuildContext context) {

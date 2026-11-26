@@ -9,6 +9,10 @@ enum AppNavTab { track, history, alerts, statistics }
 /// Bottom navigation with the same look as the History screen's bar, shared by
 /// Track and Statistics. Every tab carries the current vehicle, so Track never
 /// opens without its car.
+///
+/// Each tab replaces the current one, so the vehicle is a single screen on
+/// the stack: back from any tab returns to where the vehicle was opened
+/// (Home, Location, Notifications).
 class AppBottomNavBar extends StatelessWidget {
   const AppBottomNavBar({
     super.key,
@@ -89,16 +93,11 @@ class AppBottomNavBar extends StatelessWidget {
             isSelected: selected == AppNavTab.alerts,
             onTap: tap(
               AppNavTab.alerts,
-              // Alerts shows only this vehicle's alerts (trackImei) and uses
-              // these to return to this vehicle.
+              // Alerts shows only this vehicle's alerts (trackImei).
               () => Get.offNamed(
                 Routes.ALERTS,
                 parameters: hasVehicle
-                    ? {
-                        'trackImei': imei,
-                        'trackPlate': plate,
-                        'from': selected.name,
-                      }
+                    ? {'trackImei': imei, 'trackPlate': plate}
                     : null,
               ),
             ),
@@ -109,7 +108,7 @@ class AppBottomNavBar extends StatelessWidget {
             isSelected: selected == AppNavTab.statistics,
             onTap: tap(
               AppNavTab.statistics,
-              () => Get.toNamed(
+              () => Get.offNamed(
                 Routes.STATISTICS,
                 parameters: hasVehicle ? {'imei': imei, 'plate': plate} : null,
               ),

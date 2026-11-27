@@ -45,8 +45,6 @@ class GeneralSettingsView extends GetView<GeneralSettingsController> {
                     controller.setNotifications,
                   ),
                 ),
-                // "Show History on Live" is hidden for now; Live Track keeps
-                // the saved choice (on by default).
                 const SizedBox(height: 10),
                 _buildChoiceSection<VehicleIconSize>(
                   key: 'icon',

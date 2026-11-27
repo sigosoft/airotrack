@@ -24,7 +24,6 @@ class AppSettings extends GetxService {
   static const double _kmPerMile = 1.609344;
 
   final notifications = true.obs;
-  final showHistoryOnLive = true.obs;
   final iconSize = VehicleIconSize.medium.obs;
   final use24HourTime = true.obs;
   final showSpeedometer = true.obs;
@@ -45,7 +44,6 @@ class AppSettings extends GetxService {
 
   void _load() {
     notifications.value = _prefs.getBool('set_notifications') ?? true;
-    showHistoryOnLive.value = _prefs.getBool('set_history_on_live') ?? true;
     use24HourTime.value = _prefs.getBool('set_24h') ?? true;
     showSpeedometer.value = _prefs.getBool('set_speedometer') ?? true;
     iconSize.value = _enum(
@@ -80,11 +78,6 @@ class AppSettings extends GetxService {
   void setNotifications(bool v) {
     notifications.value = v;
     _prefs.setBool('set_notifications', v);
-  }
-
-  void setShowHistoryOnLive(bool v) {
-    showHistoryOnLive.value = v;
-    _prefs.setBool('set_history_on_live', v);
   }
 
   void setUse24HourTime(bool v) {

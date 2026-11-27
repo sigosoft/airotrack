@@ -1324,32 +1324,11 @@ class TrackController extends GetxController {
   // Publishing. Marker and camera commit in the SAME frame, every frame.
   // ---------------------------------------------------------------------
 
-  /// Where the car has driven since Track opened, drawn when General
-  /// Settings → Show History on Live is on.
-  final liveTrail = <gmaps.LatLng>[].obs;
-  static const double _trailStepMeters = 8;
-
-  void _extendTrail(LatLng p) {
-    if (AppSettings.maybe?.showHistoryOnLive.value == false) return;
-    final last = liveTrail.isEmpty ? null : liveTrail.last;
-    if (last != null &&
-        const Distance().as(
-              LengthUnit.Meter,
-              LatLng(last.latitude, last.longitude),
-              p,
-            ) <
-            _trailStepMeters) {
-      return;
-    }
-    liveTrail.add(gmaps.LatLng(p.latitude, p.longitude));
-  }
-
   void _publishFrame({bool force = false}) {
     if (_pauseMarkerUi && !force) return;
     if (_pathLat == 0.0 && _pathLng == 0.0) return;
 
     final point = _publishedPoint();
-    _extendTrail(point);
 
     // While the map is moved by the user (drag, fling, or not following), the
     // car is a Google marker: Google draws it in the same pass as the map, so
@@ -3402,7 +3381,6 @@ class TrackController extends GetxController {
     if (plate != null && plate.isNotEmpty) vehiclePlate.value = plate;
 
     liveTrackData.value = null;
-    liveTrail.clear();
     _wsConfig = null;
     _wsInfo = null;
     _hasInitialCameraFocus = false;

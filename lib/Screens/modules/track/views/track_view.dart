@@ -56,17 +56,6 @@ class TrackView extends GetView<TrackController> {
                               if (controller.dragCarMarker.value != null)
                                 controller.dragCarMarker.value!,
                             },
-                            // General Settings → Show History on Live.
-                            polylines: {
-                              if (AppSettings.to.showHistoryOnLive.value &&
-                                  controller.liveTrail.length >= 2)
-                                Polyline(
-                                  polylineId: const PolylineId('live-trail'),
-                                  points: controller.liveTrail.toList(),
-                                  color: const Color(0xFF009FE3),
-                                  width: 4,
-                                ),
-                            },
                             circles: controller.vehicleGeofenceCircles.toSet(),
                             polygons: controller.vehicleGeofencePolygons.toSet(),
                             // The app turns and tilts the map (heading, 3D

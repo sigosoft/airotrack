@@ -8,6 +8,7 @@ import '../../dashboard/views/dashboard_view.dart';
 import '../../reports/views/reports_view.dart';
 import '../../settings/views/settings_view.dart';
 import '../../location/views/location_view.dart';
+import '../../ServerDown/ServerDown.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../widgets/vehicle_details_dialog.dart';
@@ -237,6 +238,14 @@ class HomeView extends GetView<HomeController> {
           child: Obx(() {
             if (controller.isLoading.value) {
               return const Center(child: CircularProgressIndicator());
+            }
+            if (controller.loadFailed.value) {
+              return ServerDown(
+                onRetry: () => controller.fetchVehicles(
+                  type: controller.selectedType.value,
+                  force: true,
+                ),
+              );
             }
             final list = controller.filteredVehicles;
             final query = controller.searchQuery.value.trim();

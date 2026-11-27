@@ -320,6 +320,10 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   final isMoreLoading = false.obs;
   final hasMore = true.obs;
   final errorMessage = ''.obs;
+
+  /// The vehicle list couldn't be loaded (server down or unreachable) and
+  /// there is nothing loaded to show: Home shows the Server Down screen.
+  final loadFailed = false.obs;
   final RxInt selectedIndex = 1.obs;
   final ScrollController scrollController = ScrollController();
   int currentPage = 1;
@@ -447,6 +451,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   /// Shows [all]: the selected tab's list and every count, changing the
   /// observables only when something visible changed (no blink).
   void _applyAll(List<Vehicle> all) {
+    loadFailed.value = false;
     if (!_sameVehicles(allVehicles, all)) allVehicles.assignAll(all);
     final shown = _forType(all, selectedType.value ?? 1);
     if (!_sameVehicles(vehicles, shown)) vehicles.assignAll(shown);
@@ -539,10 +544,17 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     try {
       isLoading.value = true;
       final all = await _fetchAll();
-      if (all != null) _applyAll(all);
+      if (all != null) {
+        _applyAll(all);
+      } else {
+        // The server answered without the vehicle list.
+        loadFailed.value = allVehicles.isEmpty;
+      }
     } catch (e) {
       errorMessage.value = "An error occurred: $e";
       debugPrint("Error loading data: $e");
+      // Keep showing vehicles already loaded; with none, say why.
+      loadFailed.value = allVehicles.isEmpty;
     } finally {
       isLoading.value = false;
     }

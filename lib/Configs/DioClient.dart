@@ -172,8 +172,8 @@ class DioClient {
 
         return "Validation failed";
       } else if (statusCode == 500) {
-        // Redirection disabled to avoid jumping to the black placeholder screen.
-        // Get.to(() => const ServerDown());
+        // Each screen shows this itself; Home shows the ServerDown screen
+        // when it can't load the vehicle list.
         return "Server error occurred. Please try again later.";
       } else {
         if (data is Map && data['message'] != null) {

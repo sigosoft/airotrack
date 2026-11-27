@@ -38,12 +38,7 @@ class ProfileModel {
       'phone_number',
       'mobile_number',
     ]);
-    final company = pickString(map, [
-      'company_name',
-      'company',
-      'organisation',
-      'organization',
-    ]);
+    final company = _companyName(map);
     final email = pickString(map, ['email', 'email_address']);
 
     final initial = name.trim().isNotEmpty
@@ -57,5 +52,22 @@ class ProfileModel {
       email: email,
       avatarInitial: initial,
     );
+  }
+
+  /// The company's name. The server can send `company` as a whole record
+  /// ({id, user_id, company_name, …}); read the name from inside it rather
+  /// than showing the record as text.
+  static String _companyName(Map<String, dynamic> map) {
+    const nameKeys = ['company_name', 'name', 'organisation', 'organization'];
+    for (final key in ['company_name', 'company', 'organisation', 'organization']) {
+      final value = map[key];
+      if (value == null) continue;
+      final nested = asStringKeyedMap(value);
+      final text = nested != null
+          ? pickString(nested, nameKeys)
+          : (value is List ? '' : value.toString().trim());
+      if (text.isNotEmpty && text.toLowerCase() != 'null') return text;
+    }
+    return '';
   }
 }
